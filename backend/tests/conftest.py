@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -7,7 +9,7 @@ from emergenzix_api.main import create_app
 
 
 @pytest.fixture
-def client(tmp_path: pytest.TempPathFactory):
+def client(tmp_path: Path):
     app = create_app(
         db_path=tmp_path / "emergenzix-test.db",
         initial_paper_cash=10_000.0,
