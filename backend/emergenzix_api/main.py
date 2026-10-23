@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request, status
+from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 
 from . import __version__
 from .backtesting import run_sma_crossover
 from .config import Settings
 from .database import Database
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv
-from .schemas import BacktestCreate, PaperOrderCreate, StrategyCreate
+from .schemas import BacktestCreate, DatasetCreate, PaperOrderCreate, StrategyCreate
 
 
 def _now() -> str:
@@ -24,6 +25,25 @@ def _now() -> str:
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
     return dict(row) if row is not None else {}
+
+
+def _dataset_to_dict(row: Any, *, include_bars: bool = False) -> dict[str, Any]:
+    """Serialize dataset metadata, optionally including the immutable OHLCV payload."""
+    result: dict[str, Any] = {
+        "id": row["id"],
+        "sha256": row["content_sha256"],
+        "source": row["source"],
+        "exchange": row["exchange"],
+        "symbol": row["symbol"],
+        "timeframe": row["timeframe"],
+        "start_at": row["start_at"],
+        "end_at": row["end_at"],
+        "bars_count": int(row["bars_count"]),
+        "created_at": row["created_at"],
+    }
+    if include_bars:
+        result["bars"] = json.loads(row["bars_json"])
+    return result
 
 
 def create_app(
@@ -95,6 +115,104 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except MarketDataUnavailable as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/api/v1/datasets", status_code=status.HTTP_201_CREATED)
+    def register_dataset(
+        payload: DatasetCreate, request: Request, response: Response
+    ) -> dict[str, Any]:
+        """Persist validated OHLCV bars under a deterministic SHA-256 dataset ID."""
+        db: Database = request.app.state.database
+        canonical_bars = [
+            {
+                "timestamp": bar.timestamp.astimezone(timezone.utc)
+                .isoformat(timespec="microseconds")
+                .replace("+00:00", "Z"),
+                "open": float(bar.open),
+                "high": float(bar.high),
+                "low": float(bar.low),
+                "close": float(bar.close),
+                "volume": float(bar.volume),
+            }
+            for bar in payload.bars
+        ]
+        canonical_payload = {
+            "source": payload.source,
+            "exchange": payload.exchange,
+            "symbol": payload.symbol,
+            "timeframe": payload.timeframe,
+            "bars": canonical_bars,
+        }
+        canonical_json = json.dumps(
+            canonical_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+        dataset_id = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+        bars_json = json.dumps(
+            canonical_bars,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+        created_at = _now()
+
+        with db.connection() as connection:
+            inserted = connection.execute(
+                """
+                INSERT OR IGNORE INTO market_datasets
+                    (id, content_sha256, source, exchange, symbol, timeframe,
+                     start_at, end_at, bars_count, bars_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    dataset_id,
+                    dataset_id,
+                    payload.source,
+                    payload.exchange,
+                    payload.symbol,
+                    payload.timeframe,
+                    canonical_bars[0]["timestamp"],
+                    canonical_bars[-1]["timestamp"],
+                    len(canonical_bars),
+                    bars_json,
+                    created_at,
+                ),
+            )
+            if inserted.rowcount == 0:
+                response.status_code = status.HTTP_200_OK
+            row = connection.execute(
+                "SELECT * FROM market_datasets WHERE id = ?", (dataset_id,)
+            ).fetchone()
+        return _dataset_to_dict(row)
+
+    @app.get("/api/v1/datasets")
+    def list_datasets(
+        request: Request,
+        limit: int = Query(default=20, ge=1, le=100),
+    ) -> list[dict[str, Any]]:
+        """List dataset metadata without returning potentially large candle arrays."""
+        db: Database = request.app.state.database
+        with db.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM market_datasets ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [_dataset_to_dict(row) for row in rows]
+
+    @app.get("/api/v1/datasets/{dataset_id}")
+    def get_dataset(dataset_id: str, request: Request) -> dict[str, Any]:
+        """Retrieve the exact OHLCV bars associated with an immutable dataset ID."""
+        db: Database = request.app.state.database
+        with db.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM market_datasets WHERE id = ?", (dataset_id,)
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+        return _dataset_to_dict(row, include_bars=True)
 
     @app.get("/api/v1/overview")
     def overview(request: Request) -> dict[str, Any]:
