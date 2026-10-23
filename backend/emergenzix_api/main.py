@@ -224,6 +224,12 @@ def create_app(
                 "slow_window": int(strategy["slow_window"]),
             },
             "created_at": created_at,
+            "data_provenance": {
+                "source": payload.data_source,
+                "exchange": payload.data_exchange,
+                "symbol": payload.data_symbol,
+                "timeframe": payload.data_timeframe,
+            },
             **result,
         }
         with db.connection() as connection:
