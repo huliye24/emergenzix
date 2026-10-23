@@ -17,7 +17,7 @@ A strategy is a versioned, reviewable artifact—not a prompt, an isolated backt
 
 For each candidate, record as applicable:
 
-- Unique strategy ID and immutable version
+- Unique strategy ID and immutable version; Emergenzix stores immutable parameter snapshots and records the selected version ID and parameter fingerprint on new backtests
 - Hypothesis and intended market/instrument
 - Data source, version, range, timezone, and quality checks
 - Code/configuration revision and parameter set

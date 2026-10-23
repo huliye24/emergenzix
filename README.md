@@ -130,7 +130,8 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | GET | `/api/v1/datasets/{dataset_id}` | Retrieve an immutable dataset and its exact saved candles |
 | GET | `/api/v1/datasets/{dataset_id}/quality` | Diagnose interval gaps, coverage, and freshness without modifying the dataset |
 | GET / POST | `/api/v1/strategies` | List or create strategies |
-| GET | `/api/v1/strategies/{id}` | Inspect one strategy |
+| GET | `/api/v1/strategies/{id}` | Inspect a strategy and its current version |
+| GET / POST | `/api/v1/strategies/{id}/versions` | List immutable parameter snapshots or create a new version |
 | POST | `/api/v1/backtests` | Run and persist a backtest from raw bars or a registered dataset ID |
 | GET | `/api/v1/backtests` | List recent backtests |
 | GET | `/api/v1/backtests/{id}` | Retrieve a saved backtest |
@@ -144,6 +145,8 @@ Backtest requests accept exactly one input source: ordered OHLCV bars with timez
 The read-only dataset quality endpoint reports timeframe-aligned candle gaps, irregular intervals, estimated coverage when spacing is consistent, and latest-candle freshness. It does not mutate datasets or automatically block historical backtests; freshness is a diagnostic heuristic.
 
 Public OHLCV responses use a bounded, in-process TTL cache (30 seconds by default, up to 256 entries). Cache keys include exchange, normalized symbol, timeframe, and requested limit. Configure it with `EMERGENZIX_MARKET_DATA_CACHE_TTL_SECONDS` and `EMERGENZIX_MARKET_DATA_CACHE_MAX_ENTRIES`; set the TTL to `0` to disable caching. Only successful provider responses are cached. Each API process has its own cache, which is cleared on restart and is not shared across replicas.
+
+Each new strategy starts with immutable version 1. Create later parameter snapshots with `POST /api/v1/strategies/{id}/versions`; prior versions remain unchanged, and repeated submission of the current parameters returns `409`. Backtests use the latest version by default or can pin a specific `strategy_version_id`. Results retain the version ID, canonical parameter snapshot, and SHA-256 parameter fingerprint. Historical backtests from databases created before this feature remain unassigned because their original version cannot be inferred safely.
 
 ## Safety boundaries
 
