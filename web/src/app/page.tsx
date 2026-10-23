@@ -50,6 +50,12 @@ type BacktestResult = {
     slippage_bps_per_side: number;
     open_position: string;
   };
+  data_provenance?: {
+    source: string;
+    exchange: string | null;
+    symbol: string | null;
+    timeframe: string | null;
+  };
 };
 
 type PaperOrder = {
@@ -517,7 +523,7 @@ export default function DashboardPage() {
                 <tbody>
                   {backtests.map((backtest) => (
                     <tr key={backtest.id}>
-                      <td><strong>{backtest.strategy?.name ?? backtest.symbol}</strong><small>{formatDate(backtest.created_at)}</small></td>
+                      <td><strong>{backtest.strategy?.name ?? backtest.symbol}</strong><small>{formatDate(backtest.created_at)} · {backtest.data_provenance?.source ?? "user_supplied"}</small></td>
                       <td className={backtest.total_return_pct >= 0 ? "positive" : "negative"}>{formatPercent(backtest.total_return_pct)}</td>
                       <td className="negative">-{backtest.max_drawdown_pct.toFixed(2)}%</td>
                       <td>{backtest.number_of_trades}</td>
