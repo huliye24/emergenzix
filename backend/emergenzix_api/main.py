@@ -6,7 +6,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request, status
 
@@ -14,6 +14,7 @@ from . import __version__
 from .backtesting import run_sma_crossover
 from .config import Settings
 from .database import Database
+from .market_data import MarketDataUnavailable, fetch_public_ohlcv
 from .schemas import BacktestCreate, PaperOrderCreate, StrategyCreate
 
 
@@ -70,6 +71,30 @@ def create_app(
             "mode": "PAPER",
             "live_trading_enabled": False,
         }
+
+    @app.get("/api/v1/market-data/ohlcv")
+    def market_data_ohlcv(
+        exchange: Literal["binance", "bybit", "okx", "kraken", "coinbase"] = Query(
+            default="binance"
+        ),
+        symbol: str = Query(default="BTCUSDT", min_length=3, max_length=30),
+        timeframe: Literal["1m", "5m", "15m", "30m", "1h", "4h", "1d"] = Query(
+            default="1h"
+        ),
+        limit: int = Query(default=200, ge=5, le=1000),
+    ) -> dict[str, Any]:
+        """Fetch public exchange OHLCV candles. This route cannot place orders."""
+        try:
+            return fetch_public_ohlcv(
+                exchange_id=exchange,
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except MarketDataUnavailable as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     @app.get("/api/v1/overview")
     def overview(request: Request) -> dict[str, Any]:
