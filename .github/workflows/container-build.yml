@@ -1,0 +1,59 @@
+name: Container build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "web/**"
+      - "docker-compose.yml"
+      - ".env.example"
+      - "VERSION"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "web/**"
+      - "docker-compose.yml"
+      - ".env.example"
+      - "VERSION"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-image:
+    name: Build API image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          tags: emergenzix-api:ci
+
+  web-image:
+    name: Build web image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
+          file: ./web/Dockerfile
+          push: false
+          tags: emergenzix-web:ci
+          build-args: |
+            EMERGENZIX_API_URL=http://api:8000

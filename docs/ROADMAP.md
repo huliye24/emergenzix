@@ -27,6 +27,10 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [ ] Confirm the CI run is green and repeat the test suite on the AWS development environment.
 - [x] Add the first responsive Next.js/React product interface against the API contract.
 - [x] Add a sectioned product workspace for overview, strategies, backtests, paper trading, and activity without changing backend contracts.
+- [x] Add separate API and web Dockerfiles with Docker Compose orchestration and a persistent SQLite volume.
+- [x] Add GitHub Actions container-build CI and tag-triggered GHCR image publishing/GitHub Release automation.
+- [ ] Have Codex build and run the Compose stack, exercise a paper workflow, and verify volume persistence on the AWS development environment.
+- [ ] Publish v0.1.0 only after the runtime acceptance checklist passes.
 - [ ] Add a reviewed authentication and deployment design before any network exposure.
 
 **Exit gate:** a new contributor can run the backend locally in PAPER mode, tests pass, and no exchange credentials are required.

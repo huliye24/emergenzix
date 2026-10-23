@@ -110,3 +110,10 @@ Planned areas include structured redacted logs, request correlation IDs, idempot
 8. Whether LIVE trading should ever be enabled.
 
 Each lasting architectural decision should be recorded in `docs/adr/` and linked from the roadmap.
+
+
+## 10. Container and release pipeline
+
+The first packaging target is a browser-based web application plus a separate FastAPI container, orchestrated by Docker Compose. The API is not published to the host; the web interface binds to localhost by default. SQLite uses the named emergenzix-data volume so the database is not tied to a disposable container. See [ADR-002](adr/ADR-002-container-and-release-pipeline.md) and [release operations](RELEASE.md).
+
+GitHub Actions builds the API and web images on relevant changes. A version tag publishes both images to GitHub Container Registry and creates a GitHub Release. This workflow does not deploy to AWS. Authentication, reverse proxy/TLS, public network exposure, and AWS deployment credentials remain unresolved and must be addressed before any public deployment.

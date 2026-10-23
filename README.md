@@ -4,7 +4,7 @@
 
 Emergenzix is the product layer emerging from the NEMT research program. It is designed to turn market data and reviewed research into reproducible strategy evaluation and auditable trading workflows.
 
-> **Development status:** `main` contains the initial backend, responsive dashboard, a CCXT-based public OHLCV endpoint, and a pinned Freqtrade upstream submodule. This is an early development baseline; AWS/Codex verification remains the next step.
+> **Development status:** `main` contains the initial backend, responsive dashboard, a CCXT-based public OHLCV endpoint, and a pinned Freqtrade upstream submodule. This is the v0.1.0 development target. Docker Compose packaging and GitHub container-release automation are being added; do not treat the version as released until Codex/AWS verification is complete.
 
 ## NEMT and Emergenzix
 
@@ -26,7 +26,7 @@ A research result must carry provenance and pass review before it informs a prod
 - Public spot OHLCV retrieval through CCXT for an explicit exchange allowlist, plus synthetic demo candles
 - Freqtrade source pinned as a Git submodule for evaluation as the mature strategy/backtesting/dry-run engine; its adapter is not yet wired into the current backtest endpoint
 - Dataset source, exchange, symbol, and timeframe persisted with backtest results
-- Automated backend tests and CI build/type-check workflows
+- Automated backend tests, frontend type-check/build, Docker image build CI, and tag-triggered GHCR release workflow
 
 The backtest is a baseline implementation, not evidence of profitability. Paper orders use caller-supplied reference prices and do not represent exchange market fills.
 
@@ -40,6 +40,31 @@ cd emergenzix
 ```
 
 If the repository is already cloned, initialize the upstream source with `git submodule update --init --recursive`. Freqtrade is kept as a separate source tree and should run in its own environment/container; its current upstream branch requires Python 3.12 or newer.
+
+## Run with Docker Compose (recommended)
+
+Requirements: Docker Engine and the Docker Compose v2 plugin.
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+Open http://127.0.0.1:3000. The API is private to the Compose network and the web port binds to localhost by default.
+
+Useful commands:
+
+```bash
+docker compose ps
+docker compose logs -f api web
+docker compose down
+```
+
+SQLite data is stored in the named volume emergenzix-data and survives container recreation. **Do not run `docker compose down -v` unless you intend to delete that volume and the paper-trading records.**
+
+The current application has no authentication. Keep the default localhost binding or use a protected private access path. Do not publish port 3000 or expose a public reverse proxy before the authentication and deployment review is complete.
+
+After a verified release has been published, set EMERGENZIX_VERSION in .env to the desired version, then use `docker compose pull` followed by `docker compose up -d` to update the running containers.
 
 ## Run the backend
 
@@ -128,6 +153,8 @@ Backtest requests supply ordered OHLCV bars with timezone-aware timestamps. Fees
 - [Upstream components and license boundaries](docs/UPSTREAM_COMPONENTS.md)
 - [Migration inventory](docs/MIGRATION_INVENTORY.md)
 - [ADR-001: backend baseline](docs/adr/ADR-001-product-backend-baseline.md)
+- [ADR-002: container and release pipeline](docs/adr/ADR-002-container-and-release-pipeline.md)
+- [Versioning, CI/CD, and container releases](docs/RELEASE.md)
 - [Strategy lifecycle](docs/STRATEGY_LIFECYCLE.md)
 - [Engineering rules](AGENTS.md)
 - [Security policy](SECURITY.md)
