@@ -1,8 +1,23 @@
 # Emergenzix Architecture
 
-**Status: provisional.** This document describes boundaries and safety invariants, not a final technology selection. The initial stack and migration approach must be recorded in an Architecture Decision Record after inspecting the current NEMT application.
+The initial backend decision is recorded in [ADR-001](adr/ADR-001-product-backend-baseline.md). The architecture remains provisional outside that first vertical slice; production and multi-user decisions require further review.
 
-## 1. Logical components
+## 1. Current implementation
+
+The first implementation uses Python 3.11+ and FastAPI for the product API, with SQLite for local and single-process development persistence.
+
+Implemented on the initial backend branch:
+
+- Strategy definitions and listing
+- A deterministic long-only SMA-crossover backtest
+- Persisted backtest metrics, assumptions, equity curve, and closed trades
+- Paper account, simulated positions, and paper-order history
+- Server-side paper-order notional limit, cash check, and prohibition of short selling
+- Health endpoint that reports PAPER mode and explicitly reports live trading as disabled
+
+This is the first vertical slice, not a claim of production readiness.
+
+## 2. Logical components
 
 ```text
 NEMT Research
@@ -11,56 +26,36 @@ NEMT Research
         versioned, reviewed strategy artifacts
                     v
 Emergenzix Product
-  responsive client
+  responsive Next.js/React client (initial slice)
        |
-  authenticated product API
+  FastAPI product API (initial slice)
        |
-  strategy + evaluation + portfolio domain
+  strategy + backtest + paper-account persistence
        |
-  risk and permission boundary
+  paper risk checks
        |
-  execution coordinator
-       |
-  exchange adapter interface
-       |
-  DEMO / PAPER -> TESTNET
-                  LIVE disabled by default
+  simulated order ledger
+
+  No exchange adapter or LIVE order endpoint in the initial slice.
 ```
 
-This is a logical diagram, not a claim that these components have been implemented.
-
-## 2. Client
-
-The initial interface should be mobile-first and responsive. A web/PWA is the default candidate because it can serve desktop and mobile users without maintaining separate clients at the beginning. A native mobile application requires a written ADR showing why a web/PWA is insufficient.
-
-The client presents state and requests actions. It must not be the sole place where authorization, risk limits, or trading-mode restrictions are enforced.
+This is a logical diagram; planned components are not necessarily implemented.
 
 ## 3. Product API
 
-The API is responsible for authenticated requests, authorization, input validation, business rules, and stable interfaces between the client and server-side domain services.
+The responsive Next.js/React dashboard consumes the FastAPI API through server-side rewrites. The API validates requests and exposes strategy, backtest, and paper-account workflows. Its interactive OpenAPI documentation is available at `/docs` when the service is running.
 
-Expected responsibilities include:
-
-- Strategy definitions and versions
-- Backtest job submission and result retrieval
-- Paper-trading sessions
-- Portfolio, order, fill, and position views
-- Risk configuration and order preview
-- Audit history and operational health
-
-These are target responsibilities; implementation status must be tracked separately.
+The API currently has no authentication and must not be exposed directly to the public internet. Network deployment requires a separately reviewed authentication, authorization, secret-management, and operations design.
 
 ## 4. Domain boundaries
 
-- **Market data:** source, timestamp, freshness, completeness, and quality state.
-- **Strategy:** versioned parameters, dependencies, status, and provenance.
+- **Market data:** source, timestamp, freshness, completeness, and quality state. Dataset import is not yet implemented.
+- **Strategy:** versioned parameters and provenance. The first strategy type is SMA crossover.
 - **Evaluation:** reproducible backtest configuration, costs, metrics, and limitations.
-- **Portfolio and orders:** explicit lifecycle states and reconciliation.
-- **Risk:** server-side pre-trade checks, limits, exposure, and rejection reasons.
-- **Execution:** mode-aware orchestration, idempotency, timeouts, and recovery.
-- **Audit:** who or what requested an action, which checks ran, and the observed result.
-
-Keep exchange-specific behavior behind adapters; keep product domain rules independent from any single exchange API.
+- **Portfolio and orders:** paper-only account, positions, and simulated filled orders.
+- **Risk:** server-side notional limits, available-cash checks, and prohibition of short selling in the first paper workflow.
+- **Execution:** no exchange execution is implemented.
+- **Audit:** saved backtests and paper-order records exist; a general audit-event subsystem is still planned.
 
 ## 5. NEMT integration
 
@@ -79,44 +74,31 @@ A result that lacks sufficient provenance must not be treated as production-read
 
 ## 6. Operating modes
 
-Modes must be explicit and non-interchangeable:
+- **DEMO:** synthetic or isolated demonstration behavior; a dedicated market-data demo feed is not yet implemented.
+- **PAPER:** the only execution mode in the current backend.
+- **TESTNET:** not implemented.
+- **LIVE:** no endpoint exists; real-money order placement is intentionally unavailable.
 
-- **DEMO:** local or isolated synthetic behavior.
-- **PAPER:** simulated execution against selected market data.
-- **TESTNET:** exchange-provided test environment with dedicated credentials.
-- **LIVE:** real funds; disabled by default and unavailable until separately approved.
-
-Configuration errors must not cause a fallback from TESTNET to LIVE or from LIVE to an unintended mode. Unknown or inconsistent mode state must fail closed.
+Unknown or inconsistent mode state must never silently activate a more permissive mode.
 
 ## 7. Data and storage
 
-The implementation must choose storage only after identifying the required entities and consistency guarantees. Order state, strategy versions, audit events, and execution idempotency require durable and testable semantics. Large research artifacts should remain in the research/data infrastructure and be referenced by version rather than copied wholesale.
+SQLite is the initial development database. Its single-process scope is intentional; evaluate PostgreSQL or another production database before concurrent multi-user deployment. Local database files and runtime data must remain out of version control.
 
 Never place credentials in source control or client bundles. Logs must be useful for debugging without exposing secrets.
 
 ## 8. Reliability and observability
 
-At minimum, the design should account for:
-
-- Health/readiness checks
-- Structured, redacted logs
-- Correlation IDs for order workflows
-- Idempotency for mutation requests
-- Explicit unknown/pending order states
-- Reconciliation after disconnects and restarts
-- Rate-limit and timeout handling
-- Auditable risk rejections
-- Tested shutdown and recovery behavior
+Planned areas include structured redacted logs, request correlation IDs, idempotency, order-state reconciliation, rate-limit handling, operational alerts, and tested recovery behavior. These are not yet implemented by the first slice.
 
 ## 9. Decisions still required
 
-Do not silently decide these in code:
+1. Whether to extend the responsive Next.js interface into an installable PWA.
+2. Authentication and deployment model.
+3. Production database and migration approach.
+4. Dataset import format and research-artifact provenance.
+5. Paper-account reset and idempotency semantics.
+6. First exchange TESTNET adapter and acceptance boundary.
+7. Whether LIVE trading should ever be enabled.
 
-1. Initial client/API technology baseline.
-2. Whether to migrate the existing NEMT app or recreate a smaller shell.
-3. Database and job-queue requirements.
-4. Authentication and deployment model.
-5. First exchange adapter and the exact TESTNET acceptance boundary.
-6. How research artifacts are versioned and delivered to the product.
-
-Each decision with lasting architectural impact should be recorded in `docs/adr/` and linked from the roadmap.
+Each lasting architectural decision should be recorded in `docs/adr/` and linked from the roadmap.
