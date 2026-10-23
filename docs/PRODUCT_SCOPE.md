@@ -76,4 +76,4 @@ Every transition has a clear status, evidence, owner, and acceptance condition. 
 
 ## 8. Current status
 
-This document defines intended scope, not implemented functionality. The repository is in bootstrap state. The next engineering step is to inventory the existing NEMT application code and propose a small, reviewable migration plan.
+This document defines intended scope as well as the current implementation boundary. The repository now has a responsive product shell, paper-only API, public OHLCV access through CCXT, and a pinned Freqtrade submodule. Freqtrade is not yet wired into the API's backtest endpoint, and AWS/Codex runtime verification remains outstanding.
