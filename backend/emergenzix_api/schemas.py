@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 SYMBOL_PATTERN = r"^[A-Z0-9]{3,20}$"
@@ -21,6 +21,14 @@ class StrategyCreate(StrictModel):
     strategy_type: Literal["sma_crossover"] = "sma_crossover"
     fast_window: int = Field(ge=2, le=200)
     slow_window: int = Field(ge=3, le=500)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("name must contain a non-whitespace character")
+        return normalized
 
     @model_validator(mode="after")
     def validate_windows(self) -> "StrategyCreate":
