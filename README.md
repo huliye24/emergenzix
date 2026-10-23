@@ -2,60 +2,116 @@
 
 **An open-source, risk-controlled quantitative trading product.**
 
-Emergenzix is the product layer emerging from the NEMT research program. It is intended to turn market data and research-backed strategy candidates into transparent, testable workflows for strategy management, backtesting, paper trading, and carefully gated exchange execution.
+Emergenzix is the product layer emerging from the NEMT research program. It is designed to turn market data and reviewed research into reproducible strategy evaluation and auditable trading workflows.
 
-> **Current status: repository bootstrap.** Product documentation is being established before application code is migrated. This README does not claim that planned capabilities are already implemented.
+> **Development status:** the first backend vertical slice is under review on the `feat/core-backend-mvp` branch. It includes a FastAPI API, SQLite persistence, an SMA-crossover backtest, and paper-only order simulation. It is not production-ready and has no live exchange connection.
 
-## Why a separate repository?
+## NEMT and Emergenzix
 
-NEMT and Emergenzix have different responsibilities:
+- **NEMT — research and experiments:** economic hypotheses, quantitative theory, research datasets, MATLAB/GPU experiments, and reproducible research.
+- **Emergenzix — product and operations:** strategy management, backtesting, paper trading, product APIs, risk controls, and eventually a user-facing responsive application.
 
-- **NEMT — research and experiments:** economic hypotheses, quantitative theory, datasets, MATLAB/GPU experiments, model evaluation, and reproducible research.
-- **Emergenzix — product and operations:** user-facing workflows, strategy lifecycle, backtesting interfaces, paper trading, exchange adapters, risk controls, auditability, and product delivery.
+A research result must carry provenance and pass review before it informs a product strategy. Research code and experiment artifacts are not copied into the product runtime by default.
 
-Research may inform product decisions, but research code and experimental results do not automatically become production trading logic. Any integration must have a documented interface and a verification path.
+## Current implementation
 
-## Product principles
+- Health endpoint and product overview
+- Strategy creation and listing for the initial SMA-crossover strategy type
+- Deterministic backtesting using completed-bar signals and next-bar-open execution
+- Fee and slippage assumptions recorded with each backtest
+- Persisted backtest results, equity curve, and closed-trade records
+- SQLite-backed paper account, positions, and simulated order history
+- Server-side notional limit, available-cash checks, and no-short-selling validation
+- Automated API tests and a GitHub Actions workflow
 
-1. **Research before execution.** A hypothesis is not a trading strategy until it has passed defined validation gates.
-2. **Risk controls are part of the product.** They are not optional add-ons or UI-only checks.
-3. **Fail closed.** Unknown modes, stale data, missing permissions, invalid limits, or uncertain order state must block execution.
-4. **Human approval for material risk.** AI-generated ideas and backtest results cannot independently authorize real-money trades.
-5. **Reproducibility and auditability.** Record data versions, parameters, strategy versions, decisions, and execution outcomes.
-6. **Small, verifiable engineering tasks.** Every change must have a clear scope, acceptance criteria, and proportionate tests.
+The backtest is a baseline implementation, not evidence of profitability. Paper orders use caller-supplied reference prices and do not represent exchange market fills.
 
-## Initial product scope
+## Run the backend
 
-- Strategy and configuration management
-- Market-data access with freshness and quality indicators
-- Backtesting and evaluation workflows
-- Paper-trading lifecycle and portfolio/order history
-- Risk limits, order previews, audit records, and controlled exchange adapters
-- A mobile-first user experience; use web/PWA as the initial delivery option unless an architecture decision approves another client
+Requirements: Python 3.11 or newer.
 
-The exact technology baseline and migration scope will be decided after auditing the existing NEMT product code. Do not assume that every NEMT module belongs in this repository.
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m compileall -q emergenzix_api tests
+pytest -q
+```
 
-## Safety boundary
+On Windows PowerShell, activate the environment with:
 
-The initial development path must prioritize **DEMO and PAPER** workflows. Exchange TESTNET integration requires explicit configuration and end-to-end acceptance tests. **LIVE real-money order execution must remain disabled** until a separate, documented security and risk review approves it.
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
 
-Never commit API keys, secrets, account identifiers, private datasets, or production credentials. Exchange credentials must remain server-side, use least privilege, and must not have withdrawal permissions.
+Start the API locally:
 
-Emergenzix is software, not financial advice. Backtests and simulated performance do not guarantee future results.
+```bash
+uvicorn emergenzix_api.main:app --host 127.0.0.1 --port 8000
+```
+
+Open the interactive API documentation at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) and health status at [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health).
+
+### AWS development testing
+
+From the repository:
+
+```bash
+cd backend
+python -m pip install -r requirements.txt
+python -m compileall -q emergenzix_api tests
+pytest -q
+```
+
+Use the output as the test evidence for the next iteration. The API currently has no authentication; bind it to localhost or protect it behind an approved private network/reverse proxy. Do not expose port 8000 directly to the public internet.
+
+## API surface
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/health` | Runtime health and safety mode |
+| GET | `/api/v1/overview` | Strategy, backtest, and paper-account summary |
+| GET / POST | `/api/v1/strategies` | List or create strategies |
+| GET | `/api/v1/strategies/{id}` | Inspect one strategy |
+| POST | `/api/v1/backtests` | Run and persist a backtest |
+| GET | `/api/v1/backtests` | List recent backtests |
+| GET | `/api/v1/backtests/{id}` | Retrieve a saved backtest |
+| GET | `/api/v1/paper/account` | Inspect the simulated account |
+| GET | `/api/v1/paper/positions` | List simulated positions |
+| GET / POST | `/api/v1/paper/orders` | List or create paper orders |
+| GET | `/api/v1/paper/trades` | Inspect simulated fills |
+
+Create a sample strategy:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/strategies \
+  -H "Content-Type: application/json" \
+  -d '{"name":"BTC SMA baseline","symbol":"BTCUSDT","strategy_type":"sma_crossover","fast_window":5,"slow_window":20}'
+```
+
+Backtest requests supply ordered OHLCV bars with timezone-aware timestamps. Fees and slippage are explicit request parameters and are included in the saved result.
+
+## Safety boundaries
+
+- The API only provides **PAPER** execution; no exchange adapter or LIVE order endpoint exists in this slice.
+- Unknown or invalid requests are rejected; paper orders enforce notional limits and prohibit short selling.
+- API keys and exchange credentials are not required and must never be committed.
+- The initial SQLite setup is for local/single-process development. Reassess storage, authentication, monitoring, and operational controls before multi-user or production deployment.
+- Backtests and simulated results do not guarantee future performance.
 
 ## Repository guide
 
 - [Product scope](docs/PRODUCT_SCOPE.md)
 - [Roadmap](docs/ROADMAP.md)
-- [Provisional architecture](docs/ARCHITECTURE.md)
-- [Strategy lifecycle and promotion gates](docs/STRATEGY_LIFECYCLE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Migration inventory](docs/MIGRATION_INVENTORY.md)
+- [ADR-001: backend baseline](docs/adr/ADR-001-product-backend-baseline.md)
+- [Strategy lifecycle](docs/STRATEGY_LIFECYCLE.md)
+- [Engineering rules](AGENTS.md)
 - [Security policy](SECURITY.md)
-- [AI and contributor engineering rules](AGENTS.md)
-
-## Development status
-
-This repository currently contains the GPL-3.0 license and initial product-governance documentation. Application code has not yet been migrated. The next step is to inventory the existing NEMT product implementation, record the migration boundary, and make the first architecture decision before moving code.
 
 ## License
 
-Emergenzix is licensed under the **GNU General Public License v3.0 (GPL-3.0)**. See [LICENSE](LICENSE). Third-party components retain their own license obligations; check compatibility before copying or adding dependencies.
+Licensed under the **GNU General Public License v3.0 (GPL-3.0)**. See [LICENSE](LICENSE).
