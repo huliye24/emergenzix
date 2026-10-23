@@ -23,3 +23,9 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+coverage/
