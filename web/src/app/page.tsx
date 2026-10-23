@@ -251,6 +251,10 @@ export default function DashboardPage() {
           initial_cash: 10000,
           fee_bps: 10,
           slippage_bps: 5,
+          data_source: "ccxt_public_ohlcv",
+          data_exchange: marketData.exchange,
+          data_symbol: marketData.symbol,
+          data_timeframe: marketData.timeframe,
         }),
       });
       setMessage(
@@ -291,6 +295,9 @@ export default function DashboardPage() {
           initial_cash: 10000,
           fee_bps: 10,
           slippage_bps: 5,
+          data_source: "synthetic_demo",
+          data_symbol: selectedStrategy.symbol,
+          data_timeframe: "1d",
         }),
       });
       setMessage(
