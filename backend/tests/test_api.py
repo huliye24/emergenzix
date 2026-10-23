@@ -264,3 +264,97 @@ def test_ccxt_backtest_requires_complete_provenance(client):
         },
     )
     assert response.status_code == 422
+
+
+
+def _bars_at_offsets(
+    start: datetime, offsets_seconds: list[int]
+) -> list[dict[str, object]]:
+    result = []
+    for offset in offsets_seconds:
+        result.append(
+            {
+                "timestamp": (start + timedelta(seconds=offset)).isoformat(),
+                "open": 10.0,
+                "high": 10.5,
+                "low": 9.5,
+                "close": 10.0,
+                "volume": 100.0,
+            }
+        )
+    return result
+
+
+def _register_quality_dataset(client, bars, *, timeframe: str | None = "1h"):
+    payload = {"symbol": "BTCUSDT", "bars": bars}
+    if timeframe is not None:
+        payload["timeframe"] = timeframe
+    response = client.post("/api/v1/datasets", json=payload)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_dataset_quality_reports_gap_coverage_and_freshness(client):
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    bars = _bars_at_offsets(
+        now - timedelta(hours=5),
+        [0, 3600, 3 * 3600, 4 * 3600, 5 * 3600],
+    )
+    dataset = _register_quality_dataset(client, bars)
+
+    response = client.get(f"/api/v1/datasets/{dataset['id']}/quality")
+
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["sha256"] == dataset["sha256"]
+    assert report["interval_seconds"] == 3600
+    assert report["bars_count"] == 5
+    assert report["expected_bars_count"] == 6
+    assert report["missing_candles_estimate"] == 1
+    assert report["coverage_pct"] == 83.333333
+    assert len(report["gaps"]) == 1
+    assert report["gaps"][0]["missing_candles_estimate"] == 1
+    assert report["freshness"]["status"] == "within_threshold"
+    assert report["diagnostic_only"] is True
+
+
+def test_dataset_quality_omits_coverage_for_irregular_intervals(client):
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    bars = _bars_at_offsets(
+        now - timedelta(seconds=16_200),
+        [0, 3600, 9000, 12_600, 16_200],
+    )
+    dataset = _register_quality_dataset(client, bars)
+
+    response = client.get(f"/api/v1/datasets/{dataset['id']}/quality")
+
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["coverage_pct"] is None
+    assert report["expected_bars_count"] is None
+    assert len(report["irregular_intervals"]) == 1
+    assert report["freshness"]["status"] == "within_threshold"
+
+
+def test_dataset_quality_without_timeframe_marks_checks_unavailable(client):
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    bars = _bars_at_offsets(
+        now - timedelta(hours=5),
+        [0, 3600, 3 * 3600, 4 * 3600, 5 * 3600],
+    )
+    dataset = _register_quality_dataset(client, bars, timeframe=None)
+
+    response = client.get(f"/api/v1/datasets/{dataset['id']}/quality")
+
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["interval_seconds"] is None
+    assert report["missing_candles_estimate"] is None
+    assert report["coverage_pct"] is None
+    assert report["gaps"] == []
+    assert report["freshness"]["status"] == "not_assessable"
+
+
+def test_dataset_quality_returns_404_for_unknown_dataset(client):
+    response = client.get(f"/api/v1/datasets/{'f' * 64}/quality")
+    assert response.status_code == 404
