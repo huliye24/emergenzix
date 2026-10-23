@@ -4,7 +4,7 @@
 
 Emergenzix is the product layer emerging from the NEMT research program. It is designed to turn market data and reviewed research into reproducible strategy evaluation and auditable trading workflows.
 
-> **Development status:** the initial backend and responsive web dashboard are implemented on the `feat/core-backend-mvp` branch and awaiting independent AWS/Codex verification. This is an early development baseline, not a production-ready financial service.
+> **Development status:** `main` contains the initial backend, responsive dashboard, a CCXT-based public OHLCV endpoint, and a pinned Freqtrade upstream submodule. This is an early development baseline; AWS/Codex verification remains the next step.
 
 ## NEMT and Emergenzix
 
@@ -23,14 +23,27 @@ A research result must carry provenance and pass review before it informs a prod
 - SQLite-backed paper account, positions, and simulated order history
 - Server-side notional limit, available-cash checks, and no-short-selling validation
 - Responsive Next.js/React dashboard for strategy creation, sample backtests, paper orders, positions, and history
-- Synthetic sample OHLCV data for UI demonstration; no claim of live market data
+- Public spot OHLCV retrieval through CCXT for an explicit exchange allowlist, plus synthetic demo candles
+- Freqtrade source pinned as a Git submodule for evaluation as the mature strategy/backtesting/dry-run engine; its adapter is not yet wired into the current backtest endpoint
+- Dataset source, exchange, symbol, and timeframe persisted with backtest results
 - Automated backend tests and CI build/type-check workflows
 
 The backtest is a baseline implementation, not evidence of profitability. Paper orders use caller-supplied reference prices and do not represent exchange market fills.
 
+## Get the repository and upstream engine
+
+Clone the repository with the pinned Freqtrade source:
+
+```bash
+git clone --recurse-submodules https://github.com/huliye24/emergenzix.git
+cd emergenzix
+```
+
+If the repository is already cloned, initialize the upstream source with `git submodule update --init --recursive`. Freqtrade is kept as a separate source tree and should run in its own environment/container; its current upstream branch requires Python 3.12 or newer.
+
 ## Run the backend
 
-Requirements: Python 3.11 or newer.
+Requirements for the Emergenzix API: Python 3.11 or newer. CCXT is installed from `backend/requirements.txt`.
 
 ```bash
 cd backend
@@ -86,6 +99,7 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | --- | --- | --- |
 | GET | `/health` | Runtime health and safety mode |
 | GET | `/api/v1/overview` | Strategy, backtest, and paper-account summary |
+| GET | `/api/v1/market-data/ohlcv` | Fetch public OHLCV candles through CCXT; no exchange credentials required |
 | GET / POST | `/api/v1/strategies` | List or create strategies |
 | GET | `/api/v1/strategies/{id}` | Inspect one strategy |
 | POST | `/api/v1/backtests` | Run and persist a backtest |
@@ -100,7 +114,7 @@ Backtest requests supply ordered OHLCV bars with timezone-aware timestamps. Fees
 
 ## Safety boundaries
 
-- The API only provides **PAPER** execution; no exchange adapter or LIVE order endpoint exists in this slice.
+- The API only provides **PAPER** execution; the CCXT integration is read-only public market data, with no exchange order adapter or LIVE order endpoint.
 - Unknown or invalid requests are rejected; paper orders enforce notional limits and prohibit short selling.
 - API keys and exchange credentials are not required and must never be committed.
 - The initial SQLite setup is for local/single-process development. Reassess storage, authentication, monitoring, and operational controls before multi-user or production deployment.
@@ -111,6 +125,7 @@ Backtest requests supply ordered OHLCV bars with timezone-aware timestamps. Fees
 - [Product scope](docs/PRODUCT_SCOPE.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Upstream components and license boundaries](docs/UPSTREAM_COMPONENTS.md)
 - [Migration inventory](docs/MIGRATION_INVENTORY.md)
 - [ADR-001: backend baseline](docs/adr/ADR-001-product-backend-baseline.md)
 - [Strategy lifecycle](docs/STRATEGY_LIFECYCLE.md)
