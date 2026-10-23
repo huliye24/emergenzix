@@ -130,7 +130,7 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | GET | `/api/v1/datasets/{dataset_id}` | Retrieve an immutable dataset and its exact saved candles |
 | GET / POST | `/api/v1/strategies` | List or create strategies |
 | GET | `/api/v1/strategies/{id}` | Inspect one strategy |
-| POST | `/api/v1/backtests` | Run and persist a backtest |
+| POST | `/api/v1/backtests` | Run and persist a backtest from raw bars or a registered dataset ID |
 | GET | `/api/v1/backtests` | List recent backtests |
 | GET | `/api/v1/backtests/{id}` | Retrieve a saved backtest |
 | GET | `/api/v1/paper/account` | Inspect the simulated account |
@@ -138,7 +138,7 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | GET / POST | `/api/v1/paper/orders` | List or create paper orders |
 | GET | `/api/v1/paper/trades` | Inspect simulated fills |
 
-Backtest requests supply ordered OHLCV bars with timezone-aware timestamps. Fees and slippage are explicit request parameters and are included in the saved result.
+Backtest requests accept exactly one input source: ordered OHLCV bars with timezone-aware timestamps, or a registered `dataset_id`. Dataset-backed runs load the saved candle sequence server-side, reject a dataset whose symbol differs from the selected strategy, and persist the dataset ID, SHA-256 fingerprint, time range, and bar count in result provenance. Fees and slippage are explicit request parameters and are included in the saved result.
 
 ## Safety boundaries
 

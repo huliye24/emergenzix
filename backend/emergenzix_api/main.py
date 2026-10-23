@@ -16,7 +16,7 @@ from .backtesting import run_sma_crossover
 from .config import Settings
 from .database import Database
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
-from .schemas import BacktestCreate, DatasetCreate, PaperOrderCreate, StrategyCreate
+from .schemas import Bar, BacktestCreate, DatasetCreate, PaperOrderCreate, StrategyCreate
 
 
 def _now() -> str:
@@ -44,6 +44,11 @@ def _dataset_to_dict(row: Any, *, include_bars: bool = False) -> dict[str, Any]:
     if include_bars:
         result["bars"] = json.loads(row["bars_json"])
     return result
+
+
+def _symbol_key(symbol: str) -> str:
+    """Normalize common separator differences for strategy/dataset compatibility."""
+    return symbol.strip().upper().replace("/", "").replace("-", "").replace("_", "")
 
 
 def create_app(
@@ -312,10 +317,55 @@ def create_app(
             strategy = connection.execute(
                 "SELECT * FROM strategies WHERE id = ?", (payload.strategy_id,)
             ).fetchone()
+            dataset = (
+                connection.execute(
+                    "SELECT * FROM market_datasets WHERE id = ?", (payload.dataset_id,)
+                ).fetchone()
+                if payload.dataset_id is not None
+                else None
+            )
         if strategy is None:
             raise HTTPException(status_code=404, detail="Strategy not found")
 
-        if len(payload.bars) < int(strategy["slow_window"]) + 2:
+        data_provenance: dict[str, Any]
+        if payload.dataset_id is not None:
+            if dataset is None:
+                raise HTTPException(status_code=404, detail="Dataset not found")
+            if _symbol_key(dataset["symbol"]) != _symbol_key(strategy["symbol"]):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Dataset symbol does not match strategy symbol",
+                )
+            bars = [
+                Bar.model_validate(item)
+                for item in json.loads(dataset["bars_json"])
+            ]
+            data_provenance = {
+                "source": dataset["source"],
+                "exchange": dataset["exchange"],
+                "symbol": dataset["symbol"],
+                "timeframe": dataset["timeframe"],
+                "dataset_id": dataset["id"],
+                "dataset_sha256": dataset["content_sha256"],
+                "start_at": dataset["start_at"],
+                "end_at": dataset["end_at"],
+                "bars_count": int(dataset["bars_count"]),
+            }
+        else:
+            if payload.bars is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="bars are required when dataset_id is not provided",
+                )
+            bars = payload.bars
+            data_provenance = {
+                "source": payload.data_source,
+                "exchange": payload.data_exchange,
+                "symbol": payload.data_symbol,
+                "timeframe": payload.data_timeframe,
+            }
+
+        if len(bars) < int(strategy["slow_window"]) + 2:
             raise HTTPException(
                 status_code=422,
                 detail=(
@@ -326,7 +376,7 @@ def create_app(
 
         try:
             result = run_sma_crossover(
-                payload.bars,
+                bars,
                 fast_window=int(strategy["fast_window"]),
                 slow_window=int(strategy["slow_window"]),
                 initial_cash=payload.initial_cash,
@@ -349,12 +399,7 @@ def create_app(
                 "slow_window": int(strategy["slow_window"]),
             },
             "created_at": created_at,
-            "data_provenance": {
-                "source": payload.data_source,
-                "exchange": payload.data_exchange,
-                "symbol": payload.data_symbol,
-                "timeframe": payload.data_timeframe,
-            },
+            "data_provenance": data_provenance,
             **result,
         }
         with db.connection() as connection:
