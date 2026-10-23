@@ -80,6 +80,7 @@ def test_backtest_runs_and_is_persisted(client):
     assert result["final_equity"] > 0
     assert result["number_of_trades"] >= 1
     assert result["assumptions"]["execution"].startswith("signal at completed close")
+    assert result["data_provenance"]["source"] == "user_supplied"
 
     stored = client.get(f"/api/v1/backtests/{result['id']}")
     assert stored.status_code == 200
@@ -226,5 +227,43 @@ def test_public_market_data_endpoint_rejects_provider_input_errors(client, monke
     response = client.get(
         "/api/v1/market-data/ohlcv",
         params={"exchange": "binance", "symbol": "INVALID", "timeframe": "1h"},
+    )
+    assert response.status_code == 422
+
+
+
+def test_backtest_persists_ccxt_dataset_provenance(client):
+    strategy = _create_strategy(client)
+    response = client.post(
+        "/api/v1/backtests",
+        json={
+            "strategy_id": strategy["id"],
+            "bars": _bars([10, 9, 8, 9, 11, 13, 12, 10, 8, 7, 9, 12, 14, 13, 11]),
+            "data_source": "ccxt_public_ohlcv",
+            "data_exchange": "binance",
+            "data_symbol": "BTC/USDT",
+            "data_timeframe": "1h",
+        },
+    )
+    assert response.status_code == 201, response.text
+    provenance = response.json()["data_provenance"]
+    assert provenance == {
+        "source": "ccxt_public_ohlcv",
+        "exchange": "binance",
+        "symbol": "BTC/USDT",
+        "timeframe": "1h",
+    }
+
+
+def test_ccxt_backtest_requires_complete_provenance(client):
+    strategy = _create_strategy(client)
+    response = client.post(
+        "/api/v1/backtests",
+        json={
+            "strategy_id": strategy["id"],
+            "bars": _bars([10, 9, 8, 9, 11, 13, 12, 10, 8, 7, 9, 12, 14, 13, 11]),
+            "data_source": "ccxt_public_ohlcv",
+            "data_exchange": "binance",
+        },
     )
     assert response.status_code == 422
