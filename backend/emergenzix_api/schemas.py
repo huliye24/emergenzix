@@ -62,12 +62,21 @@ class BacktestCreate(StrictModel):
     initial_cash: float = Field(default=10_000.0, gt=0, le=1_000_000_000)
     fee_bps: float = Field(default=10.0, ge=0, le=1_000, allow_inf_nan=False)
     slippage_bps: float = Field(default=5.0, ge=0, le=1_000, allow_inf_nan=False)
+    data_source: Literal["user_supplied", "ccxt_public_ohlcv", "synthetic_demo"] = "user_supplied"
+    data_exchange: str | None = Field(default=None, min_length=1, max_length=32)
+    data_symbol: str | None = Field(default=None, min_length=3, max_length=30)
+    data_timeframe: Literal["1m", "5m", "15m", "30m", "1h", "4h", "1d"] | None = None
 
     @model_validator(mode="after")
     def validate_bar_order(self) -> "BacktestCreate":
         timestamps = [bar.timestamp for bar in self.bars]
         if any(current <= previous for previous, current in zip(timestamps, timestamps[1:])):
             raise ValueError("bars must be in strictly increasing timestamp order")
+        if self.data_source == "ccxt_public_ohlcv":
+            if not self.data_exchange or not self.data_symbol or not self.data_timeframe:
+                raise ValueError(
+                    "CCXT backtests must record data_exchange, data_symbol, and data_timeframe"
+                )
         return self
 
 
