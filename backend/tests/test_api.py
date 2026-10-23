@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from emergenzix_api.market_data import MarketDataUnavailable
+
 
 def _bars(closes: list[float]) -> list[dict[str, object]]:
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
