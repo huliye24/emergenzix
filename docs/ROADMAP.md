@@ -1,6 +1,6 @@
 # Emergenzix Roadmap
 
-This roadmap separates product readiness from research progress. Stages are gates, not calendar promises. Do not mark a stage complete without evidence in the repository.
+This roadmap separates product readiness from research progress. Stages are gates, not calendar promises. Do not mark a stage verified without evidence in the repository or CI.
 
 ## Phase 0 — Product boundary and repository bootstrap
 
@@ -9,31 +9,33 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [x] Create the independent public repository.
 - [x] Confirm GPL-3.0 at the repository root.
 - [x] Define product scope, security principles, and AI engineering rules.
-- [ ] Inventory the NEMT application code proposed for migration.
-- [ ] Record an ADR for the initial stack and migration boundary.
-- [ ] Create the first product implementation milestone from verified inventory.
+- [x] Inventory the NEMT application code proposed for migration.
+- [x] Record ADR-001 for the first backend baseline.
+- [x] Create the first product implementation milestone from the verified inventory.
 
-**Exit gate:** the team can explain which files move, which remain in NEMT, which dependencies are compatible, and how the new product will be tested.
+**Exit gate:** the team can explain which responsibilities belong in Emergenzix and NEMT, what the first backend supports, and what remains unimplemented.
 
 ## Phase 1 — Minimal application foundation
 
-**Goal:** establish a runnable, testable product shell without live trading.
+**Goal:** establish a runnable, testable product core without live trading.
 
-- [ ] Migrate or recreate only the approved minimal client and API foundation.
-- [ ] Add reproducible setup instructions and environment examples.
-- [ ] Add health checks and a basic automated test pipeline.
-- [ ] Add explicit DEMO mode and clear environment labeling.
-- [ ] Add a minimal responsive navigation and empty states.
-- [ ] Add CI checks for accidental secrets and unsafe configuration.
+- [x] Add a FastAPI backend, SQLite development persistence, and environment configuration.
+- [x] Add health and overview endpoints.
+- [x] Add strategy creation/listing and a first deterministic backtest implementation.
+- [x] Add paper-account, position, and simulated order workflows with server-side checks.
+- [x] Add automated API tests and a GitHub Actions workflow.
+- [ ] Confirm the CI run is green and repeat the test suite on the AWS development environment.
+- [ ] Add the first responsive product interface against the API contract.
+- [ ] Add a reviewed authentication and deployment design before any network exposure.
 
-**Exit gate:** a new contributor can run the product locally in DEMO mode using documented steps; tests pass and no exchange credentials are required.
+**Exit gate:** a new contributor can run the backend locally in PAPER mode, tests pass, and no exchange credentials are required.
 
 ## Phase 2 — Strategy and evaluation workflow
 
 **Goal:** make strategy candidates inspectable and reproducible.
 
-- [ ] Define strategy and backtest domain models.
-- [ ] Store versioned parameters and data references.
+- [ ] Add data import and explicit dataset provenance.
+- [ ] Store versioned strategy parameters and input-data references.
 - [ ] Display assumptions, transaction costs, drawdown, and data coverage.
 - [ ] Separate training/in-sample and validation/out-of-sample results.
 - [ ] Record the provenance of imported NEMT research evidence.
@@ -43,13 +45,13 @@ This roadmap separates product readiness from research progress. Stages are gate
 
 ## Phase 3 — Paper trading and risk controls
 
-**Goal:** test operational behavior without real funds.
+**Goal:** harden simulated operations before exchange integration.
 
-- [ ] Implement paper-trading sessions and explicit start/pause/stop controls.
-- [ ] Implement server-side order preview and risk validation.
-- [ ] Track orders, fills, positions, and simulated balances.
-- [ ] Test duplicate requests, partial fills, stale data, timeouts, and recovery.
-- [ ] Add an auditable record of rejected actions and reasons.
+- [ ] Add configurable paper portfolios and auditable account resets.
+- [ ] Test duplicate requests, concurrent orders, stale data, timeouts, and recovery.
+- [ ] Add explicit idempotency keys and richer risk-limit configuration.
+- [ ] Add marked-to-market portfolio valuation using a documented price source.
+- [ ] Add audit events for rejected actions and account changes.
 
 **Exit gate:** paper trading survives expected failure cases and cannot reach a live exchange adapter.
 
