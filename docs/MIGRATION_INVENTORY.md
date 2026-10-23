@@ -8,16 +8,16 @@ Source repository: [huliye24/NEMT-Simulator2](https://github.com/huliye24/NEMT-S
 
 | Source path | Observed responsibility | Initial decision | Notes |
 | --- | --- | --- | --- |
-| \`web/package.json\` | Next.js 16 / React 19 web application and build scripts | Adapt concepts; do not bulk-copy | Existing frontend is substantial and branded for NEMT. Emergenzix needs its own interface and navigation. |
-| \`web/src/app/page.tsx\` | Current dashboard entry; loads market state, symbols, report, and portfolio | Reuse API-contract ideas only | Imports the existing \`EmergentixHome\` component and NEMT data helpers. Product naming and data contracts need a deliberate rewrite. |
-| \`web/src/components/EmergentixHome.tsx\` | Existing dashboard UI | Review selectively later | Name and UI assumptions predate the independent Emergenzix repository; no file copied. |
-| \`web/src/lib/api.ts\` | Frontend API/data access | Review selectively later | Must be audited for mock/demo assumptions and server endpoints before any reuse. |
-| \`backend/trade_main.py\` | Existing API process entry point | Review selectively later | Uses Uvicorn and the existing \`trade_app\` package. |
-| \`backend/trade_app/main.py\` | Existing FastAPI application | Do not copy wholesale | Large application module with broader responsibilities than the initial Emergenzix core. |
-| \`backend/trade_app/accounts.py\`, \`auth.py\`, \`security.py\` | Account, authentication, and security logic | Security review required before reuse | Authentication and account handling must not be migrated without reviewing assumptions and tests. |
-| \`backend/trade_app/binance_spot.py\`, \`orders.py\`, \`risk.py\` | Exchange adapter, order workflows, and risk controls | Do not enable or copy blindly | These are high-impact execution paths. Emergenzix starts with isolated paper execution and no live exchange adapter. |
-| \`backend/tests/\` | Existing backend tests | Use as reference only | Tests are evidence about existing behavior, not proof of Emergenzix compatibility. |
-| \`backend/trade_requirements.txt\` | Existing API runtime dependencies | Use as a reference | Emergenzix declares its own minimal dependencies and tests. |
+| `web/package.json` | Next.js 16 / React 19 web application and build scripts | Adapt concepts; do not bulk-copy | Existing frontend is substantial and branded for NEMT. Emergenzix needs its own interface and navigation. |
+| `web/src/app/page.tsx` | Current dashboard entry; loads market state, symbols, report, and portfolio | Reuse API-contract ideas only | Imports the existing `EmergentixHome` component and NEMT data helpers. Product naming and data contracts need a deliberate rewrite. |
+| `web/src/components/EmergentixHome.tsx` | Existing dashboard UI | Review selectively later | Name and UI assumptions predate the independent Emergenzix repository; no file copied. |
+| `web/src/lib/api.ts` | Frontend API/data access | Review selectively later | Must be audited for mock/demo assumptions and server endpoints before any reuse. |
+| `backend/trade_main.py` | Existing API process entry point | Review selectively later | Uses Uvicorn and the existing `trade_app` package. |
+| `backend/trade_app/main.py` | Existing FastAPI application | Do not copy wholesale | Large application module with broader responsibilities than the initial Emergenzix core. |
+| `backend/trade_app/accounts.py`, `auth.py`, `security.py` | Account, authentication, and security logic | Security review required before reuse | Authentication and account handling must not be migrated without reviewing assumptions and tests. |
+| `backend/trade_app/binance_spot.py`, `orders.py`, `risk.py` | Exchange adapter, order workflows, and risk controls | Do not enable or copy blindly | These are high-impact execution paths. Emergenzix starts with isolated paper execution and no live exchange adapter. |
+| `backend/tests/` | Existing backend tests | Use as reference only | Tests are evidence about existing behavior, not proof of Emergenzix compatibility. |
+| `backend/trade_requirements.txt` | Existing API runtime dependencies | Use as a reference | Emergenzix declares its own minimal dependencies and tests. |
 
 ## Initial migration decision
 
