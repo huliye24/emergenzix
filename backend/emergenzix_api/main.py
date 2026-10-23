@@ -192,6 +192,12 @@ def create_app(
             "id": backtest_id,
             "strategy_id": payload.strategy_id,
             "symbol": strategy["symbol"],
+            "strategy": {
+                "name": strategy["name"],
+                "strategy_type": strategy["strategy_type"],
+                "fast_window": int(strategy["fast_window"]),
+                "slow_window": int(strategy["slow_window"]),
+            },
             "created_at": created_at,
             **result,
         }
