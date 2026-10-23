@@ -15,7 +15,7 @@ from . import __version__
 from .backtesting import run_sma_crossover
 from .config import Settings
 from .database import Database
-from .market_data import MarketDataUnavailable, fetch_public_ohlcv
+from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .schemas import BacktestCreate, DatasetCreate, PaperOrderCreate, StrategyCreate
 
 
@@ -122,6 +122,13 @@ def create_app(
     ) -> dict[str, Any]:
         """Persist validated OHLCV bars under a deterministic SHA-256 dataset ID."""
         db: Database = request.app.state.database
+        dataset_symbol = payload.symbol
+        if payload.source == "ccxt_public_ohlcv":
+            try:
+                dataset_symbol = normalize_symbol(payload.symbol)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
         canonical_bars = [
             {
                 "timestamp": bar.timestamp.astimezone(timezone.utc)
@@ -138,7 +145,7 @@ def create_app(
         canonical_payload = {
             "source": payload.source,
             "exchange": payload.exchange,
-            "symbol": payload.symbol,
+            "symbol": dataset_symbol,
             "timeframe": payload.timeframe,
             "bars": canonical_bars,
         }
@@ -172,7 +179,7 @@ def create_app(
                     dataset_id,
                     payload.source,
                     payload.exchange,
-                    payload.symbol,
+                    dataset_symbol,
                     payload.timeframe,
                     canonical_bars[0]["timestamp"],
                     canonical_bars[-1]["timestamp"],
