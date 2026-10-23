@@ -172,3 +172,59 @@ def test_order_cannot_be_linked_to_a_different_symbol_strategy(client):
         },
     )
     assert response.status_code == 422
+
+
+def test_public_market_data_endpoint_uses_provider_without_network(client, monkeypatch):
+    expected_bars = _bars([10, 11, 12, 13, 14, 15])
+
+    def fake_fetch_public_ohlcv(*, exchange_id, symbol, timeframe, limit):
+        assert exchange_id == "binance"
+        assert symbol == "BTCUSDT"
+        assert timeframe == "1h"
+        assert limit == 120
+        return {
+            "source": "ccxt_public_ohlcv",
+            "exchange": exchange_id,
+            "symbol": "BTC/USDT",
+            "timeframe": timeframe,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "bars_count": len(expected_bars),
+            "bars": expected_bars,
+            "limitations": [],
+        }
+
+    monkeypatch.setattr(
+        "emergenzix_api.main.fetch_public_ohlcv", fake_fetch_public_ohlcv
+    )
+    response = client.get(
+        "/api/v1/market-data/ohlcv",
+        params={
+            "exchange": "binance",
+            "symbol": "BTCUSDT",
+            "timeframe": "1h",
+            "limit": 120,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["source"] == "ccxt_public_ohlcv"
+    assert payload["symbol"] == "BTC/USDT"
+    assert payload["bars_count"] == 6
+
+
+def test_public_market_data_endpoint_rejects_provider_input_errors(client, monkeypatch):
+    def fake_fetch_public_ohlcv(**kwargs):
+        raise ValueError("unsupported market symbol")
+
+    monkeypatch.setattr(
+        "emergenzix.main.fetch_public_ohlcv", fake_fetch_public_ohlcv, raising=False
+    )
+    monkeypatch.setattr(
+        "emergenzix_api.main.fetch_public_ohlcv", fake_fetch_public_ohlcv
+    )
+    response = client.get(
+        "/api/v1/market-data/ohlcv",
+        params={"exchange": "binance", "symbol": "INVALID", "timeframe": "1h"},
+    )
+    assert response.status_code == 422
