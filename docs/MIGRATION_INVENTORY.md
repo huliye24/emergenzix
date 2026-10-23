@@ -41,5 +41,5 @@ Before moving any source code from NEMT, inspect the source repository's license
 
 1. Run the backend tests in CI and on the AWS development environment.
 2. Review the first implementation and address test findings.
-3. Decide the responsive web/PWA stack after the backend contract stabilizes.
+3. Verify the initial responsive Next.js dashboard build and API proxy against the backend.
 4. Review authentication, persistence, deployment, monitoring, and security requirements before exposing the service to the public internet.
