@@ -230,6 +230,93 @@ def test_strategy_comparison_rejects_duplicate_version_ids(client):
     assert response.status_code == 422
 
 
+def test_strategy_validation_uses_chronological_holdout_and_persists_result(client):
+    strategy = _create_strategy(client)
+    closes = [
+        10, 9, 8, 9, 11, 13, 12, 10, 8, 7,
+        9, 12, 14, 13, 11, 9, 8, 10, 12, 15,
+        14, 12, 10, 8, 9, 11, 14, 16, 15, 13,
+    ]
+    dataset = _register_quality_dataset(client, _bars(closes))
+    split_index = int(len(closes) * 0.7)
+
+    response = client.post(
+        "/api/v1/strategy-validations",
+        json={
+            "strategy_id": strategy["id"],
+            "strategy_version_id": strategy["current_version_id"],
+            "dataset_id": dataset["id"],
+            "train_fraction": 0.7,
+            "initial_cash": 12_000,
+            "fee_bps": 12,
+            "slippage_bps": 7,
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["data_provenance"]["dataset_id"] == dataset["id"]
+    assert result["data_provenance"]["dataset_sha256"] == dataset["sha256"]
+    assert result["strategy_version_id"] == strategy["current_version_id"]
+    assert result["strategy"]["parameters_sha256"]
+    assert result["split"]["method"] == "chronological"
+    assert result["split"]["split_index"] == split_index
+    assert result["split"]["in_sample"]["bars_count"] == split_index
+    assert result["split"]["out_of_sample"]["bars_count"] == len(closes) - split_index
+    assert result["in_sample"]["bars_count"] == split_index
+    assert result["out_of_sample"]["bars_count"] == len(closes) - split_index
+    assert result["configuration"] == {
+        "initial_cash": 12_000,
+        "fee_bps": 12,
+        "slippage_bps": 7,
+    }
+    assert result["in_sample"]["initial_cash"] == result["out_of_sample"]["initial_cash"]
+    assert "Do not use holdout results" in result["evaluation_protocol"]
+
+    stored = client.get(f"/api/v1/strategy-validations/{result['id']}")
+    assert stored.status_code == 200, stored.text
+    assert stored.json() == result
+
+
+def test_strategy_validation_rejects_too_short_holdout(client):
+    strategy = _create_strategy(client)
+    dataset = _register_quality_dataset(
+        client, _bars([10, 9, 8, 9, 11, 13, 12, 10, 8, 7])
+    )
+
+    response = client.post(
+        "/api/v1/strategy-validations",
+        json={
+            "strategy_id": strategy["id"],
+            "strategy_version_id": strategy["current_version_id"],
+            "dataset_id": dataset["id"],
+            "train_fraction": 0.9,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "at least 5 are required" in response.json()["detail"]
+
+
+def test_strategy_validation_rejects_version_from_another_strategy(client):
+    strategy = _create_strategy(client)
+    other_strategy = _create_strategy(client, symbol="ETHUSDT")
+    dataset = _register_quality_dataset(
+        client, _bars([10, 9, 8, 9, 11, 13, 12, 10, 8, 7, 9, 12, 14, 13, 11])
+    )
+
+    response = client.post(
+        "/api/v1/strategy-validations",
+        json={
+            "strategy_id": strategy["id"],
+            "strategy_version_id": other_strategy["current_version_id"],
+            "dataset_id": dataset["id"],
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_backtest_rejects_non_increasing_timestamps(client):
     strategy = _create_strategy(client)
     bars = _bars([10, 9, 8, 9, 11, 13])

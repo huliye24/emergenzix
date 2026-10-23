@@ -25,6 +25,7 @@ from .schemas import (
     PaperOrderCreate,
     StrategyComparisonCreate,
     StrategyCreate,
+    StrategyValidationCreate,
     StrategyVersionCreate,
 )
 
@@ -835,6 +836,203 @@ def create_app(
             ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="Strategy comparison not found")
+        return json.loads(row["result_json"])
+
+    @app.post(
+        "/api/v1/strategy-validations",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_strategy_validation(
+        payload: StrategyValidationCreate, request: Request
+    ) -> dict[str, Any]:
+        """Evaluate a pinned version on chronological in-sample and holdout periods."""
+        db: Database = request.app.state.database
+        with db.connection() as connection:
+            strategy = connection.execute(
+                "SELECT * FROM strategies WHERE id = ?", (payload.strategy_id,)
+            ).fetchone()
+            version = connection.execute(
+                "SELECT * FROM strategy_versions WHERE id = ?",
+                (payload.strategy_version_id,),
+            ).fetchone()
+            dataset = connection.execute(
+                "SELECT * FROM market_datasets WHERE id = ?", (payload.dataset_id,)
+            ).fetchone()
+
+        if strategy is None:
+            raise HTTPException(status_code=404, detail="Strategy not found")
+        if version is None:
+            raise HTTPException(status_code=404, detail="Strategy version not found")
+        if version["strategy_id"] != strategy["id"]:
+            raise HTTPException(
+                status_code=422,
+                detail="Strategy version does not belong to the selected strategy",
+            )
+        if version["strategy_type"] != "sma_crossover":
+            raise HTTPException(
+                status_code=422,
+                detail="The selected strategy type is not supported by this validation engine",
+            )
+        if dataset is None:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+        if _symbol_key(dataset["symbol"]) != _symbol_key(strategy["symbol"]):
+            raise HTTPException(
+                status_code=422,
+                detail="Dataset symbol does not match strategy symbol",
+            )
+
+        bars = [Bar.model_validate(item) for item in json.loads(dataset["bars_json"])]
+        split_index = int(len(bars) * payload.train_fraction)
+        train_bars = bars[:split_index]
+        holdout_bars_count = len(bars) - split_index
+        slow_window = int(version["slow_window"])
+        if len(train_bars) < slow_window + 2:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"The in-sample segment has {len(train_bars)} bars; "
+                    f"at least {slow_window + 2} are required"
+                ),
+            )
+        if holdout_bars_count < 5:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"The out-of-sample segment has {holdout_bars_count} bars; "
+                    "at least 5 are required"
+                ),
+            )
+
+        fast_window = int(version["fast_window"])
+        try:
+            in_sample_run = run_sma_crossover(
+                train_bars,
+                fast_window=fast_window,
+                slow_window=slow_window,
+                initial_cash=payload.initial_cash,
+                fee_bps=payload.fee_bps,
+                slippage_bps=payload.slippage_bps,
+            )
+            out_of_sample_run = run_sma_crossover(
+                bars,
+                fast_window=fast_window,
+                slow_window=slow_window,
+                initial_cash=payload.initial_cash,
+                fee_bps=payload.fee_bps,
+                slippage_bps=payload.slippage_bps,
+                evaluation_start_index=split_index,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        def compact_metrics(run: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "bars_count": run["bars_count"],
+                "initial_cash": run["initial_cash"],
+                "final_equity": run["final_equity"],
+                "total_return_pct": run["total_return_pct"],
+                "max_drawdown_pct": run["max_drawdown_pct"],
+                "number_of_trades": run["number_of_trades"],
+                "win_rate_pct": run["win_rate_pct"],
+                "benchmark_return_pct": run["benchmark_return_pct"],
+            }
+
+        validation_id = str(uuid.uuid4())
+        created_at = _now()
+        result_payload = {
+            "id": validation_id,
+            "created_at": created_at,
+            "strategy_id": strategy["id"],
+            "strategy_version_id": version["id"],
+            "strategy": {
+                "name": strategy["name"],
+                "strategy_type": version["strategy_type"],
+                "version": int(version["version"]),
+                "parameters": json.loads(version["parameters_json"]),
+                "parameters_sha256": version["parameters_sha256"],
+            },
+            "data_provenance": {
+                "source": dataset["source"],
+                "exchange": dataset["exchange"],
+                "symbol": dataset["symbol"],
+                "timeframe": dataset["timeframe"],
+                "dataset_id": dataset["id"],
+                "dataset_sha256": dataset["content_sha256"],
+                "start_at": dataset["start_at"],
+                "end_at": dataset["end_at"],
+                "bars_count": int(dataset["bars_count"]),
+            },
+            "split": {
+                "method": "chronological",
+                "train_fraction_requested": payload.train_fraction,
+                "train_fraction_actual": round(split_index / len(bars), 6),
+                "split_index": split_index,
+                "in_sample": {
+                    "start_at": bars[0].timestamp.isoformat(),
+                    "end_at": bars[split_index - 1].timestamp.isoformat(),
+                    "bars_count": split_index,
+                },
+                "out_of_sample": {
+                    "start_at": bars[split_index].timestamp.isoformat(),
+                    "end_at": bars[-1].timestamp.isoformat(),
+                    "bars_count": holdout_bars_count,
+                },
+                "warmup_policy": (
+                    "Pre-split candles initialize indicators only; out-of-sample "
+                    "trading and scored metrics begin at the first holdout candle. "
+                    "No position is carried from the in-sample run."
+                ),
+            },
+            "configuration": {
+                "initial_cash": payload.initial_cash,
+                "fee_bps": payload.fee_bps,
+                "slippage_bps": payload.slippage_bps,
+            },
+            "evaluation_protocol": (
+                "The selected strategy version is fixed for both periods. "
+                "Do not use holdout results to choose or revise parameters."
+            ),
+            "assumptions": in_sample_run["assumptions"],
+            "in_sample": compact_metrics(in_sample_run),
+            "out_of_sample": compact_metrics(out_of_sample_run),
+        }
+        with db.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO strategy_validations
+                    (id, strategy_id, strategy_version_id, dataset_id,
+                     train_fraction, split_index, initial_cash, fee_bps,
+                     slippage_bps, result_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    validation_id,
+                    strategy["id"],
+                    version["id"],
+                    dataset["id"],
+                    payload.train_fraction,
+                    split_index,
+                    payload.initial_cash,
+                    payload.fee_bps,
+                    payload.slippage_bps,
+                    json.dumps(result_payload, separators=(",", ":"), allow_nan=False),
+                    created_at,
+                ),
+            )
+        return result_payload
+
+    @app.get("/api/v1/strategy-validations/{validation_id}")
+    def get_strategy_validation(
+        validation_id: str, request: Request
+    ) -> dict[str, Any]:
+        db: Database = request.app.state.database
+        with db.connection() as connection:
+            row = connection.execute(
+                "SELECT result_json FROM strategy_validations WHERE id = ?",
+                (validation_id,),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Strategy validation not found")
         return json.loads(row["result_json"])
 
     @app.get("/api/v1/backtests")
