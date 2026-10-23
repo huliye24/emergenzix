@@ -58,9 +58,60 @@ def test_strategy_validation_and_persistence(client):
     assert invalid.status_code == 422
 
     strategy = _create_strategy(client)
+    assert strategy["current_version"] == 1
+    assert strategy["current_version_id"]
+
+    versions = client.get(f"/api/v1/strategies/{strategy['id']}/versions")
+    assert versions.status_code == 200
+    assert len(versions.json()) == 1
+    assert versions.json()[0]["version"] == 1
+    assert versions.json()[0]["parameters"] == {
+        "strategy_type": "sma_crossover",
+        "fast_window": 2,
+        "slow_window": 3,
+    }
+
     listed = client.get("/api/v1/strategies")
     assert listed.status_code == 200
     assert any(item["id"] == strategy["id"] for item in listed.json())
+
+
+def test_strategy_versions_are_immutable_and_parameters_advance(client):
+    strategy = _create_strategy(client)
+    first = client.get(
+        f"/api/v1/strategies/{strategy['id']}/versions"
+    ).json()[0]
+
+    created = client.post(
+        f"/api/v1/strategies/{strategy['id']}/versions",
+        json={"fast_window": 4, "slow_window": 6},
+    )
+    assert created.status_code == 201, created.text
+    second = created.json()
+    assert second["version"] == 2
+    assert second["id"] != first["id"]
+    assert second["parameters"]["fast_window"] == 4
+    assert second["parameters"]["slow_window"] == 6
+    assert second["parameters_sha256"] != first["parameters_sha256"]
+
+    versions = client.get(
+        f"/api/v1/strategies/{strategy['id']}/versions"
+    ).json()
+    assert [item["version"] for item in versions] == [1, 2]
+    assert versions[0]["parameters"]["fast_window"] == 2
+    assert versions[0]["parameters"]["slow_window"] == 3
+
+    current = client.get(f"/api/v1/strategies/{strategy['id']}").json()
+    assert current["fast_window"] == 4
+    assert current["slow_window"] == 6
+    assert current["current_version"] == 2
+    assert current["current_version_id"] == second["id"]
+
+    duplicate = client.post(
+        f"/api/v1/strategies/{strategy['id']}/versions",
+        json={"fast_window": 4, "slow_window": 6},
+    )
+    assert duplicate.status_code == 409
 
 
 def test_backtest_runs_and_is_persisted(client):
@@ -83,6 +134,11 @@ def test_backtest_runs_and_is_persisted(client):
     assert result["number_of_trades"] >= 1
     assert result["assumptions"]["execution"].startswith("signal at completed close")
     assert result["data_provenance"]["source"] == "user_supplied"
+    assert result["strategy_version_id"] == strategy["current_version_id"]
+    assert result["strategy"]["version"] == 1
+    assert result["strategy"]["parameters"]["fast_window"] == 2
+    assert result["strategy"]["parameters"]["slow_window"] == 3
+    assert result["strategy"]["parameters_sha256"]
 
     stored = client.get(f"/api/v1/backtests/{result['id']}")
     assert stored.status_code == 200
@@ -485,3 +541,44 @@ def test_ttl_cache_evicts_least_recently_used_entry():
     cache.get_or_create("b", factory("b"))
 
     assert calls == ["a", "b", "c", "b"]
+
+
+
+def test_backtest_can_reproduce_an_older_strategy_version(client):
+    strategy = _create_strategy(client)
+    first_version_id = strategy["current_version_id"]
+    created = client.post(
+        f"/api/v1/strategies/{strategy['id']}/versions",
+        json={"fast_window": 4, "slow_window": 6},
+    )
+    assert created.status_code == 201, created.text
+
+    response = client.post(
+        "/api/v1/backtests",
+        json={
+            "strategy_id": strategy["id"],
+            "strategy_version_id": first_version_id,
+            "bars": _bars([10, 9, 8, 9, 11, 13, 12, 10, 8, 7, 9, 12, 14, 13, 11]),
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["strategy_version_id"] == first_version_id
+    assert result["strategy"]["version"] == 1
+    assert result["strategy"]["fast_window"] == 2
+    assert result["strategy"]["slow_window"] == 3
+
+
+def test_backtest_rejects_a_version_from_another_strategy(client):
+    first = _create_strategy(client)
+    second = _create_strategy(client, symbol="ETHUSDT")
+    response = client.post(
+        "/api/v1/backtests",
+        json={
+            "strategy_id": first["id"],
+            "strategy_version_id": second["current_version_id"],
+            "bars": _bars([10, 9, 8, 9, 11, 13, 12, 10, 8, 7, 9, 12, 14, 13, 11]),
+        },
+    )
+    assert response.status_code == 422

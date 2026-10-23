@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -53,9 +56,23 @@ class Database:
                     CHECK (slow_window > fast_window)
                 );
 
+                CREATE TABLE IF NOT EXISTS strategy_versions (
+                    id TEXT PRIMARY KEY,
+                    strategy_id TEXT NOT NULL REFERENCES strategies(id) ON DELETE CASCADE,
+                    version INTEGER NOT NULL CHECK (version >= 1),
+                    strategy_type TEXT NOT NULL,
+                    fast_window INTEGER NOT NULL CHECK (fast_window >= 2),
+                    slow_window INTEGER NOT NULL CHECK (slow_window > fast_window),
+                    parameters_json TEXT NOT NULL,
+                    parameters_sha256 TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE (strategy_id, version)
+                );
+
                 CREATE TABLE IF NOT EXISTS backtests (
                     id TEXT PRIMARY KEY,
                     strategy_id TEXT NOT NULL REFERENCES strategies(id),
+                    strategy_version_id TEXT REFERENCES strategy_versions(id),
                     symbol TEXT NOT NULL,
                     bars_count INTEGER NOT NULL,
                     initial_cash REAL NOT NULL,
@@ -111,6 +128,8 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE INDEX IF NOT EXISTS idx_strategy_versions_strategy_version
+                    ON strategy_versions(strategy_id, version DESC);
                 CREATE INDEX IF NOT EXISTS idx_market_datasets_created_at
                     ON market_datasets(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_backtests_created_at
@@ -119,7 +138,69 @@ class Database:
                     ON paper_orders(created_at DESC);
                 """
             )
+
+            # Existing databases were created before strategy versions existed.
+            # Add the nullable provenance column without rewriting historical runs:
+            # their exact parameter version cannot be inferred safely.
+            backtest_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(backtests)")
+            }
+            if "strategy_version_id" not in backtest_columns:
+                connection.execute(
+                    "ALTER TABLE backtests ADD COLUMN strategy_version_id "
+                    "TEXT REFERENCES strategy_versions(id)"
+                )
+
             from datetime import datetime, timezone
+
+            # Backfill each legacy strategy with a stable version-1 snapshot.
+            # The deterministic ID makes initialization idempotent across restarts.
+            legacy_strategies = connection.execute(
+                "SELECT * FROM strategies"
+            ).fetchall()
+            for strategy in legacy_strategies:
+                existing_version = connection.execute(
+                    "SELECT id FROM strategy_versions WHERE strategy_id = ? LIMIT 1",
+                    (strategy["id"],),
+                ).fetchone()
+                if existing_version is not None:
+                    continue
+
+                parameters = {
+                    "strategy_type": strategy["strategy_type"],
+                    "fast_window": int(strategy["fast_window"]),
+                    "slow_window": int(strategy["slow_window"]),
+                }
+                parameters_json = json.dumps(
+                    parameters, sort_keys=True, separators=(",", ":")
+                )
+                parameters_sha256 = hashlib.sha256(
+                    parameters_json.encode("utf-8")
+                ).hexdigest()
+                version_id = str(
+                    uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"emergenzix:strategy:{strategy['id']}:version:1:{parameters_sha256}",
+                    )
+                )
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO strategy_versions
+                        (id, strategy_id, version, strategy_type, fast_window,
+                         slow_window, parameters_json, parameters_sha256, created_at)
+                    VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        version_id,
+                        strategy["id"],
+                        strategy["strategy_type"],
+                        int(strategy["fast_window"]),
+                        int(strategy["slow_window"]),
+                        parameters_json,
+                        parameters_sha256,
+                        strategy["created_at"],
+                    ),
+                )
 
             connection.execute(
                 """
