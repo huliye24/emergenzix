@@ -9,7 +9,10 @@ The first implementation uses Python 3.11+ and FastAPI for the product API, with
 Implemented on the initial backend branch:
 
 - Strategy definitions and listing
-- A deterministic long-only SMA-crossover backtest
+- A deterministic long-only SMA-crossover backtest (temporary compatibility baseline)
+- Public spot OHLCV retrieval through CCXT for an explicit exchange allowlist
+- Backtest result JSON that records data source, exchange, symbol, and timeframe
+- Freqtrade source pinned as a Git submodule; its engine is not yet wired into the backtest API
 - Persisted backtest metrics, assumptions, equity curve, and closed trades
 - Paper account, simulated positions, and paper-order history
 - Server-side paper-order notional limit, cash check, and prohibition of short selling
@@ -29,8 +32,12 @@ Emergenzix Product
   responsive Next.js/React client (initial slice)
        |
   FastAPI product API (initial slice)
-       |
-  strategy + backtest + paper-account persistence
+       |                         \\
+  strategy + result storage      CCXT public OHLCV provider
+       |                         /
+  paper-account ledger
+
+  Separate optional upstream engine: vendor/freqtrade (pinned submodule)
        |
   paper risk checks
        |
@@ -49,12 +56,13 @@ The API currently has no authentication and must not be exposed directly to the 
 
 ## 4. Domain boundaries
 
-- **Market data:** source, timestamp, freshness, completeness, and quality state. Dataset import is not yet implemented.
+- **Market data:** public OHLCV retrieval is available through CCXT. The response records source/exchange/symbol/timeframe, timestamps are UTC, and malformed candles are discarded. Persistent dataset versioning, caching, freshness checks, and complete provenance linkage to immutable datasets remain planned.
 - **Strategy:** versioned parameters and provenance. The first strategy type is SMA crossover.
 - **Evaluation:** reproducible backtest configuration, costs, metrics, and limitations.
 - **Portfolio and orders:** paper-only account, positions, and simulated filled orders.
 - **Risk:** server-side notional limits, available-cash checks, and prohibition of short selling in the first paper workflow.
-- **Execution:** no exchange execution is implemented.
+- **Execution:** no exchange execution is implemented. CCXT is used only for public market-data requests; no private endpoint or order-submission method is called.
+- **Upstream engine:** Freqtrade is pinned under `vendor/freqtrade`; it is an isolated source dependency only and is not yet the active backtest engine.
 - **Audit:** saved backtests and paper-order records exist; a general audit-event subsystem is still planned.
 
 ## 5. NEMT integration
@@ -93,12 +101,13 @@ Planned areas include structured redacted logs, request correlation IDs, idempot
 
 ## 9. Decisions still required
 
-1. Whether to extend the responsive Next.js interface into an installable PWA.
-2. Authentication and deployment model.
-3. Production database and migration approach.
-4. Dataset import format and research-artifact provenance.
-5. Paper-account reset and idempotency semantics.
-6. First exchange TESTNET adapter and acceptance boundary.
-7. Whether LIVE trading should ever be enabled.
+1. Implement and verify a Freqtrade adapter in an isolated Python 3.12+ environment or container.
+2. Whether to extend the responsive Next.js interface into an installable PWA.
+3. Authentication and deployment model.
+4. Production database and migration approach.
+5. Dataset import format, immutable dataset identifiers, and research-artifact provenance.
+6. Paper-account reset and idempotency semantics.
+7. First exchange TESTNET adapter and acceptance boundary.
+8. Whether LIVE trading should ever be enabled.
 
 Each lasting architectural decision should be recorded in `docs/adr/` and linked from the roadmap.
