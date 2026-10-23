@@ -19,7 +19,7 @@ The immediate objective is to create a small, testable product core that can be 
 5. Execute backtest signals on the next bar's open after the signal bar has completed; document fees, slippage, and end-of-series position closing in the result.
 6. Keep all exchange connectivity out of this initial implementation. The API reports `live_trading_enabled: false`; no live order endpoint is provided.
 7. Use a small, independent implementation instead of copying the NEMT application wholesale. Review selected source modules later, one at a time, with explicit license and security checks.
-8. Defer the frontend framework decision until the API contract and initial backend behavior have been tested. The target remains a responsive, mobile-first product interface.
+8. Use Next.js 16 and React 19 for the initial responsive dashboard, with Next.js server-side rewrites to the FastAPI API. Treat the UI as an initial development interface; verify type-check/build and AWS connectivity before expanding it.
 9. Use GitHub Actions for fast regression checks and the AWS development environment for the user's additional integration/runtime testing.
 
 ## Alternatives considered
