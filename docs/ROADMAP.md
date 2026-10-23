@@ -41,7 +41,8 @@ This roadmap separates product readiness from research progress. Stages are gate
 
 - [x] Add public OHLCV retrieval through CCXT with bounded exchange/timeframe/limit inputs.
 - [x] Persist source, exchange, symbol, and timeframe metadata with backtest results.
-- [ ] Add cached dataset import, immutable dataset identifiers, and freshness/completeness checks.
+- [x] Add content-addressed immutable OHLCV dataset registration and retrieval with canonical SHA-256 identifiers.
+- [ ] Add market-data caching, freshness/completeness checks, and gap detection.
 - [ ] Store versioned strategy parameters and input-data references.
 - [ ] Display assumptions, transaction costs, drawdown, and data coverage.
 - [ ] Separate training/in-sample and validation/out-of-sample results.
