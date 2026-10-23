@@ -14,10 +14,10 @@ The immediate objective is to create a small, testable product core that can be 
 
 1. Implement the first backend slice in Python 3.11+ using FastAPI.
 2. Use SQLite for the initial local/development persistence layer. Revisit PostgreSQL before multi-user or production deployment.
-3. Keep application code under \`backend/emergenzix_api/\` and automated tests under \`backend/tests/\`.
+3. Keep application code under `backend/emergenzix_api/` and automated tests under `backend/tests/`.
 4. Provide strategy management, a deterministic SMA-crossover backtest, backtest history, a paper account, simulated positions, and risk-limited paper orders.
 5. Execute backtest signals on the next bar's open after the signal bar has completed; document fees, slippage, and end-of-series position closing in the result.
-6. Keep all exchange connectivity out of this initial implementation. The API reports \`live_trading_enabled: false\`; no live order endpoint is provided.
+6. Keep all exchange connectivity out of this initial implementation. The API reports `live_trading_enabled: false`; no live order endpoint is provided.
 7. Use a small, independent implementation instead of copying the NEMT application wholesale. Review selected source modules later, one at a time, with explicit license and security checks.
 8. Defer the frontend framework decision until the API contract and initial backend behavior have been tested. The target remains a responsive, mobile-first product interface.
 9. Use GitHub Actions for fast regression checks and the AWS development environment for the user's additional integration/runtime testing.
@@ -47,7 +47,7 @@ Rejected. Exchange integration adds credential, order-state, reconciliation, and
 
 ## Verification plan
 
-- Run \`python -m compileall -q emergenzix_api tests\`.
-- Run \`pytest -q\` from the \`backend/\` directory.
+- Run `python -m compileall -q emergenzix_api tests`.
+- Run `pytest -q` from the `backend/` directory.
 - Verify health, strategy validation, backtest persistence, order limits, buy/sell accounting, and no-short-selling behavior.
 - Repeat tests in the AWS development environment and record the observed output before treating the baseline as verified.
