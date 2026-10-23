@@ -145,6 +145,91 @@ def test_backtest_runs_and_is_persisted(client):
     assert stored.json()["id"] == result["id"]
 
 
+def test_strategy_comparison_uses_same_dataset_and_persists_result(client):
+    strategy = _create_strategy(client)
+    first_version_id = strategy["current_version_id"]
+    second_response = client.post(
+        f"/api/v1/strategies/{strategy['id']}/versions",
+        json={"fast_window": 4, "slow_window": 6},
+    )
+    assert second_response.status_code == 201, second_response.text
+    second_version_id = second_response.json()["id"]
+    closes = [10, 9, 8, 9, 11, 13, 12, 10, 8, 7, 9, 12, 14, 13, 11]
+    dataset = _register_quality_dataset(client, _bars(closes), timeframe="1h")
+
+    response = client.post(
+        "/api/v1/strategy-comparisons",
+        json={
+            "strategy_id": strategy["id"],
+            "strategy_version_ids": [first_version_id, second_version_id],
+            "dataset_id": dataset["id"],
+            "initial_cash": 12_000,
+            "fee_bps": 12,
+            "slippage_bps": 7,
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["data_provenance"]["dataset_id"] == dataset["id"]
+    assert result["data_provenance"]["dataset_sha256"] == dataset["sha256"]
+    assert result["configuration"] == {
+        "initial_cash": 12_000,
+        "fee_bps": 12,
+        "slippage_bps": 7,
+    }
+    assert [item["strategy_version_id"] for item in result["results"]] == [
+        first_version_id,
+        second_version_id,
+    ]
+    assert [item["version"] for item in result["results"]] == [1, 2]
+    assert [item["parameters"]["fast_window"] for item in result["results"]] == [2, 4]
+    assert all(item["bars_count"] == len(closes) for item in result["results"])
+    assert all(item["parameters_sha256"] for item in result["results"])
+
+    stored = client.get(f"/api/v1/strategy-comparisons/{result['id']}")
+    assert stored.status_code == 200, stored.text
+    assert stored.json() == result
+
+
+def test_strategy_comparison_rejects_versions_from_another_strategy(client):
+    strategy = _create_strategy(client)
+    other_strategy = _create_strategy(client, symbol="ETHUSDT")
+    dataset = _register_quality_dataset(
+        client, _bars([10, 9, 8, 9, 11, 13, 12, 10, 8, 7, 9, 12, 14, 13, 11])
+    )
+
+    response = client.post(
+        "/api/v1/strategy-comparisons",
+        json={
+            "strategy_id": strategy["id"],
+            "strategy_version_ids": [
+                strategy["current_version_id"],
+                other_strategy["current_version_id"],
+            ],
+            "dataset_id": dataset["id"],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_strategy_comparison_rejects_duplicate_version_ids(client):
+    strategy = _create_strategy(client)
+    response = client.post(
+        "/api/v1/strategy-comparisons",
+        json={
+            "strategy_id": strategy["id"],
+            "strategy_version_ids": [
+                strategy["current_version_id"],
+                strategy["current_version_id"],
+            ],
+            "dataset_id": "a" * 64,
+        },
+    )
+    assert response.status_code == 422
+
+
 def test_backtest_rejects_non_increasing_timestamps(client):
     strategy = _create_strategy(client)
     bars = _bars([10, 9, 8, 9, 11, 13])

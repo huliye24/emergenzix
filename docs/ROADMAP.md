@@ -47,6 +47,7 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [ ] Add a bounded process-local TTL cache for public OHLCV requests (implementation in PR; verification pending).
 - [ ] Add a dataset quality report for interval gaps, irregular timestamps, coverage, and freshness diagnostics (implementation in PR; verification pending).
 - [ ] Store versioned strategy parameters and input-data references (parameter snapshots implemented in PR; verification pending).
+- [ ] Compare strategy versions on one immutable dataset and persist comparison provenance (implementation in PR; verification pending).
 - [ ] Display assumptions, transaction costs, drawdown, and data coverage.
 - [ ] Separate training/in-sample and validation/out-of-sample results.
 - [ ] Record the provenance of imported NEMT research evidence.

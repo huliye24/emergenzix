@@ -152,6 +152,26 @@ class BacktestCreate(StrictModel):
         return self
 
 
+class StrategyComparisonCreate(StrictModel):
+    """Compare multiple immutable versions on one registered dataset."""
+
+    strategy_id: str = Field(min_length=1, max_length=64)
+    strategy_version_ids: list[str] = Field(min_length=2, max_length=10)
+    dataset_id: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    initial_cash: float = Field(default=10_000.0, gt=0, le=1_000_000_000)
+    fee_bps: float = Field(default=10.0, ge=0, le=1_000, allow_inf_nan=False)
+    slippage_bps: float = Field(default=5.0, ge=0, le=1_000, allow_inf_nan=False)
+
+    @field_validator("strategy_version_ids")
+    @classmethod
+    def validate_version_ids(cls, values: list[str]) -> list[str]:
+        if any(not value or value.strip() != value or len(value) > 64 for value in values):
+            raise ValueError("strategy_version_ids must contain non-empty IDs of at most 64 characters")
+        if len(set(values)) != len(values):
+            raise ValueError("strategy_version_ids must be unique")
+        return values
+
+
 class PaperOrderCreate(StrictModel):
     symbol: str = Field(pattern=SYMBOL_PATTERN)
     side: Literal["BUY", "SELL"]

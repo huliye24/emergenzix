@@ -100,6 +100,18 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS strategy_comparisons (
+                    id TEXT PRIMARY KEY,
+                    strategy_id TEXT NOT NULL REFERENCES strategies(id),
+                    dataset_id TEXT NOT NULL REFERENCES market_datasets(id),
+                    strategy_version_ids_json TEXT NOT NULL,
+                    initial_cash REAL NOT NULL CHECK (initial_cash > 0),
+                    fee_bps REAL NOT NULL CHECK (fee_bps >= 0),
+                    slippage_bps REAL NOT NULL CHECK (slippage_bps >= 0),
+                    result_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS paper_account (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     cash REAL NOT NULL,
@@ -134,6 +146,8 @@ class Database:
                     ON market_datasets(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_backtests_created_at
                     ON backtests(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_strategy_comparisons_created_at
+                    ON strategy_comparisons(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_paper_orders_created_at
                     ON paper_orders(created_at DESC);
                 """
