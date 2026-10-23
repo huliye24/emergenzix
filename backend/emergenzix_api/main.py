@@ -18,7 +18,14 @@ from .dataset_quality import build_dataset_quality_report
 from .database import Database
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
-from .schemas import Bar, BacktestCreate, DatasetCreate, PaperOrderCreate, StrategyCreate
+from .schemas import (
+    Bar,
+    BacktestCreate,
+    DatasetCreate,
+    PaperOrderCreate,
+    StrategyCreate,
+    StrategyVersionCreate,
+)
 
 
 def _now() -> str:

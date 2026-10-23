@@ -582,3 +582,85 @@ def test_backtest_rejects_a_version_from_another_strategy(client):
         },
     )
     assert response.status_code == 422
+
+
+
+def test_database_backfills_legacy_strategy_version_without_guessing_old_backtests(tmp_path):
+    import sqlite3
+
+    from emergenzix_api.database import Database
+
+    db_path = tmp_path / "legacy.db"
+    connection = sqlite3.connect(db_path)
+    connection.executescript(
+        """
+        CREATE TABLE strategies (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            strategy_type TEXT NOT NULL,
+            fast_window INTEGER NOT NULL,
+            slow_window INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE backtests (
+            id TEXT PRIMARY KEY,
+            strategy_id TEXT NOT NULL REFERENCES strategies(id),
+            symbol TEXT NOT NULL,
+            bars_count INTEGER NOT NULL,
+            initial_cash REAL NOT NULL,
+            final_equity REAL NOT NULL,
+            total_return_pct REAL NOT NULL,
+            max_drawdown_pct REAL NOT NULL,
+            number_of_trades INTEGER NOT NULL,
+            win_rate_pct REAL NOT NULL,
+            benchmark_return_pct REAL NOT NULL,
+            result_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        INSERT INTO strategies
+            (id, name, symbol, strategy_type, fast_window, slow_window,
+             status, created_at, updated_at)
+        VALUES
+            ('legacy-strategy', 'Legacy SMA', 'BTCUSDT', 'sma_crossover',
+             2, 3, 'draft', '2026-01-01T00:00:00+00:00',
+             '2026-01-01T00:00:00+00:00');
+
+        INSERT INTO backtests
+            (id, strategy_id, symbol, bars_count, initial_cash, final_equity,
+             total_return_pct, max_drawdown_pct, number_of_trades, win_rate_pct,
+             benchmark_return_pct, result_json, created_at)
+        VALUES
+            ('legacy-backtest', 'legacy-strategy', 'BTCUSDT', 5, 10000, 10100,
+             1, 0, 1, 100, 0, '{}', '2026-01-02T00:00:00+00:00');
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    Database(str(db_path))
+
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+    version = connection.execute(
+        "SELECT * FROM strategy_versions WHERE strategy_id = ?",
+        ("legacy-strategy",),
+    ).fetchone()
+    old_backtest = connection.execute(
+        "SELECT * FROM backtests WHERE id = ?", ("legacy-backtest",)
+    ).fetchone()
+    columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(backtests)")
+    }
+    connection.close()
+
+    assert version["version"] == 1
+    assert version["fast_window"] == 2
+    assert version["slow_window"] == 3
+    assert version["parameters_sha256"]
+    assert "strategy_version_id" in columns
+    assert old_backtest["strategy_version_id"] is None
