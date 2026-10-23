@@ -26,24 +26,23 @@ This is the first vertical slice, not a claim of production readiness.
 NEMT Research
   theory / datasets / MATLAB / GPU / evaluation evidence
                     |
-        versioned, reviewed strategy artifacts
+        reviewed, versioned research artifacts
                     v
 Emergenzix Product
-  responsive Next.js/React client (initial slice)
-       |
-  FastAPI product API (initial slice)
-       |                         \\
-  strategy + result storage      CCXT public OHLCV provider
-       |                         /
-  paper-account ledger
+  Next.js / React client
+          |
+     FastAPI API
+          |
+   +------+--------------------+
+   |                           |
+strategy/backtest/paper DB   CCXT public OHLCV
+   |                           |
+paper-only ledger          public exchange data
 
-  Separate optional upstream engine: vendor/freqtrade (pinned submodule)
-       |
-  paper risk checks
-       |
-  simulated order ledger
+Separate upstream source (not yet wired into the API):
+  vendor/freqtrade -> future isolated backtest / dry-run adapter
 
-  No exchange adapter or LIVE order endpoint in the initial slice.
+No exchange order execution or LIVE endpoint is enabled.
 ```
 
 This is a logical diagram; planned components are not necessarily implemented.
