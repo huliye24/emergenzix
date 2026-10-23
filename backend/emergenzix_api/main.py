@@ -17,6 +17,7 @@ from .config import Settings
 from .dataset_quality import build_dataset_quality_report
 from .database import Database
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
+from .market_data_cache import TTLCache
 from .schemas import Bar, BacktestCreate, DatasetCreate, PaperOrderCreate, StrategyCreate
 
 
@@ -79,6 +80,10 @@ def create_app(
         version=__version__,
     )
     app.state.database = database
+    app.state.market_data_cache = TTLCache(
+        ttl_seconds=settings.market_data_cache_ttl_seconds,
+        max_entries=settings.market_data_cache_max_entries,
+    )
     app.state.max_order_notional = (
         max_order_notional
         if max_order_notional is not None
@@ -111,11 +116,17 @@ def create_app(
     ) -> dict[str, Any]:
         """Fetch public exchange OHLCV candles. This route cannot place orders."""
         try:
-            return fetch_public_ohlcv(
-                exchange_id=exchange,
-                symbol=symbol,
-                timeframe=timeframe,
-                limit=limit,
+            normalized_symbol = normalize_symbol(symbol)
+            cache_key = (exchange, normalized_symbol, timeframe, limit)
+            cache: TTLCache = request.app.state.market_data_cache
+            return cache.get_or_create(
+                cache_key,
+                lambda: fetch_public_ohlcv(
+                    exchange_id=exchange,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    limit=limit,
+                ),
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

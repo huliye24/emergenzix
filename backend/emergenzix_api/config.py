@@ -18,6 +18,8 @@ class Settings:
     initial_paper_cash: float = 100_000.0
     max_order_notional: float = 5_000.0
     paper_fee_bps: float = 10.0
+    market_data_cache_ttl_seconds: int = 30
+    market_data_cache_max_entries: int = 256
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -31,6 +33,12 @@ class Settings:
                 "EMERGENZIX_MAX_ORDER_NOTIONAL", 5_000.0
             ),
             paper_fee_bps=_non_negative_float("EMERGENZIX_PAPER_FEE_BPS", 10.0),
+            market_data_cache_ttl_seconds=_non_negative_int(
+                "EMERGENZIX_MARKET_DATA_CACHE_TTL_SECONDS", 30
+            ),
+            market_data_cache_max_entries=_positive_int(
+                "EMERGENZIX_MARKET_DATA_CACHE_MAX_ENTRIES", 256
+            ),
         )
 
 
@@ -45,4 +53,19 @@ def _non_negative_float(name: str, default: float) -> float:
     value = float(os.environ.get(name, default))
     if value < 0:
         raise ValueError(f"{name} must not be negative")
+    return value
+
+
+
+def _non_negative_int(name: str, default: int) -> int:
+    value = int(os.environ.get(name, default))
+    if value < 0:
+        raise ValueError(f"{name} must not be negative")
+    return value
+
+
+def _positive_int(name: str, default: int) -> int:
+    value = int(os.environ.get(name, default))
+    if value < 1:
+        raise ValueError(f"{name} must be at least one")
     return value
