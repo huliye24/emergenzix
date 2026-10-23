@@ -26,7 +26,7 @@ NEMT Research
         versioned, reviewed strategy artifacts
                     v
 Emergenzix Product
-  responsive client (planned)
+  responsive Next.js/React client (initial slice)
        |
   FastAPI product API (initial slice)
        |
@@ -43,7 +43,7 @@ This is a logical diagram; planned components are not necessarily implemented.
 
 ## 3. Product API
 
-The API validates requests and exposes strategy, backtest, and paper-account workflows. Its interactive OpenAPI documentation is available at `/docs` when the service is running.
+The responsive Next.js/React dashboard consumes the FastAPI API through server-side rewrites. The API validates requests and exposes strategy, backtest, and paper-account workflows. Its interactive OpenAPI documentation is available at `/docs` when the service is running.
 
 The API currently has no authentication and must not be exposed directly to the public internet. Network deployment requires a separately reviewed authentication, authorization, secret-management, and operations design.
 
@@ -93,7 +93,7 @@ Planned areas include structured redacted logs, request correlation IDs, idempot
 
 ## 9. Decisions still required
 
-1. Responsive web/PWA stack and product interface.
+1. Whether to extend the responsive Next.js interface into an installable PWA.
 2. Authentication and deployment model.
 3. Production database and migration approach.
 4. Dataset import format and research-artifact provenance.
