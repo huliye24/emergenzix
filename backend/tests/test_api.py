@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from emergenzix_api.backtesting import run_sma_crossover
 from emergenzix_api.market_data import MarketDataUnavailable
+from emergenzix_api.schemas import Bar
 
 
 def _bars(closes: list[float]) -> list[dict[str, object]]:
@@ -228,6 +230,40 @@ def test_strategy_comparison_rejects_duplicate_version_ids(client):
         },
     )
     assert response.status_code == 422
+
+
+def test_backtest_holdout_warmup_never_executes_before_boundary():
+    closes = [
+        10, 9, 8, 9, 11, 13, 12, 10, 8, 7,
+        9, 12, 14, 13, 11, 9, 8, 10, 12, 15,
+        14, 12, 10, 8, 9, 11, 14, 16, 15, 13,
+    ]
+    bars = [Bar.model_validate(item) for item in _bars(closes)]
+    split_index = 21
+
+    result = run_sma_crossover(
+        bars,
+        fast_window=2,
+        slow_window=3,
+        initial_cash=10_000,
+        fee_bps=10,
+        slippage_bps=5,
+        evaluation_start_index=split_index,
+    )
+
+    assert result["bars_count"] == len(closes) - split_index
+    assert result["equity_curve"][0]["timestamp"] == bars[split_index - 1].timestamp.isoformat()
+    assert result["number_of_trades"] >= 1
+    assert all(
+        datetime.fromisoformat(trade["entry_timestamp"]) >= bars[split_index].timestamp
+        for trade in result["trades"]
+    )
+    assert all(
+        datetime.fromisoformat(trade["exit_timestamp"]) >= bars[split_index].timestamp
+        for trade in result["trades"]
+    )
+    expected_benchmark = (closes[-1] / closes[split_index - 1] - 1.0) * 100.0
+    assert result["benchmark_return_pct"] == round(expected_benchmark, 6)
 
 
 def test_strategy_validation_uses_chronological_holdout_and_persists_result(client):
