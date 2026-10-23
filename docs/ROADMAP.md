@@ -26,6 +26,7 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [x] Add automated API tests and a GitHub Actions workflow.
 - [ ] Confirm the CI run is green and repeat the test suite on the AWS development environment.
 - [x] Add the first responsive Next.js/React product interface against the API contract.
+- [x] Add a sectioned product workspace for overview, strategies, backtests, paper trading, and activity without changing backend contracts.
 - [ ] Add a reviewed authentication and deployment design before any network exposure.
 
 **Exit gate:** a new contributor can run the backend locally in PAPER mode, tests pass, and no exchange credentials are required.

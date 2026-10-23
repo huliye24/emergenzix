@@ -22,7 +22,7 @@ A research result must carry provenance and pass review before it informs a prod
 - Persisted backtest results, equity curve, and closed-trade records
 - SQLite-backed paper account, positions, and simulated order history
 - Server-side notional limit, available-cash checks, and no-short-selling validation
-- Responsive Next.js/React dashboard for strategy creation, sample backtests, paper orders, positions, and history
+- Responsive Next.js/React workspace with dedicated Overview, Strategies, Backtests, Paper Trading, and Activity views; strategy, backtest, paper-order, position, and history workflows share the existing API
 - Public spot OHLCV retrieval through CCXT for an explicit exchange allowlist, plus synthetic demo candles
 - Freqtrade source pinned as a Git submodule for evaluation as the mature strategy/backtesting/dry-run engine; its adapter is not yet wired into the current backtest endpoint
 - Dataset source, exchange, symbol, and timeframe persisted with backtest results

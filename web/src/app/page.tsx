@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import WorkspaceNavigation, { type WorkspaceView } from "../components/shell/WorkspaceNavigation";
 
 type Overview = {
   mode: string;
@@ -148,7 +149,45 @@ function buildSyntheticBars(): OhlcvBar[] {
   return bars;
 }
 
+
+const WORKSPACE_VIEW_META: Record<
+  WorkspaceView,
+  { index: string; kicker: string; title: string; description: string }
+> = {
+  overview: {
+    index: "00",
+    kicker: "OVERVIEW",
+    title: "Turn hypotheses into evidence.",
+    description: "Strategy development, evaluation, and paper-only operations in one place.",
+  },
+  strategies: {
+    index: "01",
+    kicker: "STRATEGY LAB",
+    title: "Strategy definitions",
+    description: "Create and inspect strategy definitions. A saved strategy is a research artifact, not approval to trade.",
+  },
+  backtests: {
+    index: "02",
+    kicker: "EVALUATION",
+    title: "Backtest evidence",
+    description: "Evaluate strategies against public exchange candles or clearly labeled synthetic demo data, with assumptions recorded.",
+  },
+  paper: {
+    index: "03",
+    kicker: "PAPER OPERATIONS",
+    title: "Simulated execution",
+    description: "Simulate orders at an entered reference price. No exchange is contacted and no real funds are used.",
+  },
+  activity: {
+    index: "04",
+    kicker: "ACTIVITY LOG",
+    title: "Recorded paper activity",
+    description: "Review simulated fills, positions, and realized profit or loss. These records are not exchange execution history.",
+  },
+};
+
 export default function DashboardPage() {
+  const [activeView, setActiveView] = useState<WorkspaceView>("overview");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [backtests, setBacktests] = useState<BacktestResult[]>([]);
@@ -371,6 +410,9 @@ export default function DashboardPage() {
         </button>
       </header>
 
+      <WorkspaceNavigation activeView={activeView} onNavigate={setActiveView} />
+
+      {activeView === "overview" ? (
       <section className="hero">
         <div className="eyebrow"><span /> RESEARCH <b>→</b> VALIDATION <b>→</b> EXECUTION</div>
         <h1>Turn hypotheses<br /><em>into evidence.</em></h1>
@@ -380,14 +422,27 @@ export default function DashboardPage() {
         </p>
         <div className="hero-tags">
           <span>EARLY ACCESS · 0.1</span>
-          <span>NO EXCHANGE CONNECTION</span>
-          <span>SYNTHETIC SAMPLE DATA</span>
+          <span>PUBLIC MARKET DATA · READ ONLY</span>
+          <span>PAPER EXECUTION ONLY</span>
         </div>
       </section>
+      ) : (
+      <section className="view-header">
+        <div className="eyebrow"><span /> WORKSPACE <b>/</b> {WORKSPACE_VIEW_META[activeView].kicker}</div>
+        <div className="view-header-row">
+          <div>
+            <h1>{WORKSPACE_VIEW_META[activeView].title}</h1>
+            <p>{WORKSPACE_VIEW_META[activeView].description}</p>
+          </div>
+          <span className="view-index">{WORKSPACE_VIEW_META[activeView].index}</span>
+        </div>
+      </section>
+      )}
 
       {error ? <div className="notice notice-error" role="alert"><strong>Action needed</strong><span>{error}</span></div> : null}
       {message ? <div className="notice notice-success" role="status"><strong>Completed</strong><span>{message}</span></div> : null}
 
+      {activeView === "overview" ? (
       <section className="metrics-grid" aria-label="Product overview">
         <article className="metric-card">
           <span className="metric-label">PAPER CASH</span>
@@ -412,9 +467,13 @@ export default function DashboardPage() {
           <small>{overview?.open_position_count ?? 0} open paper positions</small>
         </article>
       </section>
+      ) : null}
 
-      <section className="content-grid">
-        <article className="panel">
+      {activeView === "overview" || activeView === "strategies" || activeView === "backtests" ? (
+<section className={"content-grid" + (activeView === "overview" ? "" : " single-view-grid")}>
+
+        {activeView !== "backtests" ? (
+<article className="panel">
           <div className="panel-heading">
             <div>
               <span className="section-index">01 / STRATEGY LAB</span>
@@ -475,8 +534,12 @@ export default function DashboardPage() {
             <div className="empty-state">No strategies yet. Create one to begin.</div>
           )}
         </article>
+) : null}
 
-        <article className="panel">
+
+        
+{activeView !== "strategies" ? (
+<article className="panel">
           <div className="panel-heading">
             <div>
               <span className="section-index">02 / EVALUATION</span>
@@ -536,10 +599,17 @@ export default function DashboardPage() {
             <div className="empty-state">Backtest results will appear here.</div>
           )}
         </article>
-      </section>
+) : null}
 
-      <section className="content-grid lower-grid">
-        <article className="panel">
+      
+</section>
+) : null}
+
+      {activeView === "overview" || activeView === "paper" || activeView === "activity" ? (
+<section className={"content-grid lower-grid" + (activeView === "overview" ? "" : " single-view-grid")}>
+
+        {activeView !== "activity" ? (
+<article className="panel">
           <div className="panel-heading">
             <div>
               <span className="section-index">03 / PAPER EXECUTION</span>
@@ -589,8 +659,12 @@ export default function DashboardPage() {
             </div>
           ) : <div className="empty-state">No open paper positions.</div>}
         </article>
+) : null}
 
-        <article className="panel">
+
+        
+{activeView !== "paper" ? (
+<article className="panel">
           <div className="panel-heading">
             <div>
               <span className="section-index">04 / ACTIVITY LOG</span>
@@ -631,7 +705,11 @@ export default function DashboardPage() {
             <span><strong>Risk boundary</strong> · Paper mode only. No exchange is contacted, and no real funds are used.</span>
           </div>
         </article>
-      </section>
+) : null}
+
+      
+</section>
+) : null}
 
       <footer className="footer">
         <span>EMERGENZIX · PRODUCT BUILD 0.1</span>
