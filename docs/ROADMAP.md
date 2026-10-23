@@ -34,12 +34,15 @@ This roadmap separates product readiness from research progress. Stages are gate
 
 **Goal:** make strategy candidates inspectable and reproducible.
 
-- [ ] Add data import and explicit dataset provenance.
+- [x] Add public OHLCV retrieval through CCXT with bounded exchange/timeframe/limit inputs.
+- [x] Persist source, exchange, symbol, and timeframe metadata with backtest results.
+- [ ] Add cached dataset import, immutable dataset identifiers, and freshness/completeness checks.
 - [ ] Store versioned strategy parameters and input-data references.
 - [ ] Display assumptions, transaction costs, drawdown, and data coverage.
 - [ ] Separate training/in-sample and validation/out-of-sample results.
 - [ ] Record the provenance of imported NEMT research evidence.
 - [ ] Add exportable evaluation reports.
+- [ ] Implement a Freqtrade adapter in a separate runtime and compare results against the current compatibility engine.
 
 **Exit gate:** a backtest result can be reproduced from a strategy version, data version, parameter set, and recorded environment.
 
@@ -57,7 +60,7 @@ This roadmap separates product readiness from research progress. Stages are gate
 
 ## Phase 4 — Exchange TESTNET
 
-**Goal:** verify exchange connectivity and order-state correctness in a non-production environment.
+**Goal:** verify exchange connectivity and order-state correctness in a non-production environment. CCXT public market data is not an order adapter. Freqtrade is pinned as an upstream submodule, but its execution/backtesting adapter is not yet implemented.
 
 - [ ] Define an exchange adapter contract.
 - [ ] Keep TESTNET credentials server-side and separate from other modes.
