@@ -24,6 +24,7 @@ A research result must carry provenance and pass review before it informs a prod
 - Server-side notional limit, available-cash checks, and no-short-selling validation
 - Responsive Next.js/React workspace with dedicated Overview, Strategies, Backtests, Paper Trading, and Activity views; strategy, backtest, paper-order, position, and history workflows share the existing API
 - Public spot OHLCV retrieval through CCXT for an explicit exchange allowlist, plus synthetic demo candles
+- Content-addressed OHLCV dataset registry with canonical SHA-256 IDs, immutable duplicate handling, persisted candle payloads, and dataset metadata/list/detail endpoints
 - Freqtrade source pinned as a Git submodule for evaluation as the mature strategy/backtesting/dry-run engine; its adapter is not yet wired into the current backtest endpoint
 - Dataset source, exchange, symbol, and timeframe persisted with backtest results
 - Automated backend tests, frontend type-check/build, Docker image build CI, and tag-triggered GHCR release workflow
@@ -125,6 +126,8 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | GET | `/health` | Runtime health and safety mode |
 | GET | `/api/v1/overview` | Strategy, backtest, and paper-account summary |
 | GET | `/api/v1/market-data/ohlcv` | Fetch public OHLCV candles through CCXT; no exchange credentials required |
+| GET / POST | `/api/v1/datasets` | Register a validated OHLCV dataset by content hash or list saved dataset metadata |
+| GET | `/api/v1/datasets/{dataset_id}` | Retrieve an immutable dataset and its exact saved candles |
 | GET / POST | `/api/v1/strategies` | List or create strategies |
 | GET | `/api/v1/strategies/{id}` | Inspect one strategy |
 | POST | `/api/v1/backtests` | Run and persist a backtest |
