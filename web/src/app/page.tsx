@@ -233,6 +233,56 @@ export default function DashboardPage() {
     setError("");
     setMessage("");
     try {
+      const marketData = await apiRequest<{
+        exchange: string;
+        symbol: string;
+        timeframe: string;
+        bars: OhlcvBar[];
+      }>(
+        "/api/v1/market-data/ohlcv?exchange=binance&symbol=" +
+          encodeURIComponent(selectedStrategy.symbol) +
+          "&timeframe=1h&limit=120",
+      );
+      const result = await apiRequest<BacktestResult>("/api/v1/backtests", {
+        method: "POST",
+        body: JSON.stringify({
+          strategy_id: selectedStrategy.id,
+          bars: marketData.bars,
+          initial_cash: 10000,
+          fee_bps: 10,
+          slippage_bps: 5,
+        }),
+      });
+      setMessage(
+        "Backtest saved using " +
+          marketData.bars.length +
+          " public " +
+          marketData.timeframe +
+          " candles from " +
+          marketData.exchange +
+          " (" +
+          marketData.symbol +
+          "). " +
+          result.number_of_trades +
+          " closed trades. The newest candle may still be forming.",
+      );
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function handleRunSyntheticBacktest() {
+    if (!selectedStrategy) {
+      setError("Create or select a strategy before running a backtest.");
+      return;
+    }
+    setBusyAction("backtest");
+    setError("");
+    setMessage("");
+    try {
       const result = await apiRequest<BacktestResult>("/api/v1/backtests", {
         method: "POST",
         body: JSON.stringify({
@@ -244,11 +294,11 @@ export default function DashboardPage() {
         }),
       });
       setMessage(
-        "Sample backtest saved: " +
+        "Synthetic demo backtest saved: " +
           result.number_of_trades +
           " closed trades across " +
           result.bars_count +
-          " synthetic bars. This is demonstration data, not market history.",
+          " generated bars. These are not historical market data.",
       );
       await refresh();
     } catch (caught) {
@@ -422,7 +472,7 @@ export default function DashboardPage() {
             <span className="panel-mark panel-mark-green">BT</span>
           </div>
           <p className="panel-description">
-            Run the selected strategy on a deterministic 120-bar synthetic series. Fees and slippage are included; results are saved for review.
+            Fetch public OHLCV candles through CCXT and evaluate the selected strategy. A synthetic demo remains available when you do not want to call an exchange data endpoint.
           </p>
           <div className="selected-strategy">
             <span className="selected-label">SELECTED STRATEGY</span>
@@ -442,9 +492,12 @@ export default function DashboardPage() {
             <div><span>Execution</span><strong>Next bar open</strong></div>
           </div>
           <button className="button button-primary button-wide" onClick={() => void handleRunBacktest()} disabled={busyAction !== "" || !selectedStrategy}>
-            {busyAction === "backtest" ? "Running sample…" : "Run sample backtest"}
+            {busyAction === "backtest" ? "Fetching candles…" : "Fetch public candles & backtest"}
           </button>
-          <p className="fine-print">Sample data is synthetic and must not be interpreted as historical market performance.</p>
+          <button className="button button-quiet button-wide" onClick={() => void handleRunSyntheticBacktest()} disabled={busyAction !== "" || !selectedStrategy}>
+            Run synthetic demo instead
+          </button>
+          <p className="fine-print">Public market data is read-only and requires exchange API availability. The newest candle may still be forming; synthetic demo data is not historical market performance.</p>
 
           <div className="subsection-heading">
             <span>Recent backtests</span>
