@@ -219,9 +219,6 @@ def test_public_market_data_endpoint_rejects_provider_input_errors(client, monke
         raise ValueError("unsupported market symbol")
 
     monkeypatch.setattr(
-        "emergenzix.main.fetch_public_ohlcv", fake_fetch_public_ohlcv, raising=False
-    )
-    monkeypatch.setattr(
         "emergenzix_api.main.fetch_public_ohlcv", fake_fetch_public_ohlcv
     )
     response = client.get(
