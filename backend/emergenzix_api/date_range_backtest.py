@@ -21,12 +21,14 @@ from .historical_data import fetch_binance_btc_4h_archive
 from .schemas import Bar, DatasetCreate
 
 
-DATE_RANGE_BACKTEST_PROTOCOL_VERSION = "btc-date-range-backtest-v3"
+DATE_RANGE_BACKTEST_PROTOCOL_VERSION = "btc-date-range-backtest-v4"
 BAR_INTERVAL = timedelta(hours=4)
 BARS_PER_DAY = 6
 SELECTION_TRAIN_FRACTION = 0.70
 MINIMUM_VALIDATION_TRADES = 2
 WALK_FORWARD_FOLDS = 3
+COST_SENSITIVITY_FEE_BPS: tuple[float, ...] = (5.0, 10.0, 20.0)
+COST_SENSITIVITY_SLIPPAGE_BPS: tuple[float, ...] = (0.0, 5.0, 10.0)
 
 # Fixed, versioned candidate universe. Do not add/change candidates without
 # incrementing DATE_RANGE_BACKTEST_PROTOCOL_VERSION.
@@ -328,6 +330,49 @@ def _walk_forward_validation(
     }
 
 
+def _cost_sensitivity_analysis(
+    selected_candidate: dict[str, Any],
+    bars: list[Bar],
+    *,
+    evaluation_start_index: int,
+    initial_cash: float,
+) -> dict[str, Any]:
+    """Stress one frozen candidate under a fixed transaction-cost matrix."""
+    scenarios: list[dict[str, Any]] = []
+    for fee_bps in COST_SENSITIVITY_FEE_BPS:
+        for slippage_bps in COST_SENSITIVITY_SLIPPAGE_BPS:
+            run = _run_candidate(
+                selected_candidate,
+                bars,
+                evaluation_start_index=evaluation_start_index,
+                initial_cash=initial_cash,
+                fee_bps=fee_bps,
+                slippage_bps=slippage_bps,
+            )
+            metrics = _compact_metrics(run, include_path=False)
+            scenarios.append(
+                {
+                    "candidate_id": selected_candidate["candidate_id"],
+                    "strategy_type": selected_candidate["strategy_type"],
+                    "parameters": selected_candidate["parameters"],
+                    "initial_cash": round(initial_cash, 8),
+                    "fee_bps_per_side": fee_bps,
+                    "slippage_bps_per_side": slippage_bps,
+                    "net_return_pct": metrics["total_return_pct"],
+                    "net_pnl": metrics["net_pnl"],
+                    "max_drawdown_pct": metrics["max_drawdown_pct"],
+                    "number_of_trades": metrics["number_of_trades"],
+                }
+            )
+    return {
+        "method": "fixed_fee_slippage_matrix_after_candidate_selection",
+        "strategy_reselected_per_scenario": False,
+        "test_window_changed_per_scenario": False,
+        "stress_test_only": True,
+        "scenarios": scenarios,
+    }
+
+
 def run_date_range_backtest(
     bars: Sequence[Bar],
     *,
@@ -421,6 +466,12 @@ def run_date_range_backtest(
         evaluation_start_index=training_count,
     )
     test_metrics = _compact_metrics(test_run, include_path=True)
+    cost_sensitivity = _cost_sensitivity_analysis(
+        selected_candidate,
+        selected_bars,
+        evaluation_start_index=training_count,
+        initial_cash=initial_cash,
+    )
 
     return {
         "protocol_version": DATE_RANGE_BACKTEST_PROTOCOL_VERSION,
@@ -484,6 +535,7 @@ def run_date_range_backtest(
             ),
         },
         "walk_forward_validation": walk_forward,
+        "cost_sensitivity": cost_sensitivity,
         "test_result": test_metrics,
         "limitations": [
             "This protocol tests BTC/USDT spot candles only.",
