@@ -146,12 +146,31 @@ def _cost_sensitivity_lines(report: dict[str, Any]) -> list[str]:
     cost_sensitivity = report.get("cost_sensitivity")
     if not isinstance(cost_sensitivity, dict):
         return []
+    if (
+        cost_sensitivity.get("strategy_reselected_per_scenario") is not False
+        or cost_sensitivity.get("test_window_changed_per_scenario") is not False
+        or cost_sensitivity.get("stress_test_only") is not True
+    ):
+        return []
+
     scenarios = cost_sensitivity.get("scenarios")
     # This protocol promises a fixed 3x3 matrix. Omit partial or malformed data.
     if not isinstance(scenarios, list) or len(scenarios) != 9:
         return []
 
-    rows: list[str] = []
+    expected_pairs = {
+        (5.0, 0.0),
+        (5.0, 5.0),
+        (5.0, 10.0),
+        (10.0, 0.0),
+        (10.0, 5.0),
+        (10.0, 10.0),
+        (20.0, 0.0),
+        (20.0, 5.0),
+        (20.0, 10.0),
+    }
+    rows: list[tuple[float, float, float, float, float, int]] = []
+    seen_pairs: set[tuple[float, float]] = set()
     for scenario in scenarios:
         if not isinstance(scenario, dict):
             return []
@@ -175,15 +194,24 @@ def _cost_sensitivity_lines(report: dict[str, Any]) -> list[str]:
             or drawdown < 0
         ):
             return []
-        rows.append(
-            f"{fee:g}/{slippage:g} bps | {_percent(net_return, signed=True)} | "
-            f"{_money(net_pnl)} | {_percent(drawdown)} | {trades}"
-        )
+        pair = (fee, slippage)
+        if pair not in expected_pairs or pair in seen_pairs:
+            return []
+        seen_pairs.add(pair)
+        rows.append((fee, slippage, net_return, net_pnl, drawdown, trades))
 
+    if seen_pairs != expected_pairs:
+        return []
+    rows.sort(key=lambda row: (row[0], row[1]))
+    rendered_rows = [
+        f"{fee:g}/{slippage:g} bps | {_percent(net_return, signed=True)} | "
+        f"{_money(net_pnl)} | {_percent(drawdown)} | {trades}"
+        for fee, slippage, net_return, net_pnl, drawdown, trades in rows
+    ]
     return [
         "交易成本敏感性（手续费/滑点均为单边；策略与测试区间固定）",
         "手续费/滑点 | 净收益率 | 净盈亏 | 最大回撤 | 交易数",
-        *rows,
+        *rendered_rows,
     ]
 
 def format_backtest_record(record: object) -> str:
