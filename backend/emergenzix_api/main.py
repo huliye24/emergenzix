@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -162,6 +163,38 @@ def create_app(
             "version": __version__,
             "mode": "PAPER",
             "live_trading_enabled": False,
+        }
+
+    @app.get("/ready")
+    def readiness(request: Request) -> dict[str, Any]:
+        """Report readiness only when the database and paper account are usable."""
+        db: Database = request.app.state.database
+        try:
+            with db.connection() as connection:
+                connection.execute("SELECT 1").fetchone()
+                paper_account = connection.execute(
+                    "SELECT id FROM paper_account WHERE id = 1"
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise HTTPException(
+                status_code=503, detail="database is unavailable"
+            ) from exc
+
+        if paper_account is None:
+            raise HTTPException(
+                status_code=503, detail="paper account is not initialized"
+            )
+
+        return {
+            "status": "ready",
+            "service": "emergenzix-api",
+            "version": __version__,
+            "mode": "PAPER",
+            "live_trading_enabled": False,
+            "checks": {
+                "database": "ok",
+                "paper_account": "ok",
+            },
         }
 
     @app.get("/api/v1/market-data/ohlcv")
