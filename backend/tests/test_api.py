@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 from emergenzix_api.backtesting import run_sma_crossover
 from emergenzix_api.market_data import MarketDataUnavailable
 from emergenzix_api.schemas import Bar
+from emergenzix_api.notification_outbox import NotificationOutbox
+from emergenzix_api.watch_agent import WatchEvent
 
 
 def _bars(closes: list[float]) -> list[dict[str, object]]:
@@ -38,6 +40,40 @@ def _create_strategy(client, *, symbol: str = "BTCUSDT") -> dict[str, object]:
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def test_notification_status_reports_uninitialized_outbox(client):
+    response = client.get("/api/v1/notifications/status")
+    assert response.status_code == 200
+    assert response.json()["status"] == "not_initialized"
+    assert response.json()["mode"] == "PAPER"
+    assert response.json()["live_trading_enabled"] is False
+    assert response.json()["metrics"]["pending"] == 0
+
+
+def test_notification_status_reports_aggregate_outbox_metrics(client):
+    outbox = NotificationOutbox(client.app.state.notification_outbox_path)
+    event = WatchEvent(
+        event_type="scenario_changed",
+        severity="warning",
+        occurred_at=datetime(2026, 10, 24, 4, tzinfo=timezone.utc).isoformat(),
+        exchange="binance",
+        symbol="BTC/USDT",
+        timeframe="4h",
+        message="Scenario changed to continuation_down.",
+        details={"scenario": "continuation_down", "bar_timestamp": "2026-10-24T00:00:00+00:00"},
+    )
+    outbox.enqueue(event)
+
+    response = client.get("/api/v1/notifications/status")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.json()["metrics"]["total"] == 1
+    assert response.json()["metrics"]["pending"] == 1
+    assert response.json()["metrics"]["delivered"] == 0
+    assert response.json()["metrics"]["dead"] == 0
+    assert "event_json" not in response.text
+    assert "bot_token" not in response.text
 
 
 def test_health_is_paper_only(client):
