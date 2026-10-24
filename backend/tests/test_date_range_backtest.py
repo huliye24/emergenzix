@@ -203,6 +203,47 @@ def test_date_range_backtest_api_persists_idempotent_report(client, monkeypatch)
             )
 
 
+def test_report_export_writes_summary_candidate_equity_trade_csv_and_markdown(
+    tmp_path,
+) -> None:
+    from emergenzix_api.date_range_backtest import (
+        DATE_RANGE_BACKTEST_PROTOCOL_VERSION,
+        write_report_artifacts,
+    )
+
+    report = _run(_series())
+    record = {
+        "id": "a" * 64,
+        "record_sha256": "b" * 64,
+        "protocol_version": DATE_RANGE_BACKTEST_PROTOCOL_VERSION,
+        "report": report,
+    }
+    paths = write_report_artifacts(record, tmp_path / "btc-week.json")
+
+    assert set(paths) == {
+        "json",
+        "markdown",
+        "summary_csv",
+        "candidates_csv",
+        "equity_csv",
+        "trades_csv",
+    }
+    assert (tmp_path / "btc-week.json").exists()
+    assert (tmp_path / "btc-week.md").exists()
+    assert "Net return" in (tmp_path / "btc-week.md").read_text(encoding="utf-8")
+    assert "total_return_pct" in (tmp_path / "btc-week.summary.csv").read_text(encoding="utf-8-sig")
+    assert len((tmp_path / "btc-week.candidates.csv").read_text(encoding="utf-8-sig").splitlines()) == 7
+    assert len((tmp_path / "btc-week.equity.csv").read_text(encoding="utf-8-sig").splitlines()) == 44
+    assert "net_pnl" in (tmp_path / "btc-week.trades.csv").read_text(encoding="utf-8-sig")
+
+
+def test_report_export_requires_json_extension(tmp_path) -> None:
+    from emergenzix_api.date_range_backtest import write_report_artifacts
+
+    with pytest.raises(ValueError, match="end in .json"):
+        write_report_artifacts({}, tmp_path / "report.csv")
+
+
 def test_date_range_backtest_api_does_not_persist_incomplete_data(client, monkeypatch) -> None:
     import emergenzix_api.date_range_backtest as service
 
