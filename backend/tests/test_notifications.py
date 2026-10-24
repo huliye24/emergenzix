@@ -80,3 +80,34 @@ def test_telegram_notifier_sends_chart_as_photo() -> None:
     assert captured["content_type"].startswith("multipart/form-data; boundary=")
     assert b'filename="emergenzix.png"' in captured["body"]
     assert b"\x89PNG-test" in captured["body"]
+
+
+def test_startup_event_is_explicitly_paper_only() -> None:
+    event = WatchEvent(
+        event_type="watcher_startup",
+        severity="info",
+        occurred_at=datetime.now(timezone.utc).isoformat(),
+        exchange="binance",
+        symbol="BTC/USDT",
+        timeframe="4h",
+        message="Telegram delivery check passed; paper-only watcher is starting.",
+        details={"mode": "PAPER", "live_trading_enabled": False},
+    )
+    from emergenzix_api.notifications import format_watch_event
+
+    message = format_watch_event(event)
+    assert "监控服务启动" in message
+    assert "仅 PAPER 模拟观察" in message
+    assert "不会创建任何订单" in message
+
+
+def test_telegram_notifier_rejects_non_object_response() -> None:
+    def requester(_request, *, timeout):
+        class Response:
+            def read(self) -> bytes:
+                return b"[]"
+        return Response()
+
+    notifier = TelegramNotifier("secret-token", "12345", requester=requester)
+    with pytest.raises(NotificationError, match="invalid response"):
+        notifier.send(_event())
