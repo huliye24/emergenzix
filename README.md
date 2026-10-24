@@ -189,7 +189,7 @@ See [BTC Historical Data Ingestion](docs/BTC_DATA_INGESTION.md) for the verified
 
 See [BTC Date-Range Backtest](docs/DATE_RANGE_BACKTEST.md) for the date-driven one-week experiment, CLI invocation, immutable records, and CSV/Markdown report artifacts.
 See [Saved Date-Range Backtest Comparison](docs/DATE_RANGE_COMPARISON.md) for read-only, fingerprint-verified comparison of persisted historical runs.
-See [Weekly Research Batch Planning](docs/RESEARCH_BATCH_PLAN.md) for deterministic, execution-free planning of up to twelve nonoverlapping BTC research weeks.
+See [Weekly Research Batch Planning](docs/RESEARCH_BATCH_PLAN.md) for deterministic weekly manifests and the internal durable SQLite task state/lease protocol. The runner remains unimplemented and no order permissions are granted.
 See [Codex Acceptance Checklist](docs/CODEX_DATE_RANGE_BACKTEST_ACCEPTANCE.md) for the exact validation and real-data smoke-test steps to run when Codex is available.
 
 ## Safety boundaries
