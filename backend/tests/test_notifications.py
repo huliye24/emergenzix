@@ -64,3 +64,19 @@ def test_telegram_rejection_is_sanitized() -> None:
     with pytest.raises(NotificationError) as error:
         notifier.send(_event())
     assert "secret-token" not in str(error.value)
+
+
+def test_telegram_notifier_sends_chart_as_photo() -> None:
+    captured = {}
+
+    def requester(request, *, timeout):
+        captured["url"] = request.full_url
+        captured["body"] = request.data
+        captured["content_type"] = request.headers["Content-type"]
+        return FakeResponse({"ok": True, "result": {"message_id": 2}})
+
+    TelegramNotifier("secret-token", "12345", requester=requester).send(_event(), image=b"\x89PNG-test")
+    assert captured["url"].endswith("/sendPhoto")
+    assert captured["content_type"].startswith("multipart/form-data; boundary=")
+    assert b'filename="emergenzix.png"' in captured["body"]
+    assert b"\x89PNG-test" in captured["body"]

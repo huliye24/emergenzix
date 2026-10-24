@@ -100,18 +100,28 @@ class TelegramNotifier:
         if not self.bot_token.strip() or not self.chat_id.strip():
             raise ValueError("Telegram bot token and chat ID must both be configured")
 
-    def send(self, event: WatchEvent) -> None:
-        body = json.dumps(
-            {
-                "chat_id": self.chat_id,
-                "text": format_watch_event(event),
-                "disable_web_page_preview": True,
-            }
-        ).encode("utf-8")
+    def send(self, event: WatchEvent, image: bytes | None = None) -> None:
+        if image is None:
+            body = json.dumps(
+                {"chat_id": self.chat_id, "text": format_watch_event(event), "disable_web_page_preview": True}
+            ).encode("utf-8")
+            endpoint = "sendMessage"
+            content_type = "application/json"
+        else:
+            boundary = "emergenzix-watch-boundary"
+            fields = (
+                f"--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{self.chat_id}\r\n"
+                f"--{boundary}\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n{format_watch_event(event)}\r\n"
+                f"--{boundary}\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"emergenzix.png\"\r\n"
+                "Content-Type: image/png\r\n\r\n"
+            ).encode("utf-8")
+            body = fields + image + f"\r\n--{boundary}--\r\n".encode("ascii")
+            endpoint = "sendPhoto"
+            content_type = f"multipart/form-data; boundary={boundary}"
         request = urllib.request.Request(
-            f"https://api.telegram.org/bot{self.bot_token}/sendMessage",
+            f"https://api.telegram.org/bot{self.bot_token}/{endpoint}",
             data=body,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": content_type},
             method="POST",
         )
         try:
