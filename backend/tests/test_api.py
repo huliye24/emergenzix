@@ -47,6 +47,42 @@ def test_health_is_paper_only(client):
     assert response.json()["live_trading_enabled"] is False
 
 
+def test_readiness_requires_database_and_paper_account(client):
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+    assert response.json()["mode"] == "PAPER"
+    assert response.json()["live_trading_enabled"] is False
+    assert response.json()["checks"] == {
+        "database": "ok",
+        "paper_account": "ok",
+    }
+
+    with client.app.state.database.connection() as connection:
+        connection.execute("DELETE FROM paper_account WHERE id = 1")
+
+    unavailable = client.get("/ready")
+    assert unavailable.status_code == 503
+    assert unavailable.json()["detail"] == "paper account is not initialized"
+
+
+def test_readiness_returns_503_when_database_is_unavailable(client, monkeypatch):
+    import sqlite3
+    from contextlib import contextmanager
+
+    @contextmanager
+    def unavailable_connection():
+        raise sqlite3.OperationalError("simulated database outage")
+        yield
+
+    monkeypatch.setattr(
+        client.app.state.database, "connection", unavailable_connection
+    )
+    response = client.get("/ready")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "database is unavailable"
+
+
 def test_strategy_validation_and_persistence(client):
     invalid = client.post(
         "/api/v1/strategies",
