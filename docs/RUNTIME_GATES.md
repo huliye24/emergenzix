@@ -47,6 +47,6 @@ The watcher enqueues emitted events before saving its updated watcher state, red
 
 ## Notification queue status endpoint
 
-`GET /api/v1/notifications/status` reports aggregate queue metrics only; it never returns event bodies, chart images, chat IDs, or bot credentials. Metrics include total, pending, retrying, due, delivered, and dead-letter counts, the oldest pending timestamp, the latest successful delivery timestamp, and the most recent stored exception type.
+`GET /api/v1/notifications/status` reports aggregate queue metrics only; it never returns event bodies, chart images, chat IDs, or bot credentials. Metrics include total, pending, retrying, due, cumulative failed-attempt count, delivered, and dead-letter counts, the oldest pending timestamp, the latest successful delivery timestamp, and the most recent stored exception type. Failed-attempt counts remain cumulative even after a later successful retry.
 
 The endpoint returns `not_initialized` when the outbox database has not yet been created, `ok` when no dead-letter records exist, and `attention_required` when at least one record is dead-lettered. It is an observability endpoint, not proof of strategy performance or exchange connectivity. The API currently has no authentication; keep it on a private network and do not expose it publicly without an access-control review.
