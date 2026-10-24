@@ -95,4 +95,3 @@ Rejected. Credential handling, idempotency, uncertain order state, partial fills
 4. Exercise the DEMO/PAPER health, strategy validation, deterministic backtest persistence, order-limit rejection, buy/sell accounting, and no-short-selling cases.
 5. Inspect the runtime response to confirm the active mode is not LIVE and `live_trading_enabled` is false.
 6. Review each later migration as a focused change with provenance, license compatibility, security impact, tests, and rollback notes.
-
