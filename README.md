@@ -27,6 +27,7 @@ A research result must carry provenance and pass review before it informs a prod
 - Content-addressed OHLCV dataset registry with canonical SHA-256 IDs, immutable duplicate handling, persisted candle payloads, and dataset metadata/list/detail endpoints
 - Freqtrade source pinned as a Git submodule for evaluation as the mature strategy/backtesting/dry-run engine; its adapter is not yet wired into the current backtest endpoint
 - Dataset source, exchange, symbol, and timeframe persisted with backtest results
+- Deterministic completed-candle scenario analysis for downside continuation, false breakdown, range, and upside reversal
 - Automated backend tests, frontend type-check/build, Docker image build CI, and tag-triggered GHCR release workflow
 
 The backtest is a baseline implementation, not evidence of profitability. Paper orders use caller-supplied reference prices and do not represent exchange market fills.
@@ -126,6 +127,7 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | GET | `/health` | Runtime health and safety mode |
 | GET | `/api/v1/overview` | Strategy, backtest, and paper-account summary |
 | GET | `/api/v1/market-data/ohlcv` | Fetch public OHLCV candles through CCXT; no exchange credentials required |
+| POST | `/api/v1/scenarios/analyze` | Classify completed candles into four reviewable market scenarios; never places orders |
 | GET / POST | `/api/v1/datasets` | Register a validated OHLCV dataset by content hash or list saved dataset metadata |
 | GET | `/api/v1/datasets/{dataset_id}` | Retrieve an immutable dataset and its exact saved candles |
 | GET | `/api/v1/datasets/{dataset_id}/quality` | Diagnose interval gaps, coverage, and freshness without modifying the dataset |
