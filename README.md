@@ -26,6 +26,7 @@ A research result must carry provenance and pass review before it informs a prod
 - Public spot OHLCV retrieval through CCXT, plus verified Binance BTC/USDT 4h historical archive imports with SHA-256 checksum validation
 - Content-addressed OHLCV dataset registry with canonical SHA-256 IDs, immutable duplicate handling, persisted candle payloads, and dataset metadata/list/detail endpoints
 - BTC point-in-time historical replay records linked to immutable datasets, with deterministic IDs, record fingerprints, database-enforced immutability, and random or explicit timestamp anchors
+- Date-driven BTC weekly backtests with checksum-verified Binance 4h archives, pre-test-only SMA candidate selection, immutable result records, and JSON/Markdown/CSV report exports
 - Freqtrade source pinned as a Git submodule for evaluation as the mature strategy/backtesting/dry-run engine; its adapter is not yet wired into the current backtest endpoint
 - Dataset source, exchange, symbol, and timeframe persisted with backtest results
 - Deterministic completed-candle scenario analysis for downside continuation, false breakdown, range, and upside reversal
@@ -137,6 +138,9 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | POST | `/api/v1/research/historical-replays` | Run and persist a reproducible BTC point-in-time replay; never creates orders |
 | GET | `/api/v1/research/historical-replays` | List saved immutable BTC replay records |
 | GET | `/api/v1/research/historical-replays/{record_id}` | Retrieve and verify a saved replay record |
+| POST | `/api/v1/research/date-range-backtests` | Select a BTC SMA candidate using only pre-test data, simulate a requested historical date range, and persist an immutable report |
+| GET | `/api/v1/research/date-range-backtests` | List saved date-range backtest reports |
+| GET | `/api/v1/research/date-range-backtests/{record_id}` | Retrieve and verify a saved date-range report |
 | GET / POST | `/api/v1/strategies` | List or create strategies |
 | GET | `/api/v1/strategies/{id}` | Inspect a strategy and its current version |
 | GET / POST | `/api/v1/strategies/{id}/versions` | List immutable parameter snapshots or create a new version |
@@ -171,6 +175,8 @@ Strategy validation requires a registered immutable `dataset_id`, an explicit st
 See [BTC Historical Replay Records](docs/HISTORICAL_REPLAY.md) for the replay API, provenance, integrity checks, and interpretation limits.
 
 See [BTC Historical Data Ingestion](docs/BTC_DATA_INGESTION.md) for the verified Binance 4h archive import and dataset workflow.
+
+See [BTC Date-Range Backtest](docs/DATE_RANGE_BACKTEST.md) for the date-driven one-week experiment, CLI invocation, immutable records, and CSV/Markdown report artifacts.
 
 ## Safety boundaries
 
