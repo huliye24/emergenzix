@@ -52,7 +52,7 @@ def test_btc_replay_record_is_persisted_and_idempotent(client):
     assert first["id"]
     assert first["dataset"]["id"] == dataset["id"]
     assert first["dataset"]["sha256"] == dataset["sha256"]
-    assert first["protocol_version"] == "btc-point-in-time-v1"
+    assert first["protocol_version"] == "btc-point-in-time-v2"
     assert first["safety"] == {
         "orders_created": False,
         "live_trading_enabled": False,
@@ -134,3 +134,61 @@ def test_btc_replay_rejects_tampered_dataset_payload(client):
     )
     assert response.status_code == 409
     assert "integrity" in response.json()["detail"]
+
+
+def test_timestamp_anchored_replay_is_persisted_and_timezone_normalized(client):
+    dataset = _register_dataset(client)
+    body = {
+        "dataset_id": dataset["id"],
+        "anchor_at": "2025-01-02T16:00:00+00:00",
+        "horizon_bars": 12,
+        "lookback": 20,
+    }
+
+    first_response = client.post(
+        "/api/v1/research/historical-replays", json=body
+    )
+    assert first_response.status_code == 201, first_response.text
+    first = first_response.json()
+    assert first["configuration"]["seed"] is None
+    assert first["configuration"]["anchor_at"] == "2025-01-02T16:00:00Z"
+    assert first["experiment"]["anchor_index"] == 40
+    assert first["experiment"]["anchor_at"] == "2025-01-02T16:00:00Z"
+
+    # A different timezone offset representing the same instant must be idempotent.
+    body["anchor_at"] = "2025-01-02T17:00:00+01:00"
+    second_response = client.post(
+        "/api/v1/research/historical-replays", json=body
+    )
+    assert second_response.status_code == 200, second_response.text
+    assert second_response.json()["id"] == first["id"]
+    assert second_response.json()["record_sha256"] == first["record_sha256"]
+
+
+def test_timestamp_anchored_replay_rejects_missing_or_ambiguous_anchor(client):
+    dataset = _register_dataset(client)
+    missing = client.post(
+        "/api/v1/research/historical-replays",
+        json={"dataset_id": dataset["id"]},
+    )
+    assert missing.status_code == 422
+
+    ambiguous = client.post(
+        "/api/v1/research/historical-replays",
+        json={
+            "dataset_id": dataset["id"],
+            "seed": 42,
+            "anchor_at": "2025-01-02T16:00:00Z",
+        },
+    )
+    assert ambiguous.status_code == 422
+
+    unmatched = client.post(
+        "/api/v1/research/historical-replays",
+        json={
+            "dataset_id": dataset["id"],
+            "anchor_at": "2025-01-02T16:01:00Z",
+        },
+    )
+    assert unmatched.status_code == 422
+    assert "exactly match" in unmatched.json()["detail"]
