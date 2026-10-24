@@ -61,3 +61,6 @@ Operational incident state is persisted to `EMERGENZIX_OPERATIONAL_ALERT_STATE_P
 Dead-letter records are retained rather than silently deleted. A dead-letter alert remains active until the dead-letter count is cleared by operator intervention; this version does not yet include an authenticated dead-letter replay or resolution UI. If the outbox database itself is unavailable, the watcher emits a sanitized structured error to container logs because the same unavailable outbox cannot reliably carry a Telegram alert.
 
 These are operational notifications, not trading signals. The watcher remains PAPER-only and never submits exchange orders.
+
+
+The watcher also treats repeated market-cycle exceptions as one persistent operational incident. It sends a single alert while the failure continues and a recovery notification after a later cycle succeeds. Logs and alert details include only the exception type, not provider error text or credentials. In `--once` mode, the watcher still flushes the failure alert before exiting with a non-zero status.
