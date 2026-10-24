@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
 from statistics import fmean, median
@@ -90,7 +91,7 @@ def summarize_saved_date_range_records(
         raise DateRangeStatisticsError("database_unavailable")
     uri = "file:" + quote(resolved.as_posix(), safe="/") + "?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True, timeout=15.0) as connection:
+        with closing(sqlite3.connect(uri, uri=True, timeout=15.0)) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA query_only = ON")
             rows = connection.execute(
@@ -99,7 +100,7 @@ def summarize_saved_date_range_records(
                 (limit,),
             ).fetchall()
             observations = [_comparison_row(row) for row in rows]
-    except DateRangeComparisonError as exc:
+    except (DateRangeComparisonError, ValueError, TypeError, KeyError, OverflowError) as exc:
         raise DateRangeStatisticsError("invalid_record") from exc
     except (sqlite3.Error, OSError) as exc:
         raise DateRangeStatisticsError("database_unavailable") from exc
