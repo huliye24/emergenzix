@@ -44,6 +44,7 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [x] Add public OHLCV retrieval through CCXT with bounded exchange/timeframe/limit inputs.
 - [x] Persist source, exchange, symbol, and timeframe metadata with backtest results.
 - [x] Add content-addressed immutable OHLCV dataset registration and retrieval with canonical SHA-256 identifiers.
+- [x] Add a date-driven BTC weekly backtest: verified 4-hour archive coverage, pre-test-only candidate selection, immutable run records, and JSON/Markdown/CSV outputs (CI/runtime verification is tracked separately).
 - [x] Allow backtests to consume a registered dataset ID and persist the exact dataset fingerprint and range in result provenance (implementation added; verification pending).
 - [ ] Add broader market-data completeness checks.
 - [ ] Add a bounded process-local TTL cache for public OHLCV requests (implementation in PR; verification pending).
@@ -53,7 +54,8 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [ ] Display assumptions, transaction costs, drawdown, and data coverage.
 - [ ] Separate training/in-sample and validation/out-of-sample results (implementation in PR; verification pending).
 - [ ] Record the provenance of imported NEMT research evidence.
-- [ ] Add exportable evaluation reports.
+- [x] Add JSON, Markdown, and CSV report exports for the date-driven BTC historical experiment (broader report formats remain future work; latest revision awaits CI confirmation).
+- [ ] Add broader exportable evaluation reports across all backtest and validation workflows.
 - [ ] Implement a Freqtrade adapter in a separate runtime and compare results against the current compatibility engine.
 
 **Exit gate:** a backtest result can be reproduced from a strategy version, data version, parameter set, and recorded environment.
