@@ -52,9 +52,6 @@ services:
 
   watch:
     image: ghcr.io/huliye24/emergenzix-api:${EMERGENZIX_VERSION:-0.1.0}
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
     restart: unless-stopped
     command: ["python", "-m", "emergenzix_api.watch_agent"]
     environment:
@@ -71,6 +68,8 @@ services:
       - emergenzix-data:/data
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      disable: true
 
 volumes:
   emergenzix-data:
