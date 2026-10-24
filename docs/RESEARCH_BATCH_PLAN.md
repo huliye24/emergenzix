@@ -166,3 +166,10 @@ Acceptance tests:
     python -m pytest -q tests/test_research_batch_report.py
     python -m pytest -q
 
+Read-only CLI hardening: the report command opens an existing SQLite file via
+`mode=ro` and explicitly enables `PRAGMA query_only`. It does **not** call the
+normal mutable `Database.initialize()` constructor. Missing paths cannot
+create empty database files; generation of JSON/Markdown outputs remains an
+explicit `--output` action. The acceptance suite runs three historical weeks
+on synthetic offline candles, restarts the database process between jobs,
+confirms 100% completion, and checks that no paper orders were inserted.

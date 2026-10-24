@@ -10,9 +10,8 @@ from pathlib import Path
 from typing import Sequence
 
 from .config import Settings
-from .database import Database
 from .research_batch_report import (
-    BatchReportError, build_research_batch_report, write_batch_report,
+    BatchReportError, build_research_batch_report_from_file, write_batch_report,
 )
 
 
@@ -26,11 +25,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         settings = Settings.from_env()
-        db = Database(
-            args.db_path or settings.db_path,
-            initial_paper_cash=settings.initial_paper_cash,
+        report = build_research_batch_report_from_file(
+            args.db_path or settings.db_path, args.batch_id
         )
-        report = build_research_batch_report(db, args.batch_id)
         if args.output:
             print(json.dumps(
                 {"status": "ok", "snapshot_sha256": report["snapshot_sha256"],

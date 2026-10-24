@@ -15,6 +15,7 @@ from emergenzix_api.research_batch_plan import (
 )
 from emergenzix_api.research_batch_report import (
     BatchReportError, build_research_batch_report,
+    build_research_batch_report_from_file,
     render_research_batch_markdown, write_batch_report,
 )
 from emergenzix_api.research_batch_report_cli import main as report_cli_main
@@ -212,3 +213,116 @@ def test_private_report_cli_exports_json_and_markdown(tmp_path, capsys) -> None:
     assert json.loads(capsys.readouterr().err)["error_code"] == (
         "batch_report_unavailable"
     )
+
+
+def test_three_historical_weeks_complete_end_to_end_across_restart(
+    tmp_path, monkeypatch,
+) -> None:
+    """One real engine call per week, immutable DB, then exact report snapshot."""
+    _archive(monkeypatch)
+    db, plan = _batch(
+        tmp_path, dates=("2025-10-21", "2025-10-28", "2025-11-04"),
+    )
+    initial = build_research_batch_report_from_file(db.path, plan["batch_id"], now=CLOCK)
+    assert initial["total_planned"] == 3
+    assert initial["completed_financial_observations"] == 0
+
+    first = run_one_batch_job(db, plan["batch_id"], worker_id="first")
+    assert first["status"] == "completed"
+    assert first["record_id"]
+    # Emulate the cloud process restarting between tasks.
+    db = Database(db.path)
+    second = run_one_batch_job(db, plan["batch_id"], worker_id="second")
+    assert second["status"] == "completed"
+    db = Database(db.path)
+    third = run_one_batch_job(db, plan["batch_id"], worker_id="third")
+    assert third["status"] == "completed"
+    assert len({first["record_id"], second["record_id"], third["record_id"]}) == 3
+
+    complete = build_research_batch_report_from_file(
+        db.path, plan["batch_id"], now=CLOCK,
+    )
+    assert complete["state"] == "completed"
+    assert complete["state_counts"] == {
+        "pending": 0, "leased": 0, "completed": 3, "failed": 0, "cancelled": 0,
+    }
+    assert complete["completion_rate_pct"] == 100
+    assert complete["completed_financial_observations"] == 3
+    assert complete["positive_completed_observations"] + complete[
+        "negative_completed_observations"
+    ] + complete["flat_completed_observations"] == 3
+    assert [item["test_start_at"][:10] for item in complete["jobs"]] == [
+        "2025-10-21", "2025-10-28", "2025-11-04",
+    ]
+    assert all(j["state"] == "completed" and j["saved_record_sha256"] for j in complete["jobs"])
+    assert complete["snapshot_sha256"] != initial["snapshot_sha256"]
+    assert complete["compounded_portfolio_return_pct"] is None
+    assert complete["portfolio_max_drawdown_pct"] is None
+    assert complete["live_order_permission"] is False
+    assert complete["orders_created"] is False
+    assert run_one_batch_job(db, plan["batch_id"], worker_id="fourth")["status"] == "idle"
+    assert build_research_batch_report_from_file(
+        db.path, plan["batch_id"], now=CLOCK,
+    ) == complete
+
+    with db.connection() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM date_range_backtest_records"
+        ).fetchone()[0] == 3
+        assert conn.execute(
+            "SELECT COUNT(*) FROM paper_orders"
+        ).fetchone()[0] == 0
+    exported = write_batch_report(complete, tmp_path / "out" / "batch.json")
+    assert exported["json"].endswith(".json")
+    assert "Completion rate: 100.00%" in (
+        tmp_path / "out" / "batch.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_report_only_cli_does_not_create_database_or_directories(
+    tmp_path, capsys,
+) -> None:
+    """Regression: Database(...) previously initialized a missing sqlite file."""
+    missing = tmp_path / "no-such-folder" / "missing.db"
+    result = report_cli_main([
+        "--batch-id", "a" * 64, "--db-path", str(missing),
+    ])
+    assert result == 2
+    assert not missing.exists()
+    assert not missing.parent.exists()
+    assert json.loads(capsys.readouterr().err)["error_code"] == (
+        "batch_report_unavailable"
+    )
+
+
+def test_report_only_cli_skips_writable_database_initializer(
+    tmp_path, monkeypatch, capsys,
+) -> None:
+    db, plan = _batch(tmp_path)
+    from emergenzix_api.database import Database as Storage
+
+    def deny_init(*args, **kwargs):
+        raise AssertionError("Report CLI must not initialize or migrate a database")
+
+    monkeypatch.setattr(Storage, "initialize", deny_init)
+    assert report_cli_main([
+        "--batch-id", plan["batch_id"], "--db-path", db.path,
+    ]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["state_counts"]["pending"] == 2
+
+
+def test_read_only_report_rejects_tampered_completed_record(
+    tmp_path, monkeypatch,
+) -> None:
+    _archive(monkeypatch)
+    db, plan = _batch(tmp_path, dates=("2025-10-21",))
+    result = run_one_batch_job(db, plan["batch_id"], worker_id="worker")
+    assert result["status"] == "completed"
+    with db.connection() as conn:
+        conn.execute(
+            "UPDATE research_batch_jobs SET saved_record_sha256 = ? "
+            "WHERE batch_id = ?", ("f" * 64, plan["batch_id"]),
+        )
+    with pytest.raises(BatchReportError, match="integrity"):
+        build_research_batch_report_from_file(db.path, plan["batch_id"])

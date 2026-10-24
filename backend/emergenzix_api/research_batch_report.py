@@ -11,6 +11,7 @@ import json
 import math
 import sqlite3
 from collections import Counter
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import fmean, median
@@ -267,6 +268,29 @@ def build_research_batch_report(
     moment = _instant(now)
     try:
         with db.connection() as conn:
+            conn.execute("PRAGMA query_only = ON")
+            conn.execute("BEGIN")
+            return _load_report_snapshot(conn, batch_id, now=moment)
+    except sqlite3.Error as exc:
+        raise BatchReportError("batch report database read failed") from exc
+
+
+
+def build_research_batch_report_from_file(
+    db_path: str | Path, batch_id: str, *, now: datetime | None = None,
+) -> dict[str, Any]:
+    """Open an *existing* SQLite file in URI mode=ro, bypassing Database.initialize.
+
+    Reporting must never create a database, trigger schema migrations, or write
+    to the job state. This is the safe entry point for the report-only CLI.
+    """
+    if not _sha(batch_id):
+        raise BatchReportError("invalid batch ID")
+    moment = _instant(now)
+    path = Path(db_path).expanduser().resolve()
+    try:
+        with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as conn:
+            conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA query_only = ON")
             conn.execute("BEGIN")
             return _load_report_snapshot(conn, batch_id, now=moment)
