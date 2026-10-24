@@ -184,6 +184,22 @@ class StrategyValidationCreate(StrictModel):
     slippage_bps: float = Field(default=5.0, ge=0, le=1_000, allow_inf_nan=False)
 
 
+class ScenarioAnalyzeCreate(StrictModel):
+    """Completed candles and a structural lookback for scenario classification."""
+
+    bars: list[Bar] = Field(min_length=14, max_length=1_000)
+    lookback: int = Field(default=20, ge=10, le=200)
+
+    @model_validator(mode="after")
+    def validate_bars(self) -> "ScenarioAnalyzeCreate":
+        timestamps = [bar.timestamp for bar in self.bars]
+        if any(current <= previous for previous, current in zip(timestamps, timestamps[1:])):
+            raise ValueError("bars must be in strictly increasing timestamp order")
+        if len(self.bars) < self.lookback + 4:
+            raise ValueError("bars must contain at least lookback + 4 completed candles")
+        return self
+
+
 class PaperOrderCreate(StrictModel):
     symbol: str = Field(pattern=SYMBOL_PATTERN)
     side: Literal["BUY", "SELL"]

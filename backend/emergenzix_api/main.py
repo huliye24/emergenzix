@@ -18,11 +18,13 @@ from .dataset_quality import build_dataset_quality_report
 from .database import Database
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
+from .scenarios import analyze_scenarios
 from .schemas import (
     Bar,
     BacktestCreate,
     DatasetCreate,
     PaperOrderCreate,
+    ScenarioAnalyzeCreate,
     StrategyComparisonCreate,
     StrategyCreate,
     StrategyValidationCreate,
@@ -292,6 +294,14 @@ def create_app(
         if row is None:
             raise HTTPException(status_code=404, detail="Dataset not found")
         return _dataset_to_dict(row, include_bars=True)
+
+    @app.post("/api/v1/scenarios/analyze")
+    def analyze_market_scenarios(payload: ScenarioAnalyzeCreate) -> dict[str, object]:
+        """Classify completed candles; this endpoint never creates an order."""
+        try:
+            return analyze_scenarios(payload.bars, lookback=payload.lookback).as_dict()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/api/v1/datasets/{dataset_id}/quality")
     def get_dataset_quality(dataset_id: str, request: Request) -> dict[str, Any]:
