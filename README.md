@@ -25,6 +25,7 @@ A research result must carry provenance and pass review before it informs a prod
 - Responsive Next.js/React workspace with dedicated Overview, Strategies, Backtests, Paper Trading, and Activity views; strategy, backtest, paper-order, position, and history workflows share the existing API
 - Public spot OHLCV retrieval through CCXT for an explicit exchange allowlist, plus synthetic demo candles
 - Content-addressed OHLCV dataset registry with canonical SHA-256 IDs, immutable duplicate handling, persisted candle payloads, and dataset metadata/list/detail endpoints
+- BTC point-in-time historical replay records linked to immutable datasets, with deterministic IDs, record fingerprints, and database-enforced immutability
 - Freqtrade source pinned as a Git submodule for evaluation as the mature strategy/backtesting/dry-run engine; its adapter is not yet wired into the current backtest endpoint
 - Dataset source, exchange, symbol, and timeframe persisted with backtest results
 - Deterministic completed-candle scenario analysis for downside continuation, false breakdown, range, and upside reversal
@@ -132,6 +133,9 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | GET / POST | `/api/v1/datasets` | Register a validated OHLCV dataset by content hash or list saved dataset metadata |
 | GET | `/api/v1/datasets/{dataset_id}` | Retrieve an immutable dataset and its exact saved candles |
 | GET | `/api/v1/datasets/{dataset_id}/quality` | Diagnose interval gaps, coverage, and freshness without modifying the dataset |
+| POST | `/api/v1/research/historical-replays` | Run and persist a reproducible BTC point-in-time replay; never creates orders |
+| GET | `/api/v1/research/historical-replays` | List saved immutable BTC replay records |
+| GET | `/api/v1/research/historical-replays/{record_id}` | Retrieve and verify a saved replay record |
 | GET / POST | `/api/v1/strategies` | List or create strategies |
 | GET | `/api/v1/strategies/{id}` | Inspect a strategy and its current version |
 | GET / POST | `/api/v1/strategies/{id}/versions` | List immutable parameter snapshots or create a new version |
@@ -162,6 +166,8 @@ Each new strategy starts with immutable version 1. Create later parameter snapsh
 Strategy comparisons require a registered immutable `dataset_id` and 2–10 unique version IDs from the same strategy. Every version is evaluated against the exact same saved candles, initial cash, fee rate, and slippage rate. The persisted report includes the dataset fingerprint, parameter fingerprints, and comparable return, drawdown, trade-count, win-rate, and benchmark metrics. Comparisons are descriptive research artifacts, not evidence of future profitability.
 
 Strategy validation requires a registered immutable `dataset_id`, an explicit strategy version ID, and a chronological split fraction from 0.5 to 0.9 (default 0.7). The API runs the pinned version on the in-sample prefix and on the later holdout period with identical initial cash, fees, and slippage. Pre-split candles are used only to initialize holdout indicators; no position is carried into the holdout, and holdout metrics begin at the first holdout candle. The report records split boundaries, actual split fraction, dataset and parameter fingerprints, and both periods' return, drawdown, trade-count, win-rate, and benchmark metrics. The holdout is an evaluation period, not a parameter-selection loop; a caller can still misuse it by repeatedly tuning against holdout results, so review discipline remains necessary.
+
+See [BTC Historical Replay Records](docs/HISTORICAL_REPLAY.md) for the replay API, provenance, integrity checks, and interpretation limits.
 
 ## Safety boundaries
 
