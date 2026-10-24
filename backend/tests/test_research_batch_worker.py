@@ -325,3 +325,53 @@ def test_legacy_migration_preserves_all_job_states_and_live_fencing(tmp_path) ->
     assert get_research_batch(
         Database(str(path)), planned["batch_id"]
     )["jobs"] == after["jobs"]
+
+
+def test_valid_record_from_wrong_week_or_cost_cannot_complete_job(
+    tmp_path, monkeypatch,
+) -> None:
+    """Integrity check also rejects genuine, valid records for a different job."""
+    offline_archive(monkeypatch)
+    db, plan = setup_batch(tmp_path, dates=("2025-10-21", "2025-10-28"))
+    other_week, _ = create_date_range_backtest(
+        db, start_date=date(2025, 10, 28),
+    )
+    wrong_cost, _ = create_date_range_backtest(
+        db, start_date=date(2025, 10, 21), fee_bps=20.0,
+    )
+    correct, _ = create_date_range_backtest(
+        db, start_date=date(2025, 10, 21),
+    )
+    moment = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    lease = claim_next_research_job(
+        db, plan["batch_id"], worker_id="worker", now=moment,
+    )
+
+    for candidate in (other_week, wrong_cost):
+        with pytest.raises(
+            BatchStateError, match="integrity or request checks",
+        ):
+            complete_research_job(
+                db, lease["planned_job_id"], lease["lease_token"],
+                record_id=candidate["id"],
+                record_sha256=candidate["record_sha256"],
+                now=moment + timedelta(seconds=1),
+            )
+        saved = get_research_batch(db, plan["batch_id"])["jobs"]
+        assert saved[0]["state"] == "leased"
+        assert saved[0]["saved_record_id"] is None
+        assert saved[1]["state"] == "pending"
+
+    complete_research_job(
+        db, lease["planned_job_id"], lease["lease_token"],
+        record_id=correct["id"],
+        record_sha256=correct["record_sha256"],
+        now=moment + timedelta(seconds=2),
+    )
+    verified = get_research_batch(db, plan["batch_id"])["jobs"]
+    assert verified[0]["state"] == "completed"
+    assert verified[0]["saved_record_id"] == correct["id"]
+    assert verified[0]["saved_record_sha256"] == correct["record_sha256"]
+    assert verified[1]["state"] == "pending"
+    with db.connection() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM paper_orders").fetchone()[0] == 0
