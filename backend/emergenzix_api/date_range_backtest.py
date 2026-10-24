@@ -9,7 +9,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections import Counter
 from datetime import date, datetime, time, timedelta, timezone
+from statistics import median
 from typing import Any, Sequence
 
 from .backtesting import run_sma_crossover
@@ -19,11 +21,12 @@ from .historical_data import fetch_binance_btc_4h_archive
 from .schemas import Bar, DatasetCreate
 
 
-DATE_RANGE_BACKTEST_PROTOCOL_VERSION = "btc-date-range-backtest-v1"
+DATE_RANGE_BACKTEST_PROTOCOL_VERSION = "btc-date-range-backtest-v2"
 BAR_INTERVAL = timedelta(hours=4)
 BARS_PER_DAY = 6
 SELECTION_TRAIN_FRACTION = 0.70
 MINIMUM_VALIDATION_TRADES = 2
+WALK_FORWARD_FOLDS = 3
 
 # Fixed, versioned candidate universe. Do not add/change candidates without
 # incrementing DATE_RANGE_BACKTEST_PROTOCOL_VERSION.
@@ -110,6 +113,168 @@ def _compact_metrics(run: dict[str, Any], *, include_path: bool) -> dict[str, An
     return result
 
 
+def _rank_candidates(
+    bars: list[Bar],
+    *,
+    evaluation_start_index: int,
+    initial_cash: float,
+    fee_bps: float,
+    slippage_bps: float,
+) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
+    """Rank the fixed candidate grid without access to later candles."""
+    candidate_results: list[dict[str, Any]] = []
+    for fast_window, slow_window in SMA_CANDIDATES:
+        validation_run = run_sma_crossover(
+            bars,
+            fast_window=fast_window,
+            slow_window=slow_window,
+            initial_cash=initial_cash,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
+            evaluation_start_index=evaluation_start_index,
+        )
+        metrics = _compact_metrics(validation_run, include_path=False)
+        score = metrics["total_return_pct"] - 0.5 * metrics["max_drawdown_pct"]
+        candidate_results.append(
+            {
+                "candidate_id": f"sma-{fast_window}-{slow_window}",
+                "strategy_type": "sma_crossover",
+                "parameters": {
+                    "fast_window": fast_window,
+                    "slow_window": slow_window,
+                },
+                "eligible": metrics["number_of_trades"] >= MINIMUM_VALIDATION_TRADES,
+                "selection_score": round(score, 6),
+                **metrics,
+            }
+        )
+
+    eligible_candidates = [item for item in candidate_results if item["eligible"]]
+    ranking_pool = eligible_candidates or candidate_results
+    ranked_candidates = sorted(
+        ranking_pool,
+        key=lambda item: (
+            -float(item["selection_score"]),
+            float(item["max_drawdown_pct"]),
+            -int(item["number_of_trades"]),
+            int(item["parameters"]["fast_window"]),
+            int(item["parameters"]["slow_window"]),
+        ),
+    )
+    status = (
+        "selected_with_minimum_trade_evidence"
+        if eligible_candidates
+        else "insufficient_validation_trades"
+    )
+    return candidate_results, ranked_candidates[0], status
+
+
+def _walk_forward_validation(
+    training_bars: list[Bar],
+    *,
+    initial_cash: float,
+    fee_bps: float,
+    slippage_bps: float,
+) -> dict[str, Any]:
+    """Evaluate three expanding-window folds over the final 30% of training data."""
+    first_fold_index = int(len(training_bars) * SELECTION_TRAIN_FRACTION)
+    validation_count = len(training_bars) - first_fold_index
+    fold_size, remainder = divmod(validation_count, WALK_FORWARD_FOLDS)
+    if fold_size < 1:
+        raise ValueError("not enough pre-test history for walk-forward validation")
+
+    folds: list[dict[str, Any]] = []
+    fold_start = first_fold_index
+    for fold_number in range(1, WALK_FORWARD_FOLDS + 1):
+        fold_count = fold_size + (1 if fold_number <= remainder else 0)
+        fold_end = fold_start + fold_count
+        selection_bars = training_bars[:fold_start]
+        selection_start = int(len(selection_bars) * SELECTION_TRAIN_FRACTION)
+        _, selected, selection_status = _rank_candidates(
+            selection_bars,
+            evaluation_start_index=selection_start,
+            initial_cash=initial_cash,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
+        )
+        fast_window = int(selected["parameters"]["fast_window"])
+        slow_window = int(selected["parameters"]["slow_window"])
+        fold_run = run_sma_crossover(
+            training_bars[:fold_end],
+            fast_window=fast_window,
+            slow_window=slow_window,
+            initial_cash=initial_cash,
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
+            evaluation_start_index=fold_start,
+        )
+        metrics = _compact_metrics(fold_run, include_path=False)
+        enough_trades = metrics["number_of_trades"] >= MINIMUM_VALIDATION_TRADES
+        folds.append(
+            {
+                "fold": fold_number,
+                "selection_candles_count": fold_start,
+                "selection_cutoff_exclusive": _utc_iso(
+                    _utc(training_bars[fold_start].timestamp)
+                ),
+                "evaluation_start_at": _utc_iso(
+                    _utc(training_bars[fold_start].timestamp)
+                ),
+                "evaluation_end_at_exclusive": _utc_iso(
+                    _utc(training_bars[fold_end - 1].timestamp) + BAR_INTERVAL
+                ),
+                "evaluation_candles_count": fold_count,
+                "selection_status": selection_status,
+                "selected_candidate": {
+                    "candidate_id": selected["candidate_id"],
+                    "parameters": selected["parameters"],
+                    "selection_score": selected["selection_score"],
+                },
+                "evidence_status": (
+                    "sufficient_completed_trades"
+                    if enough_trades
+                    else "insufficient_completed_trades"
+                ),
+                "metrics": metrics,
+            }
+        )
+        fold_start = fold_end
+
+    selected_counts = Counter(
+        fold["selected_candidate"]["candidate_id"] for fold in folds
+    )
+    return {
+        "method": "three_fold_expanding_window",
+        "folds_count": WALK_FORWARD_FOLDS,
+        "evaluation_region_start_at": folds[0]["evaluation_start_at"],
+        "evaluation_region_end_at_exclusive": folds[-1][
+            "evaluation_end_at_exclusive"
+        ],
+        "folds": folds,
+        "aggregate": {
+            "median_return_pct": round(
+                median(float(fold["metrics"]["total_return_pct"]) for fold in folds),
+                6,
+            ),
+            "worst_max_drawdown_pct": round(
+                max(float(fold["metrics"]["max_drawdown_pct"]) for fold in folds),
+                6,
+            ),
+            "folds_with_completed_trades": sum(
+                int(fold["metrics"]["number_of_trades"] > 0) for fold in folds
+            ),
+            "folds_with_minimum_trade_evidence": sum(
+                int(fold["metrics"]["number_of_trades"] >= MINIMUM_VALIDATION_TRADES)
+                for fold in folds
+            ),
+            "selected_candidate_counts": dict(sorted(selected_counts.items())),
+            "same_candidate_selected_in_all_folds": len(selected_counts) == 1,
+        },
+        "future_visible_during_fold_selection": False,
+        "automatic_promotion": False,
+    }
+
+
 def run_date_range_backtest(
     bars: Sequence[Bar],
     *,
@@ -178,55 +343,18 @@ def run_date_range_backtest(
     if selection_index < max(slow for _, slow in SMA_CANDIDATES) + 2:
         raise ValueError("not enough pre-test history to warm up the candidate strategies")
 
-    candidate_results: list[dict[str, Any]] = []
-    for fast_window, slow_window in SMA_CANDIDATES:
-        validation_run = run_sma_crossover(
-            training_bars,
-            fast_window=fast_window,
-            slow_window=slow_window,
-            initial_cash=initial_cash,
-            fee_bps=fee_bps,
-            slippage_bps=slippage_bps,
-            evaluation_start_index=selection_index,
-        )
-        metrics = _compact_metrics(validation_run, include_path=False)
-        # A simple, explicit ranking rule: net return less a 0.5x maximum-drawdown
-        # penalty. The test period is never passed to this candidate-ranking loop.
-        score = (
-            metrics["total_return_pct"]
-            - 0.5 * metrics["max_drawdown_pct"]
-        )
-        candidate_results.append(
-            {
-                "candidate_id": f"sma-{fast_window}-{slow_window}",
-                "strategy_type": "sma_crossover",
-                "parameters": {
-                    "fast_window": fast_window,
-                    "slow_window": slow_window,
-                },
-                "eligible": metrics["number_of_trades"] >= MINIMUM_VALIDATION_TRADES,
-                "selection_score": round(score, 6),
-                **metrics,
-            }
-        )
-
-    eligible_candidates = [item for item in candidate_results if item["eligible"]]
-    ranking_pool = eligible_candidates or candidate_results
-    ranked_candidates = sorted(
-        ranking_pool,
-        key=lambda item: (
-            -float(item["selection_score"]),
-            float(item["max_drawdown_pct"]),
-            -int(item["number_of_trades"]),
-            int(item["parameters"]["fast_window"]),
-            int(item["parameters"]["slow_window"]),
-        ),
+    candidate_results, selected_candidate, selection_status = _rank_candidates(
+        training_bars,
+        evaluation_start_index=selection_index,
+        initial_cash=initial_cash,
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
     )
-    selected_candidate = ranked_candidates[0]
-    selection_status = (
-        "selected_with_minimum_trade_evidence"
-        if eligible_candidates
-        else "insufficient_validation_trades"
+    walk_forward = _walk_forward_validation(
+        training_bars,
+        initial_cash=initial_cash,
+        fee_bps=fee_bps,
+        slippage_bps=slippage_bps,
     )
 
     selected_fast = int(selected_candidate["parameters"]["fast_window"])
@@ -285,7 +413,7 @@ def run_date_range_backtest(
             "warning": (
                 "No candidate completed the minimum number of validation trades; "
                 "the top-scoring candidate is provisional."
-                if not eligible_candidates
+                if selection_status == "insufficient_validation_trades"
                 else None
             ),
             "future_visible_during_selection": False,
@@ -306,6 +434,7 @@ def run_date_range_backtest(
                 ),
             ),
         },
+        "walk_forward_validation": walk_forward,
         "test_result": test_metrics,
         "limitations": [
             "This protocol tests BTC/USDT spot candles only.",
