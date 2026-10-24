@@ -107,14 +107,15 @@ class Database:
                     symbol TEXT NOT NULL,
                     timeframe TEXT,
                     protocol_version TEXT NOT NULL,
-                    seed INTEGER NOT NULL CHECK (seed >= 0),
+                    seed INTEGER CHECK (seed IS NULL OR seed >= 0),
+                    anchor_at TEXT,
                     horizon_bars INTEGER NOT NULL CHECK (horizon_bars >= 1),
                     lookback INTEGER NOT NULL CHECK (lookback >= 10),
                     anchor_index INTEGER NOT NULL CHECK (anchor_index >= 0),
                     record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
                     record_json TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    UNIQUE (dataset_id, seed, horizon_bars, lookback, protocol_version)
+                    UNIQUE (dataset_id, seed, anchor_at, horizon_bars, lookback, protocol_version)
                 );
 
                 CREATE TABLE IF NOT EXISTS strategy_comparisons (
