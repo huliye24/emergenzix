@@ -59,6 +59,7 @@ Useful commands:
 ```bash
 docker compose ps
 docker compose logs -f api web
+docker compose logs -f watch
 docker compose down
 ```
 
@@ -147,6 +148,8 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | GET | `/api/v1/paper/trades` | Inspect simulated fills |
 
 Backtest requests accept exactly one input source: ordered OHLCV bars with timezone-aware timestamps, or a registered `dataset_id`. Dataset-backed runs load the saved candle sequence server-side, reject a dataset whose symbol differs from the selected strategy, and persist the dataset ID, SHA-256 fingerprint, time range, and bar count in result provenance. Fees and slippage are explicit request parameters and are included in the saved result.
+
+The `watch` Compose service evaluates public OHLCV continuously and writes JSON-line events only for its initial snapshot, a scenario transition, a risk failure, or a new paper-review trigger. It discards the newest exchange candle because it may still be forming, persists its last state in the data volume, and has no order-placement capability. Run one local cycle with `cd backend && python -m emergenzix_api.watch_agent --once`.
 
 The read-only dataset quality endpoint reports timeframe-aligned candle gaps, irregular intervals, estimated coverage when spacing is consistent, and latest-candle freshness. It does not mutate datasets or automatically block historical backtests; freshness is a diagnostic heuristic.
 
