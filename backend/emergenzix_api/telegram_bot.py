@@ -585,6 +585,222 @@ def format_saved_evidence(assessment: object, record_id: str) -> str:
     return "\n".join(lines)
 
 
+
+def _stats_distribution(value: object, measurements: list[float]) -> dict[str, float] | None:
+    """Validate all reported distribution values against source observations."""
+    if not measurements:
+        if value is not None:
+            raise ValueError("unexpected empty-sample distribution")
+        return None
+    if not isinstance(value, dict) or set(value) != {"mean", "median", "minimum", "maximum"}:
+        raise ValueError("invalid statistics distribution")
+    from statistics import fmean, median
+
+    expected = {
+        "mean": round(fmean(measurements), 8),
+        "median": round(median(measurements), 8),
+        "minimum": round(min(measurements), 8),
+        "maximum": round(max(measurements), 8),
+    }
+    for name, expected_value in expected.items():
+        result = _strict_evidence_number(value.get(name))
+        if result is None or abs(result - expected_value) > 0.000001:
+            raise ValueError("inconsistent statistics distribution")
+    return expected
+
+
+def _stats_day(value: object) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise ValueError("invalid test window timestamp")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as exc:
+        raise ValueError("invalid test window timestamp") from exc
+    if (
+        parsed.utcoffset() != timedelta(0)
+        or parsed.time() != datetime_time(0, 0)
+    ):
+        raise ValueError("invalid test window alignment")
+    return parsed
+
+
+def format_saved_period_statistics(statistics: object, requested_limit: int) -> str:
+    """Fail closed on broken/misleading sample metadata; show no portfolio PnL."""
+    invalid = "历史统计响应格式异常，未展示不可信的汇总数据；没有执行交易。"
+    if not isinstance(statistics, dict) or type(requested_limit) is not int:
+        return invalid
+    if not 2 <= requested_limit <= 100:
+        return invalid
+    if (
+        statistics.get("statistics_version") != "date-range-statistics-v1"
+        or statistics.get("protocol_version") != "btc-date-range-backtest-v4"
+        or statistics.get("aggregation_type") != "descriptive_saved_observations"
+        or any(
+            statistics.get(key) is not False
+            for key in (
+                "automatic_winner_selection", "strategy_promotion_allowed",
+                "paper_order_permission", "testnet_order_permission",
+                "live_order_permission",
+            )
+        )
+    ):
+        return invalid
+
+    selection = statistics.get("selection")
+    records = statistics.get("observations")
+    sample = statistics.get("sample_size")
+    ids = selection.get("record_ids") if isinstance(selection, dict) else None
+    if (
+        not isinstance(selection, dict)
+        or selection.get("method") != "latest_by_created_at"
+        or type(selection.get("limit")) is not int
+        or selection["limit"] != requested_limit
+        or type(sample) is not int
+        or not 0 <= sample <= requested_limit
+        or not isinstance(records, list)
+        or not isinstance(ids, list)
+        or len(records) != sample
+        or len(ids) != sample
+        or len(set(ids)) != sample if all(isinstance(item, str) for item in ids or []) else True
+    ):
+        return invalid
+
+    flags = (
+        "different_cost_assumptions", "different_selected_candidates",
+        "all_test_windows_seven_days", "nonoverlapping_seven_day_windows",
+    )
+    if any(type(statistics.get(key)) is not bool for key in flags):
+        return invalid
+    integers = (
+        "profitable_observation_count", "losing_observation_count",
+        "flat_observation_count", "distinct_test_windows",
+        "overlapping_test_window_pairs", "repeated_test_window_count",
+    )
+    if any(
+        type(statistics.get(key)) is not int or statistics[key] < 0
+        for key in integers
+    ):
+        return invalid
+    if statistics.get("status") != (
+        "descriptive_only" if sample >= 2 else "insufficient_records"
+    ):
+        return invalid
+
+    returns: list[float] = []
+    drawdowns: list[float] = []
+    windows: list[tuple[datetime, datetime]] = []
+    costs: set[tuple[float, float]] = set()
+    candidates: set[str] = set()
+    try:
+        for index, row in enumerate(records):
+            if (
+                not isinstance(row, dict)
+                or not _valid_record_id(ids[index])
+                or row.get("record_id") != ids[index]
+                or row.get("protocol_version") != "btc-date-range-backtest-v4"
+                or not _valid_record_id(row.get("dataset_sha256"))
+                or not isinstance(row.get("selected_candidate"), str)
+                or not row["selected_candidate"]
+            ):
+                raise ValueError("invalid source observation")
+            ret = _strict_evidence_number(row.get("net_return_pct"))
+            dd = _strict_evidence_number(row.get("max_drawdown_pct"))
+            fee = _strict_evidence_number(row.get("fee_bps_per_side"))
+            slip = _strict_evidence_number(row.get("slippage_bps_per_side"))
+            if (
+                ret is None or ret < -100 or dd is None or not 0 <= dd <= 100
+                or fee is None or fee < 0 or slip is None or slip < 0
+            ):
+                raise ValueError("invalid source metrics")
+            start = _stats_day(row.get("test_start_at"))
+            end = _stats_day(row.get("test_end_at_exclusive"))
+            duration = end - start
+            if not timedelta(days=1) <= duration <= timedelta(days=30):
+                raise ValueError("invalid research period")
+            returns.append(ret)
+            drawdowns.append(dd)
+            windows.append((start, end))
+            costs.add((fee, slip))
+            candidates.add(row["selected_candidate"])
+
+        _stats_distribution(statistics.get("return_distribution_pct"), returns)
+        _stats_distribution(
+            statistics.get("individual_max_drawdown_distribution_pct"), drawdowns
+        )
+    except (ValueError, OverflowError, TypeError):
+        return invalid
+
+    overlap_pairs = sum(
+        start_a < end_b and start_b < end_a
+        for i, (start_a, end_a) in enumerate(windows)
+        for start_b, end_b in windows[i + 1:]
+    )
+    distinct_windows = len(set(windows))
+    seven_day = all(end - start == timedelta(days=7) for start, end in windows)
+    disjoint_seven_day = sample >= 2 and seven_day and overlap_pairs == 0
+    if (
+        statistics["profitable_observation_count"] != sum(value > 0 for value in returns)
+        or statistics["losing_observation_count"] != sum(value < 0 for value in returns)
+        or statistics["flat_observation_count"] != sum(value == 0 for value in returns)
+        or statistics["distinct_test_windows"] != distinct_windows
+        or statistics["overlapping_test_window_pairs"] != overlap_pairs
+        or statistics["repeated_test_window_count"] != sample - distinct_windows
+        or statistics["different_cost_assumptions"] != (len(costs) > 1)
+        or statistics["different_selected_candidates"] != (len(candidates) > 1)
+        or statistics["all_test_windows_seven_days"] != seven_day
+        or statistics["nonoverlapping_seven_day_windows"] != disjoint_seven_day
+    ):
+        return invalid
+
+    lines = [
+        "Emergenzix · 已保存历史回测跨周期统计",
+        f"统计范围：最近 {requested_limit} 条；实际 {sample} 条已保存记录",
+    ]
+    if not sample:
+        lines.append("暂无已保存的回测记录，无法计算收益或回撤分布。")
+    else:
+        ret_dist = _stats_distribution(statistics["return_distribution_pct"], returns)
+        dd_dist = _stats_distribution(
+            statistics["individual_max_drawdown_distribution_pct"], drawdowns
+        )
+        lines.extend([
+            f"正收益 / 负收益 / 持平记录："
+            f"{statistics['profitable_observation_count']} / "
+            f"{statistics['losing_observation_count']} / "
+            f"{statistics['flat_observation_count']}",
+            f"单次回测净收益：均值 {_percent(ret_dist['mean'], signed=True)}；"
+            f"中位数 {_percent(ret_dist['median'], signed=True)}",
+            f"收益区间：{_percent(ret_dist['minimum'], signed=True)} ~ "
+            f"{_percent(ret_dist['maximum'], signed=True)}",
+            f"单次最大回撤：均值 {_percent(dd_dist['mean'])}；"
+            f"中位数 {_percent(dd_dist['median'])}；"
+            f"区间 {_percent(dd_dist['minimum'])} ~ {_percent(dd_dist['maximum'])}",
+        ])
+
+    if sample < 2:
+        lines.append("⚠ 保存记录不足两条，无法讨论跨周期稳定性。")
+    if statistics["repeated_test_window_count"]:
+        lines.append(f"⚠ 相同测试区间重复：{statistics['repeated_test_window_count']} 条额外记录。")
+    if overlap_pairs:
+        lines.append(f"⚠ 存在 {overlap_pairs} 对重叠测试区间；不能当作独立交易周。")
+    if statistics["different_cost_assumptions"]:
+        lines.append("⚠ 手续费或滑点设定不一致。")
+    if statistics["different_selected_candidates"]:
+        lines.append("⚠ 不同日期选择了不同候选策略，并非固定策略的业绩记录。")
+    if not seven_day and sample:
+        lines.append("⚠ 并非所有记录都覆盖七天，盈利记录数不等于盈利周数。")
+    if disjoint_seven_day:
+        lines.append("测试区间：每条均为七天，且互不重叠；训练数据和市场环境仍可能相关。")
+
+    lines.extend([
+        "",
+        "提示：以上仅为已保存实验的描述性统计，不是实盘资金曲线；"
+        "不能复利相乘，也不能推断投资组合回撤或未来收益。",
+        "没有自动选优、晋级策略或授权 PAPER / TESTNET / LIVE 下单。",
+    ])
+    return "\n".join(lines)
+
+
 class TelegramCommandBot:
     """Poll Telegram updates and expose a small, allowlisted research command set."""
 
@@ -768,6 +984,7 @@ class TelegramCommandBot:
             "/report RECORD_ID — 按完整记录 ID 查看历史报告\n"
             "/compare ID1 ID2 — 对比两条已保存的历史回测\n"
             "/evidence RECORD_ID — 查看历史回测的七项证据筛查\n"
+            "/stats [limit] — 汇总最近 2–100 条已保存回测（默认 30）\n"
             "/backtest YYYY-MM-DD [days] — 回测历史区间，days 默认为 7，范围 1–30 天\n"
             "/help — 查看此说明\n\n"
             "回测固定使用 90 天训练窗口、10 bps 单边手续费和 5 bps 单边滑点。"
@@ -908,6 +1125,34 @@ class TelegramCommandBot:
             return f"比较历史回测失败：{_one_line(exc)}\n没有运行策略或创建订单。"
         return format_saved_comparison(comparison, arguments)
 
+    def _stats_text(self, arguments: list[str]) -> str:
+        usage = "用法：/stats [limit]（默认 30，范围 2–100；只统计已保存回测）"
+        if len(arguments) > 1:
+            return usage
+        if not arguments:
+            limit = 30
+        elif (
+            not arguments[0].isascii()
+            or not arguments[0].isdecimal()
+            or len(arguments[0]) > 3
+        ):
+            return usage
+        else:
+            limit = int(arguments[0])
+            if not 2 <= limit <= 100:
+                return usage
+
+        try:
+            result = self._api_request(
+                "GET", f"/api/v1/research/date-range-statistics?limit={limit}"
+            )
+        except ApiRequestError:
+            return (
+                "历史统计查询失败：请检查内部只读统计 API 与已保存记录；"
+                "没有运行策略或创建订单。"
+            )
+        return format_saved_period_statistics(result, limit)
+
     def _evidence_text(self, arguments: list[str]) -> str:
         usage = "用法：/evidence RECORD_ID（使用 /history 获取完整的 64 位记录 ID）"
         if len(arguments) != 1 or not _valid_record_id(arguments[0]):
@@ -1034,6 +1279,8 @@ class TelegramCommandBot:
             reply = self._compare_text(arguments)
         elif command == "/evidence":
             reply = self._evidence_text(arguments)
+        elif command == "/stats":
+            reply = self._stats_text(arguments)
         elif command == "/backtest":
             reply = self._backtest_text(arguments, chat_id=chat_id)
         else:

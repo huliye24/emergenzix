@@ -243,6 +243,7 @@ def test_help_command_sends_usage_to_authorized_chat(tmp_path: Path) -> None:
     assert "/report RECORD_ID" in sent[0]["text"]
     assert "/compare ID1 ID2" in sent[0]["text"]
     assert "/evidence RECORD_ID" in sent[0]["text"]
+    assert "/stats [limit]" in sent[0]["text"]
     assert "/backtest YYYY-MM-DD [days]" in sent[0]["text"]
     assert "不会创建订单" in sent[0]["text"]
 
@@ -897,6 +898,234 @@ def test_evidence_command_rejects_unauthorized_chat_silently(tmp_path: Path) -> 
     _bot(tmp_path, requester).handle_update(
         _update("/evidence " + "a" * 64, chat_id=99999)
     )
+
+
+
+def _stats_fixture(
+    *, overlapping: bool = False, mixed_costs: bool = False,
+    mixed_candidates: bool = False,
+) -> dict[str, object]:
+    records = [
+        {
+            "record_id": "a" * 64,
+            "protocol_version": "btc-date-range-backtest-v4",
+            "dataset_sha256": "d" * 64,
+            "test_start_at": "2025-10-07T00:00:00Z",
+            "test_end_at_exclusive": "2025-10-14T00:00:00Z",
+            "selected_candidate": "sma-3-10",
+            "net_return_pct": 3.0,
+            "max_drawdown_pct": 2.0,
+            "fee_bps_per_side": 10.0,
+            "slippage_bps_per_side": 5.0,
+        },
+        {
+            "record_id": "b" * 64,
+            "protocol_version": "btc-date-range-backtest-v4",
+            "dataset_sha256": "d" * 64,
+            "test_start_at": "2025-10-14T00:00:00Z",
+            "test_end_at_exclusive": "2025-10-21T00:00:00Z",
+            "selected_candidate": "sma-3-10",
+            "net_return_pct": -1.0,
+            "max_drawdown_pct": 4.0,
+            "fee_bps_per_side": 10.0,
+            "slippage_bps_per_side": 5.0,
+        },
+    ]
+    if overlapping:
+        records[1]["test_start_at"] = "2025-10-10T00:00:00Z"
+        records[1]["test_end_at_exclusive"] = "2025-10-17T00:00:00Z"
+    if mixed_costs:
+        records[1]["fee_bps_per_side"] = 20.0
+    if mixed_candidates:
+        records[1]["selected_candidate"] = "donchian-20-10"
+    return {
+        "statistics_version": "date-range-statistics-v1",
+        "protocol_version": "btc-date-range-backtest-v4",
+        "aggregation_type": "descriptive_saved_observations",
+        "selection": {
+            "method": "latest_by_created_at",
+            "limit": 30,
+            "record_ids": ["a" * 64, "b" * 64],
+        },
+        "sample_size": 2,
+        "status": "descriptive_only",
+        "profitable_observation_count": 1,
+        "losing_observation_count": 1,
+        "flat_observation_count": 0,
+        "return_distribution_pct": {
+            "mean": 1.0, "median": 1.0, "minimum": -1.0, "maximum": 3.0,
+        },
+        "individual_max_drawdown_distribution_pct": {
+            "mean": 3.0, "median": 3.0, "minimum": 2.0, "maximum": 4.0,
+        },
+        "distinct_test_windows": 2,
+        "overlapping_test_window_pairs": 1 if overlapping else 0,
+        "repeated_test_window_count": 0,
+        "different_cost_assumptions": mixed_costs,
+        "different_selected_candidates": mixed_candidates,
+        "all_test_windows_seven_days": True,
+        "nonoverlapping_seven_day_windows": not overlapping,
+        "observations": records,
+        "automatic_winner_selection": False,
+        "strategy_promotion_allowed": False,
+        "paper_order_permission": False,
+        "testnet_order_permission": False,
+        "live_order_permission": False,
+    }
+
+
+@pytest.mark.parametrize("arguments", ["/stats", "/stats 30"])
+def test_stats_reads_only_historical_statistics_and_preserves_cooldown(
+    tmp_path: Path, arguments: str
+) -> None:
+    calls, sent = [], []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/api/v1/research/date-range-statistics?limit=30"):
+            calls.append(request.get_method())
+            return FakeResponse(_stats_fixture())
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 60}})
+        raise AssertionError("Unexpected endpoint or prohibited write")
+
+    bot = _bot(tmp_path, requester)
+    before = dict(bot.state)
+    bot.handle_update(_update(arguments))
+    assert calls == ["GET"]
+    assert bot.state == before
+    assert len(sent) == 1
+    assert "最近 30 条；实际 2 条" in sent[0]
+    assert "正收益 / 负收益 / 持平记录：1 / 1 / 0" in sent[0]
+    assert "净收益：均值 +1.0000%" in sent[0]
+    assert "不能复利相乘" in sent[0]
+    assert "没有自动选优" in sent[0]
+
+
+def test_stats_warns_about_overlapping_and_mixed_experiments(tmp_path: Path) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/api/v1/research/date-range-statistics?limit=30"):
+            return FakeResponse(_stats_fixture(
+                overlapping=True, mixed_costs=True, mixed_candidates=True,
+            ))
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 61}})
+        raise AssertionError("Unexpected endpoint or prohibited write")
+
+    _bot(tmp_path, requester).handle_update(_update("/stats"))
+    assert len(sent) == 1
+    assert "重叠测试区间" in sent[0]
+    assert "手续费或滑点" in sent[0]
+    assert "不同候选策略" in sent[0]
+    assert "固定策略" in sent[0]
+
+
+@pytest.mark.parametrize("text", [
+    "/stats extra arguments", "/stats 1", "/stats 101", "/stats -1",
+    "/stats 20.0", "/stats abc", "/stats １２", "/stats +30",
+])
+def test_stats_rejects_bad_limit_before_api_request(tmp_path: Path, text: str) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 62}})
+        raise AssertionError("Invalid stats called API")
+
+    _bot(tmp_path, requester).handle_update(_update(text))
+    assert len(sent) == 1
+    assert "用法：/stats" in sent[0]
+
+
+@pytest.mark.parametrize("corruption", [
+    "win_count", "distribution", "authorization", "overlap",
+    "sample_size", "source_id", "nan", "cost_flag", "version",
+])
+def test_stats_bad_api_response_fails_closed(corruption: str) -> None:
+    from emergenzix_api.telegram_bot import format_saved_period_statistics
+
+    result = _stats_fixture()
+    if corruption == "win_count":
+        result["profitable_observation_count"] = 2
+    elif corruption == "distribution":
+        result["return_distribution_pct"]["mean"] = 45
+    elif corruption == "authorization":
+        result["live_order_permission"] = True
+    elif corruption == "overlap":
+        result["overlapping_test_window_pairs"] = 1
+    elif corruption == "sample_size":
+        result["sample_size"] = 3
+    elif corruption == "source_id":
+        result["observations"][0]["record_id"] = "c" * 64
+    elif corruption == "nan":
+        result["observations"][0]["net_return_pct"] = float("nan")
+    elif corruption == "cost_flag":
+        result["different_cost_assumptions"] = True
+    elif corruption == "version":
+        result["statistics_version"] = "v999"
+    output = format_saved_period_statistics(result, 30)
+    assert "响应格式异常" in output
+    assert "净收益：均值" not in output
+
+
+@pytest.mark.parametrize("count", [0, 1])
+def test_stats_empty_and_single_record_are_not_misrepresented(count: int) -> None:
+    from emergenzix_api.telegram_bot import format_saved_period_statistics
+
+    data = _stats_fixture()
+    data["selection"]["record_ids"] = data["selection"]["record_ids"][:count]
+    data["observations"] = data["observations"][:count]
+    data["sample_size"] = count
+    data["status"] = "insufficient_records"
+    data["profitable_observation_count"] = count
+    data["losing_observation_count"] = 0
+    data["flat_observation_count"] = 0
+    data["distinct_test_windows"] = count
+    data["all_test_windows_seven_days"] = True
+    data["nonoverlapping_seven_day_windows"] = False
+    if count == 0:
+        data["return_distribution_pct"] = None
+        data["individual_max_drawdown_distribution_pct"] = None
+    else:
+        data["return_distribution_pct"] = {
+            "mean": 3, "median": 3, "minimum": 3, "maximum": 3,
+        }
+        data["individual_max_drawdown_distribution_pct"] = {
+            "mean": 2, "median": 2, "minimum": 2, "maximum": 2,
+        }
+    response = format_saved_period_statistics(data, 30)
+    assert "响应格式异常" not in response
+    assert "记录不足两条" in response if count else "暂无已保存" in response
+
+
+def test_stats_api_failure_is_sanitized_and_unauthorized_chat_is_ignored(
+    tmp_path: Path,
+) -> None:
+    sent, calls = [], []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 63}})
+        calls.append(request.full_url)
+        raise urllib.error.URLError("private-host 12345:bot-secret")
+
+    bot = _bot(tmp_path, requester)
+    bot.handle_update(_update("/stats"))
+    assert len(calls) == 1
+    assert len(sent) == 1
+    assert "统计查询失败" in sent[0]
+    assert "bot-secret" not in sent[0]
+    assert "private-host" not in sent[0]
+
+    sent.clear()
+    calls.clear()
+    bot.handle_update(_update("/stats", chat_id=99999))
+    assert not calls and not sent
 
 
 def test_poll_once_discards_stale_updates_then_persists_offset(tmp_path: Path) -> None:
