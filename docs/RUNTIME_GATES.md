@@ -50,3 +50,14 @@ The watcher enqueues emitted events before saving its updated watcher state, red
 `GET /api/v1/notifications/status` reports aggregate queue metrics only; it never returns event bodies, chart images, chat IDs, or bot credentials. Metrics include total, pending, retrying, due, cumulative failed-attempt count, delivered, and dead-letter counts, the oldest pending timestamp, the latest successful delivery timestamp, and the most recent stored exception type. Failed-attempt counts remain cumulative even after a later successful retry.
 
 The endpoint returns `not_initialized` when the outbox database has not yet been created, `ok` when no dead-letter records exist, and `attention_required` when at least one record is dead-lettered. It is an observability endpoint, not proof of strategy performance or exchange connectivity. The API currently has no authentication; keep it on a private network and do not expose it publicly without an access-control review.
+
+
+## Watcher operational alerts and recovery
+
+The watcher monitors the durable notification outbox after each polling cycle. It sends one operational alert when the dead-letter count becomes non-zero, and one when pending notifications reach `EMERGENZIX_NOTIFICATION_BACKLOG_THRESHOLD` (default `20`). It sends a recovery message after the backlog falls below the threshold or the dead-letter count returns to zero.
+
+Operational incident state is persisted to `EMERGENZIX_OPERATIONAL_ALERT_STATE_PATH` (default `/data/operational-alert-state.json`) so an unchanged incident does not generate a new alert after restart. Transition keys are stable and use the outbox deduplication mechanism; failed enqueue attempts are retried on later watcher cycles. Stale market data already blocks scenario analysis; when fresh data returns, the watcher now emits a separate recovery event.
+
+Dead-letter records are retained rather than silently deleted. A dead-letter alert remains active until the dead-letter count is cleared by operator intervention; this version does not yet include an authenticated dead-letter replay or resolution UI. If the outbox database itself is unavailable, the watcher emits a sanitized structured error to container logs because the same unavailable outbox cannot reliably carry a Telegram alert.
+
+These are operational notifications, not trading signals. The watcher remains PAPER-only and never submits exchange orders.
