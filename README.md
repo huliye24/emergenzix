@@ -170,6 +170,8 @@ Strategy validation requires a registered immutable `dataset_id`, an explicit st
 
 See [BTC Historical Replay Records](docs/HISTORICAL_REPLAY.md) for the replay API, provenance, integrity checks, and interpretation limits.
 
+See [BTC Historical Data Ingestion](docs/BTC_DATA_INGESTION.md) for the verified Binance 4h archive import and dataset workflow.
+
 ## Safety boundaries
 
 - The API only provides **PAPER** execution; the CCXT integration is read-only public market data, with no exchange order adapter or LIVE order endpoint.
