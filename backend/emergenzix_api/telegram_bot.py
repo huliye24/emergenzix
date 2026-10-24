@@ -214,6 +214,63 @@ def _cost_sensitivity_lines(report: dict[str, Any]) -> list[str]:
         *rendered_rows,
     ]
 
+
+def _candidate_selection_lines(selection: dict[str, Any]) -> list[str]:
+    """Show pre-test candidate evidence while distinguishing it from holdout results."""
+    selected = selection.get("selected_candidate")
+    candidates = selection.get("candidates")
+    if not isinstance(selected, dict) or not isinstance(candidates, list):
+        return []
+    if not 1 <= len(candidates) <= 12:
+        return []
+    selected_id = selected.get("candidate_id")
+    if not isinstance(selected_id, str) or not selected_id:
+        return []
+
+    rows: list[str] = []
+    seen_ids: set[str] = set()
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            return []
+        candidate_id = candidate.get("candidate_id")
+        validation_return = _finite_number(candidate.get("total_return_pct"))
+        drawdown = _finite_number(candidate.get("max_drawdown_pct"))
+        score = _finite_number(candidate.get("selection_score"))
+        trades = candidate.get("number_of_trades")
+        eligible = candidate.get("eligible")
+        if (
+            not isinstance(candidate_id, str)
+            or not candidate_id.strip()
+            or candidate_id in seen_ids
+            or validation_return is None
+            or drawdown is None
+            or score is None
+            or drawdown < 0
+            or isinstance(trades, bool)
+            or not isinstance(trades, int)
+            or trades < 0
+            or not isinstance(eligible, bool)
+        ):
+            return []
+        seen_ids.add(candidate_id)
+        is_selected = candidate_id == selected_id
+        if is_selected:
+            state = "已选" if eligible else "已选·证据不足"
+        else:
+            state = "达标" if eligible else "证据不足"
+        rows.append(
+            f"{_one_line(candidate_id, 60)} | {_percent(validation_return, signed=True)} | "
+            f"{_percent(drawdown)} | {trades} | {score:+.4f} | {state}"
+        )
+
+    if selected_id not in seen_ids:
+        return []
+    return [
+        "策略候选验证（仅训练期数据；不代表测试期结果）",
+        "候选 | 验证收益 | 最大回撤 | 交易数 | 选择分 | 状态",
+        *rows,
+    ]
+
 def format_backtest_record(record: object) -> str:
     """Render the useful summary from a persisted date-range backtest record."""
     if not isinstance(record, dict):
@@ -266,6 +323,9 @@ def format_backtest_record(record: object) -> str:
         f"胜率：{_percent(metrics.get('win_rate_pct'))}",
         f"策略选择证据：{selection_status}",
     ]
+    candidate_lines = _candidate_selection_lines(selection)
+    if candidate_lines:
+        lines.extend(["", *candidate_lines])
     daily_lines = _daily_pnl_lines(period, metrics)
     if daily_lines:
         lines.extend(["", *daily_lines])
