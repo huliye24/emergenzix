@@ -157,6 +157,7 @@ def create_app(
 
     @app.get("/api/v1/market-data/ohlcv")
     def market_data_ohlcv(
+        request: Request,
         exchange: Literal["binance", "bybit", "okx", "kraken", "coinbase"] = Query(
             default="binance"
         ),
