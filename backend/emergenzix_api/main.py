@@ -16,6 +16,7 @@ from .backtesting import run_sma_crossover
 from .config import Settings
 from .dataset_quality import build_dataset_quality_report
 from .database import Database
+from .historical_replay_api import router as historical_replay_router
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
 from .scenarios import analyze_scenarios
@@ -135,6 +136,7 @@ def create_app(
         ),
         version=__version__,
     )
+    app.include_router(historical_replay_router)
     app.state.database = database
     app.state.market_data_cache = TTLCache(
         ttl_seconds=settings.market_data_cache_ttl_seconds,
