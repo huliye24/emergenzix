@@ -1,7 +1,8 @@
 """SQLite-backed batch task ledger: registration, atomic leases and bounded retries.
 
 Internal service only: not exposed through unauthenticated FastAPI routes.
-No market-data calls, backtest execution, order execution, or success marking.
+No market-data calls, backtest execution or order execution; final completion
+requires verification of an existing immutable research record.
 """
 
 from __future__ import annotations
@@ -144,7 +145,8 @@ def get_research_batch(db: Database, batch_id: str) -> dict[str, Any]:
             raise BatchStateError("research batch not found")
         jobs = conn.execute(
             "SELECT id, position, request_json, state, attempts, lease_expires_at, "
-            "last_error_code FROM research_batch_jobs WHERE batch_id = ? ORDER BY position",
+            "last_error_code, saved_record_id, saved_record_sha256 "
+            "FROM research_batch_jobs WHERE batch_id = ? ORDER BY position",
             (batch_id,),
         ).fetchall()
     manifest = json.loads(plan["plan_json"])
@@ -162,6 +164,8 @@ def get_research_batch(db: Database, batch_id: str) -> dict[str, Any]:
                 "state": row["state"], "attempts": row["attempts"],
                 "lease_expires_at": row["lease_expires_at"],
                 "last_error_code": row["last_error_code"],
+                "saved_record_id": row["saved_record_id"],
+                "saved_record_sha256": row["saved_record_sha256"],
             }
             for row in jobs
         ],
@@ -316,3 +320,117 @@ def cancel_unclaimed_research_jobs(
             (timestamp, batch_id),
         )
         return changed.rowcount
+
+def _verify_saved_record(
+    conn: sqlite3.Connection, record_id: str, expected_sha: str,
+    request: dict[str, Any],
+) -> None:
+    """Verify the stored canonical fingerprint and provenance *inside the fence*."""
+    import hashlib
+    from datetime import date, time
+
+    row = conn.execute(
+        "SELECT * FROM date_range_backtest_records WHERE id = ?",
+        (record_id,),
+    ).fetchone()
+    if row is None or row["record_sha256"] != expected_sha:
+        raise BatchStateError("saved research result is missing or fingerprint differs")
+    try:
+        record = json.loads(row["record_json"])
+        if not isinstance(record, dict):
+            raise ValueError("unsupported record")
+        canonical = _json({key: value for key, value in record.items() if key != "created_at"})
+        if hashlib.sha256(canonical.encode("utf-8")).hexdigest() != expected_sha:
+            raise ValueError("invalid result fingerprint")
+        config = record["configuration"]
+        safety = record["safety"]
+        report = record["report"]
+        period = report["period"]
+        dataset = record["dataset"]
+        expected_start = datetime.combine(
+            date.fromisoformat(request["start_date"]), time.min, timezone.utc
+        )
+        expected_end = expected_start + timedelta(days=request["duration_days"])
+        if (
+            record["id"] != record_id
+            or record["record_type"] != "btc_date_range_backtest"
+            or record["protocol_version"] != row["protocol_version"]
+            or record["protocol_version"] != "btc-date-range-backtest-v4"
+            or any(
+                type(config.get(key)) not in (float, int)
+                or float(config[key]) != float(request[key])
+                for key in ("initial_cash", "fee_bps", "slippage_bps")
+            )
+            or any(
+                type(config.get(key)) is not int or config[key] != request[key]
+                for key in ("duration_days", "training_days")
+            )
+            or config["start_date"] != request["start_date"]
+            or safety["mode"] != "PAPER"
+            or safety["orders_created"] is not False
+            or safety["live_trading_enabled"] is not False
+            or report["safety"]["orders_created"] is not False
+            or report["safety"]["live_trading_enabled"] is not False
+            or period["test_data_complete"] is not True
+            or period["test_start_at"] != expected_start.isoformat().replace("+00:00", "Z")
+            or period["test_end_at_exclusive"] != expected_end.isoformat().replace("+00:00", "Z")
+            or row["start_at"] != period["test_start_at"]
+            or row["end_at"] != period["test_end_at_exclusive"]
+            or row["duration_days"] != request["duration_days"]
+            or row["training_days"] != request["training_days"]
+            or dataset["id"] != row["dataset_id"]
+            or dataset["sha256"] != row["dataset_sha256"]
+            or report["data_provenance"]["dataset_sha256"] != row["dataset_sha256"]
+            or report["data_provenance"]["archive_checksum_verified"] is not True
+            or report["data_provenance"]["coverage_verified"] is not True
+        ):
+            raise ValueError("stored result does not match approved request")
+        dataset_row = conn.execute(
+            "SELECT content_sha256 FROM market_datasets WHERE id = ?",
+            (row["dataset_id"],),
+        ).fetchone()
+        if dataset_row is None or dataset_row["content_sha256"] != row["dataset_sha256"]:
+            raise ValueError("dataset provenance differs")
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as exc:
+        raise BatchStateError("saved research result failed integrity or request checks") from exc
+
+
+def complete_research_job(
+    db: Database, job_id: str, token: str, *,
+    record_id: str, record_sha256: str,
+    now: datetime | None = None,
+) -> None:
+    """Atomically fence the lease and bind a VERIFIED immutable persisted result."""
+    if not _sha(job_id) or not _sha(record_id) or not _sha(record_sha256):
+        raise BatchStateError("invalid research record or job identifier")
+    _validate_token(token)
+    timestamp = _iso(_instant(now))
+    with db.connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        job = conn.execute(
+            "SELECT request_json FROM research_batch_jobs "
+            "WHERE id = ? AND state = 'leased' AND lease_token = ? "
+            "AND lease_expires_at > ?",
+            (job_id, token, timestamp),
+        ).fetchone()
+        if job is None:
+            raise BatchStateError("research job lease is missing, expired or superseded")
+        try:
+            request = json.loads(job["request_json"])
+            if not isinstance(request, dict):
+                raise ValueError("invalid saved request")
+        except (ValueError, TypeError) as exc:
+            raise BatchStateError("stored research job request is invalid") from exc
+        _verify_saved_record(conn, record_id, record_sha256, request)
+        changed = conn.execute(
+            "UPDATE research_batch_jobs SET state = 'completed', "
+            "saved_record_id = ?, saved_record_sha256 = ?, "
+            "lease_token = NULL, lease_expires_at = NULL, "
+            "last_error_code = NULL, updated_at = ? "
+            "WHERE id = ? AND state = 'leased' AND lease_token = ? "
+            "AND lease_expires_at > ?",
+            (record_id, record_sha256, timestamp, job_id, token, timestamp),
+        )
+        if changed.rowcount != 1:
+            raise BatchStateError("research job lease was superseded before completion")
+

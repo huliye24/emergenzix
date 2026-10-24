@@ -146,11 +146,15 @@ class Database:
                     position INTEGER NOT NULL CHECK (position BETWEEN 1 AND 12),
                     request_json TEXT NOT NULL,
                     state TEXT NOT NULL DEFAULT 'pending'
-                        CHECK (state IN ('pending', 'leased', 'failed', 'cancelled')),
+                        CHECK (state IN ('pending', 'leased', 'failed', 'cancelled', 'completed')),
                     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 3),
                     lease_token TEXT,
                     lease_expires_at TEXT,
                     last_error_code TEXT,
+                    saved_record_id TEXT REFERENCES date_range_backtest_records(id),
+                    saved_record_sha256 TEXT CHECK (
+                        saved_record_sha256 IS NULL OR length(saved_record_sha256) = 64
+                    ),
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE (batch_id, position),
@@ -160,6 +164,13 @@ class Database:
                         OR
                         (state != 'leased' AND lease_token IS NULL
                          AND lease_expires_at IS NULL)
+                    ),
+                    CHECK (
+                        (state = 'completed' AND saved_record_id IS NOT NULL
+                         AND saved_record_sha256 IS NOT NULL)
+                        OR
+                        (state != 'completed' AND saved_record_id IS NULL
+                         AND saved_record_sha256 IS NULL)
                     )
                 );
 
@@ -279,6 +290,77 @@ class Database:
                     ON paper_orders(created_at DESC);
                 """
             )
+
+
+            # Prior batch schema did not allow completed jobs. SQLite cannot
+            # ALTER a CHECK expression, so atomically rebuild that one table.
+            # No existing jobs/results are deleted. Indices are recreated.
+            batch_schema = connection.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type = 'table' AND name = 'research_batch_jobs'"
+            ).fetchone()["sql"]
+            if "'completed'" not in batch_schema:
+                connection.execute("BEGIN IMMEDIATE")
+                connection.execute(
+                    "ALTER TABLE research_batch_jobs "
+                    "RENAME TO research_batch_jobs_legacy_v1"
+                )
+                connection.execute("DROP INDEX IF EXISTS idx_research_batch_jobs_claim")
+                connection.execute(
+                    """
+                    CREATE TABLE research_batch_jobs (
+                        id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                        batch_id TEXT NOT NULL REFERENCES research_batch_plans(id),
+                        position INTEGER NOT NULL CHECK (position BETWEEN 1 AND 12),
+                        request_json TEXT NOT NULL,
+                        state TEXT NOT NULL DEFAULT 'pending'
+                            CHECK (state IN (
+                                'pending', 'leased', 'failed', 'cancelled', 'completed'
+                            )),
+                        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 3),
+                        lease_token TEXT,
+                        lease_expires_at TEXT,
+                        last_error_code TEXT,
+                        saved_record_id TEXT REFERENCES date_range_backtest_records(id),
+                        saved_record_sha256 TEXT CHECK (
+                            saved_record_sha256 IS NULL OR length(saved_record_sha256) = 64
+                        ),
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE (batch_id, position),
+                        CHECK (
+                            (state = 'leased' AND lease_token IS NOT NULL
+                             AND lease_expires_at IS NOT NULL)
+                            OR (state != 'leased' AND lease_token IS NULL
+                                AND lease_expires_at IS NULL)
+                        ),
+                        CHECK (
+                            (state = 'completed' AND saved_record_id IS NOT NULL
+                             AND saved_record_sha256 IS NOT NULL)
+                            OR (state != 'completed' AND saved_record_id IS NULL
+                                AND saved_record_sha256 IS NULL)
+                        )
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO research_batch_jobs (
+                        id, batch_id, position, request_json, state, attempts,
+                        lease_token, lease_expires_at, last_error_code,
+                        created_at, updated_at
+                    ) SELECT
+                        id, batch_id, position, request_json, state, attempts,
+                        lease_token, lease_expires_at, last_error_code,
+                        created_at, updated_at
+                    FROM research_batch_jobs_legacy_v1
+                    """
+                )
+                connection.execute("DROP TABLE research_batch_jobs_legacy_v1")
+                connection.execute(
+                    "CREATE INDEX idx_research_batch_jobs_claim "
+                    "ON research_batch_jobs(batch_id, state, position)"
+                )
 
             # Existing databases were created before strategy versions existed.
             # Add the nullable provenance column without rewriting historical runs:
