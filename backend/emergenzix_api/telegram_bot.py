@@ -623,7 +623,7 @@ class TelegramCommandBot:
             lines.append(f"/report {record['id']}")
 
         lines.append("以上为独立历史研究记录，不代表未来收益；没有创建任何订单。")
-        return "\\n".join(lines)
+        return "\n".join(lines)
 
     def _report_text(self, arguments: list[str]) -> str:
         usage = "用法：/report RECORD_ID（使用 /history 获取完整的 64 位记录 ID）"
