@@ -277,13 +277,16 @@ def test_backtest_posts_fixed_research_assumptions_and_formats_summary(
 ) -> None:
     sent = []
     posted = []
+    events = []
 
     def requester(request, *, timeout):
         url = request.full_url
         if url.endswith("/api/v1/research/date-range-backtests") and request.get_method() == "POST":
+            events.append("api")
             posted.append(json.loads(request.data.decode("utf-8")))
             return FakeResponse(_record())
         if url.endswith("/sendMessage"):
+            events.append("telegram")
             sent.append(json.loads(request.data.decode("utf-8"))["text"])
             return FakeResponse({"ok": True, "result": {"message_id": 12}})
         raise AssertionError(f"unexpected URL: {url}")
@@ -298,12 +301,14 @@ def test_backtest_posts_fixed_research_assumptions_and_formats_summary(
         "fee_bps": 10.0,
         "slippage_bps": 5.0,
     }]
-    assert "sma-3-10" in sent[0]
-    assert "净盈亏：+50.74 USDT" in sent[0]
-    assert "净收益率：+0.5074%" in sent[0]
-    assert "最大回撤：1.2000%" in sent[0]
-    assert "没有创建任何订单" in sent[0]
-
+    assert events == ["telegram", "api", "telegram"]
+    assert "已接受回测请求" in sent[0]
+    summary = sent[-1]
+    assert "sma-3-10" in summary
+    assert "净盈亏：+50.74 USDT" in summary
+    assert "净收益率：+0.5074%" in summary
+    assert "最大回撤：1.2000%" in summary
+    assert "没有创建任何订单" in summary
 
 def test_backtest_cooldown_blocks_duplicate_requests(tmp_path: Path) -> None:
     sent = []
@@ -323,7 +328,7 @@ def test_backtest_cooldown_blocks_duplicate_requests(tmp_path: Path) -> None:
     bot.handle_update(_update("/backtest 2025-10-21", update_id=1))
     bot.handle_update(_update("/backtest 2025-10-21", update_id=2))
     assert len(posted) == 1
-    assert "回测冷却中" in sent[1]
+    assert "回测冷却中" in sent[-1]
 
 
 def test_invalid_backtest_duration_does_not_call_research_api(tmp_path: Path) -> None:
