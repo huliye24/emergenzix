@@ -11,7 +11,7 @@ import csv
 import hashlib
 import json
 import math
-import os
+import sqlite3
 import sys
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -345,6 +345,16 @@ def create_date_range_backtest(
     """Fetch verified public data, run the experiment, and persist an immutable record."""
     if not isinstance(start_date, date) or isinstance(start_date, datetime):
         raise ValueError("start_date must be a calendar date in YYYY-MM-DD format")
+    if not 1 <= duration_days <= 30:
+        raise ValueError("duration_days must be between 1 and 30")
+    if not 60 <= training_days <= 365:
+        raise ValueError("training_days must be between 60 and 365")
+    if not math.isfinite(initial_cash) or initial_cash <= 0:
+        raise ValueError("initial_cash must be finite and greater than zero")
+    if not math.isfinite(fee_bps) or not 0 <= fee_bps <= 1000:
+        raise ValueError("fee_bps must be between 0 and 1000")
+    if not math.isfinite(slippage_bps) or not 0 <= slippage_bps <= 1000:
+        raise ValueError("slippage_bps must be between 0 and 1000")
     start_at = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
     end_exclusive = start_at + timedelta(days=duration_days)
     training_start = start_at - timedelta(days=training_days)
@@ -698,7 +708,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             fee_bps=args.fee_bps,
             slippage_bps=args.slippage_bps,
         )
-    except (ValueError, HistoricalArchiveUnavailable, RuntimeError) as exc:
+    except (ValueError, HistoricalArchiveUnavailable, RuntimeError, sqlite3.Error) as exc:
         print(
             json.dumps(
                 {"status": "error", "error_type": type(exc).__name__, "message": str(exc)},
