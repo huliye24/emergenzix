@@ -389,6 +389,9 @@ class TelegramCommandBot:
         chat = message.get("chat")
         if not isinstance(chat, dict):
             return
+        # Group chats are rejected even if a group ID is accidentally configured.
+        if chat.get("type") != "private":
+            return
         chat_id = str(chat.get("id", ""))
         if not chat_id or chat_id != self.allowed_chat_id:
             # Unauthorized senders are intentionally ignored without a response.

@@ -50,7 +50,7 @@ def _record() -> dict[str, object]:
 def _update(text: str, *, chat_id: int = 12345, update_id: int = 1) -> dict[str, object]:
     return {
         "update_id": update_id,
-        "message": {"chat": {"id": chat_id}, "text": text},
+        "message": {"chat": {"id": chat_id, "type": "private"}, "text": text},
     }
 
 
@@ -96,6 +96,20 @@ def test_unauthorized_chat_is_ignored_without_network_requests(tmp_path: Path) -
 
     bot = _bot(tmp_path, requester)
     bot.handle_update(_update("/status", chat_id=99999))
+    assert calls == []
+
+
+def test_group_chat_is_rejected_even_if_chat_id_matches(tmp_path: Path) -> None:
+    calls = []
+
+    def requester(request, *, timeout):
+        calls.append(request.full_url)
+        return FakeResponse({"ok": True, "result": {}})
+
+    bot = _bot(tmp_path, requester)
+    update = _update("/status")
+    update["message"]["chat"]["type"] = "group"
+    bot.handle_update(update)
     assert calls == []
 
 

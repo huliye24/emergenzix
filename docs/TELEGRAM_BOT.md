@@ -4,7 +4,7 @@
 
 The Telegram command bot is an opt-in process for private operational queries and historical PAPER research. It does not provide exchange order, account credential, or LIVE trading commands.
 
-The bot accepts commands only when the incoming Telegram chat ID exactly matches **EMERGENZIX_TELEGRAM_ALLOWED_CHAT_ID**. Unauthorized chats are ignored without a reply. The bot token is read from the server environment and must never be committed to Git.
+The bot accepts commands only in a private Telegram chat whose chat ID exactly matches **EMERGENZIX_TELEGRAM_ALLOWED_CHAT_ID**. Group and channel chats are always ignored, even if a group ID is accidentally configured. Unauthorized chats are ignored without a reply. The bot token is read from the server environment and must never be committed to Git.
 
 The current API has no user authentication. Keep the API and web service on the private Compose network or localhost; do not publish the API port. The bot talks to the API using the internal Compose hostname.
 
