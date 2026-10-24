@@ -140,6 +140,52 @@ def _daily_pnl_lines(period: dict[str, Any], metrics: dict[str, Any]) -> list[st
     ]
 
 
+
+def _cost_sensitivity_lines(report: dict[str, Any]) -> list[str]:
+    """Render the complete fixed 3x3 cost matrix without implying a new selection."""
+    cost_sensitivity = report.get("cost_sensitivity")
+    if not isinstance(cost_sensitivity, dict):
+        return []
+    scenarios = cost_sensitivity.get("scenarios")
+    # This protocol promises a fixed 3x3 matrix. Omit partial or malformed data.
+    if not isinstance(scenarios, list) or len(scenarios) != 9:
+        return []
+
+    rows: list[str] = []
+    for scenario in scenarios:
+        if not isinstance(scenario, dict):
+            return []
+        fee = _finite_number(scenario.get("fee_bps_per_side"))
+        slippage = _finite_number(scenario.get("slippage_bps_per_side"))
+        net_return = _finite_number(scenario.get("net_return_pct"))
+        net_pnl = _finite_number(scenario.get("net_pnl"))
+        drawdown = _finite_number(scenario.get("max_drawdown_pct"))
+        trades = scenario.get("number_of_trades")
+        if (
+            fee is None
+            or slippage is None
+            or net_return is None
+            or net_pnl is None
+            or drawdown is None
+            or isinstance(trades, bool)
+            or not isinstance(trades, int)
+            or trades < 0
+            or fee < 0
+            or slippage < 0
+            or drawdown < 0
+        ):
+            return []
+        rows.append(
+            f"{fee:g}/{slippage:g} bps | {_percent(net_return, signed=True)} | "
+            f"{_money(net_pnl)} | {_percent(drawdown)} | {trades}"
+        )
+
+    return [
+        "交易成本敏感性（手续费/滑点均为单边；策略与测试区间固定）",
+        "手续费/滑点 | 净收益率 | 净盈亏 | 最大回撤 | 交易数",
+        *rows,
+    ]
+
 def format_backtest_record(record: object) -> str:
     """Render the useful summary from a persisted date-range backtest record."""
     if not isinstance(record, dict):
@@ -195,6 +241,9 @@ def format_backtest_record(record: object) -> str:
     daily_lines = _daily_pnl_lines(period, metrics)
     if daily_lines:
         lines.extend(["", *daily_lines])
+    cost_lines = _cost_sensitivity_lines(report)
+    if cost_lines:
+        lines.extend(["", *cost_lines])
     lines.extend([
         f"记录 ID：{record_id[:16]}",
         "安全：仅历史 PAPER 模拟，没有创建任何订单；历史结果不代表未来收益。",
