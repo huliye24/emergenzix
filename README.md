@@ -65,6 +65,17 @@ docker compose logs -f watch
 docker compose down
 ```
 
+### Optional Telegram command bot
+
+After setting the Telegram token and exact allowed chat ID in the local .env file, enable the private command process explicitly:
+
+~~~bash
+docker compose --profile telegram up -d --build
+docker compose --profile telegram logs -f telegram-bot
+~~~
+
+Available commands are /status, /latest, and /backtest YYYY-MM-DD [days]. See [Telegram bot setup and safety](docs/TELEGRAM_BOT.md). The bot only runs historical PAPER research and status queries; it has no order commands.
+
 SQLite data is stored in the named volume emergenzix-data and survives container recreation. **Do not run `docker compose down -v` unless you intend to delete that volume and the paper-trading records.**
 
 The current application has no authentication. Keep the default localhost binding or use a protected private access path. Do not publish port 3000 or expose a public reverse proxy before the authentication and deployment review is complete.

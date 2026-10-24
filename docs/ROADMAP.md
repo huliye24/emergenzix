@@ -31,6 +31,7 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [x] Add a sectioned product workspace for overview, strategies, backtests, paper trading, and activity without changing backend contracts.
 - [x] Add separate API and web Dockerfiles with Docker Compose orchestration and a persistent SQLite volume.
 - [x] Add GitHub Actions container-build CI and tag-triggered GHCR image publishing/GitHub Release automation.
+- [ ] Add an opt-in, chat-allowlisted Telegram command bot for status, latest reports, and historical PAPER backtests (implementation in PR; verification pending).
 - [ ] Have Codex build and run the Compose stack, exercise a paper workflow, and verify volume persistence on the AWS development environment.
 - [ ] Publish v0.1.0 only after the runtime acceptance checklist passes.
 - [ ] Add a reviewed authentication and deployment design before any network exposure.
