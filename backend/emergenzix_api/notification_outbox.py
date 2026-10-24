@@ -119,7 +119,8 @@ class NotificationOutbox:
     def _dedupe_key(event: WatchEvent) -> str:
         details = event.details if isinstance(event.details, dict) else {}
         source_time = (
-            details.get("bar_timestamp")
+            details.get("alert_key")
+            or details.get("bar_timestamp")
             or details.get("last_completed_at")
             or event.occurred_at
         )
