@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+
+import pytest
+
+from emergenzix_api.notifications import NotificationError, TelegramNotifier
+from emergenzix_api.watch_agent import WatchEvent
+
+
+class FakeResponse:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+
+    def read(self) -> bytes:
+        return json.dumps(self.payload).encode("utf-8")
+
+
+def _event() -> WatchEvent:
+    return WatchEvent(
+        event_type="scenario_changed",
+        severity="warning",
+        occurred_at=datetime.now(timezone.utc).isoformat(),
+        exchange="binance",
+        symbol="BTC/USDT",
+        timeframe="4h",
+        message="Scenario changed from range to continuation_down.",
+        details={
+            "scenario": "continuation_down",
+            "key_levels": {"support": 80_000, "resistance": 85_000, "atr": 750},
+            "trigger": "two completed closes below support",
+            "invalidation": "completed close back above support",
+        },
+    )
+
+
+def test_telegram_notifier_posts_expected_message_without_orders() -> None:
+    captured = {}
+
+    def requester(request, *, timeout):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return FakeResponse({"ok": True, "result": {"message_id": 1}})
+
+    notifier = TelegramNotifier("secret-token", "12345", requester=requester)
+    notifier.send(_event())
+    assert captured["url"].endswith("/sendMessage")
+    assert captured["body"]["chat_id"] == "12345"
+    assert "continuation_down" in captured["body"]["text"]
+    assert "no order was created" in captured["body"]["text"]
+
+
+def test_telegram_rejection_is_sanitized() -> None:
+    def requester(_request, *, timeout):
+        return FakeResponse({"ok": False, "description": "secret-token invalid"})
+
+    notifier = TelegramNotifier("secret-token", "12345", requester=requester)
+    with pytest.raises(NotificationError) as error:
+        notifier.send(_event())
+    assert "secret-token" not in str(error.value)
