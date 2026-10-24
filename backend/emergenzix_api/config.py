@@ -15,6 +15,7 @@ class Settings:
     """Runtime settings with safe, paper-only defaults."""
 
     db_path: str
+    notification_db_path: str | None = None
     initial_paper_cash: float = 100_000.0
     max_order_notional: float = 5_000.0
     paper_fee_bps: float = 10.0
@@ -24,8 +25,15 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         default_db = _REPOSITORY_ROOT / "data" / "emergenzix.db"
+        db_path = os.environ.get("EMERGENZIX_DB_PATH", str(default_db))
+        default_notification_db = (
+            Path(db_path).expanduser().parent / "notification-outbox.sqlite3"
+        )
         return cls(
-            db_path=os.environ.get("EMERGENZIX_DB_PATH", str(default_db)),
+            db_path=db_path,
+            notification_db_path=os.environ.get(
+                "EMERGENZIX_NOTIFICATION_DB_PATH", str(default_notification_db)
+            ),
             initial_paper_cash=_positive_float(
                 "EMERGENZIX_INITIAL_PAPER_CASH", 100_000.0
             ),
