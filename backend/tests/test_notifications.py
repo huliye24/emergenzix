@@ -48,8 +48,12 @@ def test_telegram_notifier_posts_expected_message_without_orders() -> None:
     notifier.send(_event())
     assert captured["url"].endswith("/sendMessage")
     assert captured["body"]["chat_id"] == "12345"
-    assert "continuation_down" in captured["body"]["text"]
-    assert "no order was created" in captured["body"]["text"]
+    assert "场景发生切换" in captured["body"]["text"]
+    assert "当前场景：延续下跌" in captured["body"]["text"]
+    assert "关键位置：支撑=80000" in captured["body"]["text"]
+    assert "触发条件：连续两根已收盘K线跌破 支撑位" in captured["body"]["text"]
+    assert "失效条件：已收盘K线重新站上 支撑位" in captured["body"]["text"]
+    assert "不会创建任何订单" in captured["body"]["text"]
 
 
 def test_telegram_rejection_is_sanitized() -> None:
