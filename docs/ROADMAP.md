@@ -48,6 +48,7 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [x] Add deterministic three-fold walk-forward evidence for the fixed SMA grid, with fold-level leakage controls, evidence status, and aggregate stability metrics.
 - [x] Add one versioned Donchian breakout candidate with prior-candle channels and the same cost/execution assumptions as the SMA baseline.
 - [x] Add a fixed fee/slippage sensitivity matrix for the frozen weekly candidate and export it to CSV and Markdown.
+- [x] Add a read-only CLI for fingerprint-verified comparison of saved date-range backtest records.
 - [ ] Expand the fixed SMA parameter grid into a versioned multi-strategy candidate registry (trend, breakout, and mean-reversion) while preserving pre-test-only selection and comparable execution assumptions.
 - [ ] Add a separate BTC futures simulation model for long/short positions, including funding and liquidation assumptions, before claiming downside-profit or hedge capability; keep LIVE orders disabled.
 - [x] Allow backtests to consume a registered dataset ID and persist the exact dataset fingerprint and range in result provenance (implementation added; verification pending).
