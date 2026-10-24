@@ -78,6 +78,7 @@ class NotificationOutbox:
                     status TEXT NOT NULL DEFAULT 'pending'
                         CHECK (status IN ('pending', 'delivered', 'dead')),
                     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+                    failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK (failed_attempts >= 0),
                     next_attempt_at TEXT NOT NULL,
                     last_error_type TEXT,
                     created_at TEXT NOT NULL,
@@ -85,6 +86,15 @@ class NotificationOutbox:
                 )
                 """
             )
+            columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(notification_outbox)")
+            }
+            if "failed_attempts" not in columns:
+                connection.execute(
+                    "ALTER TABLE notification_outbox "
+                    "ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0"
+                )
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_notification_outbox_pending
@@ -213,11 +223,14 @@ class NotificationOutbox:
                 WHERE delivered_at IS NOT NULL
                 """
             ).fetchone()
+            failed_attempts = connection.execute(
+                "SELECT COALESCE(SUM(failed_attempts), 0) AS count FROM notification_outbox"
+            ).fetchone()
             last_failure = connection.execute(
                 """
                 SELECT last_error_type FROM notification_outbox
                 WHERE last_error_type IS NOT NULL
-                ORDER BY created_at DESC LIMIT 1
+                ORDER BY next_attempt_at DESC, created_at DESC LIMIT 1
                 """
             ).fetchone()
 
@@ -229,6 +242,7 @@ class NotificationOutbox:
             "pending": pending_count,
             "retrying": int(retrying["count"]),
             "due": int(due["count"]),
+            "failed_attempts": int(failed_attempts["count"]),
             "delivered": delivered_count,
             "dead": dead_count,
             "oldest_pending_at": oldest_pending["timestamp"],
@@ -285,8 +299,8 @@ class NotificationOutbox:
                 connection.execute(
                     """
                     UPDATE notification_outbox
-                    SET attempts = ?, status = ?, next_attempt_at = ?,
-                        last_error_type = ?
+                    SET attempts = ?, failed_attempts = failed_attempts + 1,
+                        status = ?, next_attempt_at = ?, last_error_type = ?
                     WHERE id = ? AND status = 'pending'
                     """,
                     (attempts, status, next_at, type(exc).__name__, notification_id),
