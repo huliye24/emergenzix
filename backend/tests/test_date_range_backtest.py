@@ -188,6 +188,9 @@ def test_date_range_backtest_api_persists_idempotent_report(client, monkeypatch)
     assert first["record_type"] == "btc_date_range_backtest"
     assert first["dataset"]["source"] == "binance_public_archive"
     assert first["report"]["period"]["test_bars_count"] == 42
+    assert first["report"]["data_provenance"]["archive_checksum_verified"] is True
+    assert first["report"]["data_provenance"]["coverage_verified"] is True
+    assert first["report"]["data_provenance"]["dataset_sha256"] == first["dataset"]["sha256"]
     assert first["safety"]["orders_created"] is False
     assert first["safety"]["live_trading_enabled"] is False
     assert len(first["record_sha256"]) == 64
