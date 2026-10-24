@@ -116,20 +116,43 @@ def run_once(
     *, exchange: str, symbol: str, timeframe: str, limit: int, lookback: int,
     state_path: Path, fetcher: Callable[..., dict[str, Any]] = fetch_public_ohlcv,
     now: datetime | None = None,
+    observer: Callable[[WatchEvent, Sequence[Bar]], None] | None = None,
 ) -> list[WatchEvent]:
     """Fetch and evaluate one cycle, persisting state after successful evaluation."""
     previous = load_state(state_path)
     payload = fetcher(exchange_id=exchange, symbol=symbol, timeframe=timeframe, limit=limit)
     state, events = evaluate_market_payload(payload, previous, lookback=lookback, now=now or _utc_now())
     save_state(state_path, state)
+    if observer is not None:
+        completed = _parse_completed_bars(payload)
+        for event in events:
+            observer(event, completed)
     return events
 
 
-def _emit(event: WatchEvent, notifier: Any | None = None) -> None:
+def _emit(event: WatchEvent, notifier: Any | None = None, bars: Sequence[Bar] = ()) -> None:
     print(json.dumps(asdict(event), sort_keys=True, ensure_ascii=False), flush=True)
     if notifier is not None:
+        image = None
+        if bars and event.details.get("scenario"):
+            try:
+                from .watch_chart import render_watch_chart
+
+                image = render_watch_chart(event, bars)
+            except Exception as exc:
+                print(
+                    json.dumps(
+                        {
+                            "event_type": "chart_render_failed",
+                            "severity": "warning",
+                            "error_type": type(exc).__name__,
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
         try:
-            notifier.send(event)
+            notifier.send(event, image=image)
         except Exception as exc:
             print(
                 json.dumps(
@@ -173,8 +196,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         notifier = TelegramNotifier(bot_token=token, chat_id=chat_id)
     while True:
         try:
-            for event in run_once(exchange=args.exchange, symbol=args.symbol, timeframe=args.timeframe, limit=args.limit, lookback=args.lookback, state_path=args.state_path):
-                _emit(event, notifier)
+            run_once(
+                exchange=args.exchange, symbol=args.symbol, timeframe=args.timeframe,
+                limit=args.limit, lookback=args.lookback, state_path=args.state_path,
+                observer=lambda event, bars: _emit(event, notifier, bars),
+            )
         except Exception as exc:  # process boundary: report and retry without trading
             _emit(WatchEvent("risk_alert", "error", _utc_now().isoformat(), args.exchange, args.symbol, args.timeframe, "Watch cycle failed; no trading action was taken.", {"error_type": type(exc).__name__, "error": str(exc)}), notifier)
             if args.once:

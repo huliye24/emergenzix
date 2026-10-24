@@ -6,6 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements-runtime.txt ./requirements-runtime.txt
 RUN python -m pip install --upgrade pip \
     && python -m pip install -r requirements-runtime.txt
