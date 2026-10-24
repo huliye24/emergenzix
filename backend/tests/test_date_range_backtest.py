@@ -96,6 +96,29 @@ def test_date_range_backtest_returns_one_week_equity_and_trade_report() -> None:
     assert report["safety"]["live_trading_enabled"] is False
 
 
+def test_date_range_backtest_marks_candidate_selection_as_weak_when_no_trades() -> None:
+    flat_bars = [
+        bar.model_copy(
+            update={
+                "open": 80_000.0,
+                "high": 80_100.0,
+                "low": 79_900.0,
+                "close": 80_000.0,
+            }
+        )
+        for bar in _series()
+    ]
+    report = _run(flat_bars)
+
+    assert report["strategy_selection"]["status"] == "insufficient_validation_trades"
+    assert report["strategy_selection"]["warning"]
+    assert all(
+        not candidate["eligible"]
+        for candidate in report["strategy_selection"]["candidates"]
+    )
+    assert report["test_result"]["number_of_trades"] == 0
+
+
 def test_date_range_backtest_rejects_missing_candles() -> None:
     bars = _series()
     del bars[150]
