@@ -125,8 +125,24 @@ def run_once(
     return events
 
 
-def _emit(event: WatchEvent) -> None:
+def _emit(event: WatchEvent, notifier: Any | None = None) -> None:
     print(json.dumps(asdict(event), sort_keys=True, ensure_ascii=False), flush=True)
+    if notifier is not None:
+        try:
+            notifier.send(event)
+        except Exception as exc:
+            print(
+                json.dumps(
+                    {
+                        "event_type": "notification_delivery_failed",
+                        "severity": "error",
+                        "channel": "telegram",
+                        "error_type": type(exc).__name__,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
 
 
 def _arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -146,12 +162,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _arguments(argv)
     if args.interval < 10:
         raise ValueError("watch interval must be at least 10 seconds")
+    token = os.getenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.getenv("EMERGENZIX_TELEGRAM_CHAT_ID", "").strip()
+    if bool(token) != bool(chat_id):
+        raise ValueError("Telegram bot token and chat ID must be configured together")
+    notifier = None
+    if token and chat_id:
+        from .notifications import TelegramNotifier
+
+        notifier = TelegramNotifier(bot_token=token, chat_id=chat_id)
     while True:
         try:
             for event in run_once(exchange=args.exchange, symbol=args.symbol, timeframe=args.timeframe, limit=args.limit, lookback=args.lookback, state_path=args.state_path):
-                _emit(event)
+                _emit(event, notifier)
         except Exception as exc:  # process boundary: report and retry without trading
-            _emit(WatchEvent("risk_alert", "error", _utc_now().isoformat(), args.exchange, args.symbol, args.timeframe, "Watch cycle failed; no trading action was taken.", {"error_type": type(exc).__name__, "error": str(exc)}))
+            _emit(WatchEvent("risk_alert", "error", _utc_now().isoformat(), args.exchange, args.symbol, args.timeframe, "Watch cycle failed; no trading action was taken.", {"error_type": type(exc).__name__, "error": str(exc)}), notifier)
             if args.once:
                 return 1
         if args.once:
