@@ -15,6 +15,48 @@ from pathlib import Path
 from typing import Any, Callable
 
 
+# Telegram limits text messages to 4,096 UTF-16 code units. Leave headroom
+# for part headers and a safety note, including astral-plane emoji.
+_TELEGRAM_SINGLE_MESSAGE_UNITS = 3900
+_TELEGRAM_PART_BODY_UNITS = 3300
+_TELEGRAM_MAX_PARTS = 12
+
+
+def _utf16_units(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
+def _split_telegram_text(text: str) -> list[str] | None:
+    """Return lossless, ordered text parts; None means the message is too large."""
+    if _utf16_units(text) <= _TELEGRAM_SINGLE_MESSAGE_UNITS:
+        return [text]
+
+    parts: list[str] = []
+    start = 0
+    while start < len(text):
+        if len(parts) >= _TELEGRAM_MAX_PARTS:
+            return None
+        units = 0
+        end = start
+        while end < len(text):
+            units_for_char = 2 if ord(text[end]) > 0xFFFF else 1
+            if units + units_for_char > _TELEGRAM_PART_BODY_UNITS:
+                break
+            units += units_for_char
+            end += 1
+        if end == start:
+            return None
+
+        if end < len(text):
+            newline = text.rfind("\n", start + 1, end + 1)
+            # Prefer a whole line, but do not create tiny parts on unusual input.
+            if newline >= start + min(100, (end - start) // 3):
+                end = newline + 1
+        parts.append(text[start:end])
+        start = end
+    return parts
+
+
 class TelegramBotError(RuntimeError):
     """A sanitized Telegram transport or protocol failure."""
 
@@ -571,16 +613,30 @@ class TelegramCommandBot:
             raise ApiRequestError("API 返回了无法识别的响应。") from exc
 
     def _send_message(self, chat_id: str, text: str) -> None:
-        safe_text = text if len(text) <= 3900 else text[:3890] + "\n…（内容已截断）"
-        self._telegram_call(
-            "sendMessage",
-            {
-                "chat_id": chat_id,
-                "text": safe_text,
-                "disable_web_page_preview": True,
-            },
-            timeout=15,
-        )
+        """Deliver complete bounded reports without silently dropping trailing warnings."""
+        parts = _split_telegram_text(text)
+        if parts is None:
+            parts = [
+                "报告超出 Telegram 安全分段发送上限，未发送不完整的结果。"
+                "请通过私有 API 或只读 CLI 查看完整记录；仅 PAPER 研究，不创建订单。"
+            ]
+        elif len(parts) > 1:
+            total = len(parts)
+            parts = [
+                f"【报告 {index}/{total}】\n{part}\n"
+                "【仅历史 PAPER 研究，不创建交易订单】"
+                for index, part in enumerate(parts, start=1)
+            ]
+        for part in parts:
+            self._telegram_call(
+                "sendMessage",
+                {
+                    "chat_id": chat_id,
+                    "text": part,
+                    "disable_web_page_preview": True,
+                },
+                timeout=15,
+            )
 
     @staticmethod
     def _help_text() -> str:

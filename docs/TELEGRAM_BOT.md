@@ -53,6 +53,12 @@ The /history, /report, and /compare commands call only read-only date-range rese
 
 The /history and /report commands call only the existing read-only date-range research API endpoints. The API verifies saved record integrity before returning results. These commands never rerun a strategy, download market data, consume the backtest cooldown, or place any order. A malformed history response is rejected rather than displaying partial results.
 
+## Long report delivery
+
+Telegram messages have a finite text-length limit. Long research reports are now broken into ordered, lossless parts using a conservative UTF-16-unit limit; each part includes its position (e.g. 1/3) and an explicit PAPER/no-order safety note. Short responses retain their previous single-message format. When a response would exceed twelve bounded parts, the bot sends one explanatory error message rather than an incomplete, misleading report.
+
+Telegram delivery is not transactional: if a transport error occurs in the middle of a multipart response, the earlier parts may already be visible. The failed update is not automatically replayed; reissue `/report RECORD_ID` if a part is missing. This change does not modify the backtest engine or add any order capability.
+
 ## Operational limitations
 
 - The bot does not create paper orders or live orders; it only queries status and runs historical research.

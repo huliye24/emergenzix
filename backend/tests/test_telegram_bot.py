@@ -792,6 +792,84 @@ def test_poll_once_discards_stale_updates_then_persists_offset(tmp_path: Path) -
     assert "/status" in sent[0]
 
 
+
+def test_telegram_message_split_is_lossless_and_unicode_safe() -> None:
+    from emergenzix_api.telegram_bot import (
+        _split_telegram_text,
+        _utf16_units,
+    )
+
+    message = ("2025-10-21 | 盈亏 +12.00 | 🚀🚀\n" * 300) + "最终风险声明"
+    parts = _split_telegram_text(message)
+    assert parts is not None
+    assert len(parts) > 1
+    assert "".join(parts) == message
+    assert all(_utf16_units(part) <= 3300 for part in parts)
+
+
+def test_long_telegram_report_is_sent_in_order_without_truncation(tmp_path: Path) -> None:
+    from emergenzix_api.telegram_bot import _utf16_units
+
+    sent = []
+
+    def requester(request, *, timeout):
+        assert request.full_url.endswith("/sendMessage")
+        sent.append(json.loads(request.data.decode("utf-8"))["text"])
+        return FakeResponse({"ok": True, "result": {"message_id": len(sent)}})
+
+    body = ("2025-10-21 | +1.00 USDT | +0.01% | 🚀\n" * 240) + "最终声明：没有创建任何订单。"
+    _bot(tmp_path, requester)._send_message("12345", body)
+
+    assert len(sent) > 1
+    assert all(_utf16_units(part) <= 3900 for part in sent)
+    assert all("仅历史 PAPER 研究，不创建交易订单" in part for part in sent)
+    assert sent[0].startswith(f"【报告 1/{len(sent)}】")
+    assert sent[-1].startswith(f"【报告 {len(sent)}/{len(sent)}】")
+    assert "最终声明：没有创建任何订单。" in sent[-1]
+    assert all("内容已截断" not in part for part in sent)
+
+
+def test_oversized_telegram_report_refuses_partial_delivery(tmp_path: Path) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        sent.append(json.loads(request.data.decode("utf-8"))["text"])
+        return FakeResponse({"ok": True, "result": {"message_id": 42}})
+
+    _bot(tmp_path, requester)._send_message("12345", "RESEARCH_PAYLOAD_" * 4000)
+    assert len(sent) == 1
+    assert "安全分段发送上限" in sent[0]
+    assert "RESEARCH_PAYLOAD_" not in sent[0]
+    assert "不创建订单" in sent[0]
+
+
+def test_short_telegram_message_remains_single_unchanged_send(tmp_path: Path) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        sent.append(json.loads(request.data.decode("utf-8"))["text"])
+        return FakeResponse({"ok": True, "result": {"message_id": 43}})
+
+    _bot(tmp_path, requester)._send_message("12345", "简短的状态消息")
+    assert sent == ["简短的状态消息"]
+
+
+def test_multipart_send_error_is_sanitized_and_stops_delivery(tmp_path: Path) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        sent.append(request.full_url)
+        if len(sent) == 2:
+            raise urllib.error.URLError("12345:secret-token")
+        return FakeResponse({"ok": True, "result": {"message_id": 44}})
+
+    bot = _bot(tmp_path, requester)
+    with pytest.raises(TelegramBotError) as error:
+        bot._send_message("12345", "已保存实验说明\n" * 1400)
+    assert len(sent) == 2
+    assert "secret-token" not in str(error.value)
+
+
 def test_telegram_transport_error_does_not_expose_bot_token(tmp_path: Path) -> None:
     def requester(_request, *, timeout):
         raise urllib.error.URLError("request URL included 12345:secret-token")
