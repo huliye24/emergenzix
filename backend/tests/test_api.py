@@ -58,9 +58,60 @@ def test_strategy_validation_and_persistence(client):
     assert invalid.status_code == 422
 
     strategy = _create_strategy(client)
+    assert strategy["current_version"] == 1
+    assert strategy["current_version_id"]
+
+    versions = client.get(f"/api/v1/strategies/{strategy['id']}/versions")
+    assert versions.status_code == 200
+    assert len(versions.json()) == 1
+    assert versions.json()[0]["version"] == 1
+    assert versions.json()[0]["parameters"] == {
+        "strategy_type": "sma_crossover",
+        "fast_window": 2,
+        "slow_window": 3,
+    }
+
     listed = client.get("/api/v1/strategies")
     assert listed.status_code == 200
     assert any(item["id"] == strategy["id"] for item in listed.json())
+
+
+def test_strategy_versions_are_immutable_and_parameters_advance(client):
+    strategy = _create_strategy(client)
+    first = client.get(
+        f"/api/v1/strategies/{strategy['id']}/versions"
+    ).json()[0]
+
+    created = client.post(
+        f"/api/v1/strategies/{strategy['id']}/versions",
+        json={"fast_window": 4, "slow_window": 6},
+    )
+    assert created.status_code == 201, created.text
+    second = created.json()
+    assert second["version"] == 2
+    assert second["id"] != first["id"]
+    assert second["parameters"]["fast_window"] == 4
+    assert second["parameters"]["slow_window"] == 6
+    assert second["parameters_sha256"] != first["parameters_sha256"]
+
+    versions = client.get(
+        f"/api/v1/strategies/{strategy['id']}/versions"
+    ).json()
+    assert [item["version"] for item in versions] == [1, 2]
+    assert versions[0]["parameters"]["fast_window"] == 2
+    assert versions[0]["parameters"]["slow_window"] == 3
+
+    current = client.get(f"/api/v1/strategies/{strategy['id']}").json()
+    assert current["fast_window"] == 4
+    assert current["slow_window"] == 6
+    assert current["current_version"] == 2
+    assert current["current_version_id"] == second["id"]
+
+    duplicate = client.post(
+        f"/api/v1/strategies/{strategy['id']}/versions",
+        json={"fast_window": 4, "slow_window": 6},
+    )
+    assert duplicate.status_code == 409
 
 
 def test_backtest_runs_and_is_persisted(client):
@@ -83,6 +134,11 @@ def test_backtest_runs_and_is_persisted(client):
     assert result["number_of_trades"] >= 1
     assert result["assumptions"]["execution"].startswith("signal at completed close")
     assert result["data_provenance"]["source"] == "user_supplied"
+    assert result["strategy_version_id"] == strategy["current_version_id"]
+    assert result["strategy"]["version"] == 1
+    assert result["strategy"]["parameters"]["fast_window"] == 2
+    assert result["strategy"]["parameters"]["slow_window"] == 3
+    assert result["strategy"]["parameters_sha256"]
 
     stored = client.get(f"/api/v1/backtests/{result['id']}")
     assert stored.status_code == 200
@@ -485,3 +541,126 @@ def test_ttl_cache_evicts_least_recently_used_entry():
     cache.get_or_create("b", factory("b"))
 
     assert calls == ["a", "b", "c", "b"]
+
+
+
+def test_backtest_can_reproduce_an_older_strategy_version(client):
+    strategy = _create_strategy(client)
+    first_version_id = strategy["current_version_id"]
+    created = client.post(
+        f"/api/v1/strategies/{strategy['id']}/versions",
+        json={"fast_window": 4, "slow_window": 6},
+    )
+    assert created.status_code == 201, created.text
+
+    response = client.post(
+        "/api/v1/backtests",
+        json={
+            "strategy_id": strategy["id"],
+            "strategy_version_id": first_version_id,
+            "bars": _bars([10, 9, 8, 9, 11, 13, 12, 10, 8, 7, 9, 12, 14, 13, 11]),
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    result = response.json()
+    assert result["strategy_version_id"] == first_version_id
+    assert result["strategy"]["version"] == 1
+    assert result["strategy"]["fast_window"] == 2
+    assert result["strategy"]["slow_window"] == 3
+
+
+def test_backtest_rejects_a_version_from_another_strategy(client):
+    first = _create_strategy(client)
+    second = _create_strategy(client, symbol="ETHUSDT")
+    response = client.post(
+        "/api/v1/backtests",
+        json={
+            "strategy_id": first["id"],
+            "strategy_version_id": second["current_version_id"],
+            "bars": _bars([10, 9, 8, 9, 11, 13, 12, 10, 8, 7, 9, 12, 14, 13, 11]),
+        },
+    )
+    assert response.status_code == 422
+
+
+
+def test_database_backfills_legacy_strategy_version_without_guessing_old_backtests(tmp_path):
+    import sqlite3
+
+    from emergenzix_api.database import Database
+
+    db_path = tmp_path / "legacy.db"
+    connection = sqlite3.connect(db_path)
+    connection.executescript(
+        """
+        CREATE TABLE strategies (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            strategy_type TEXT NOT NULL,
+            fast_window INTEGER NOT NULL,
+            slow_window INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE backtests (
+            id TEXT PRIMARY KEY,
+            strategy_id TEXT NOT NULL REFERENCES strategies(id),
+            symbol TEXT NOT NULL,
+            bars_count INTEGER NOT NULL,
+            initial_cash REAL NOT NULL,
+            final_equity REAL NOT NULL,
+            total_return_pct REAL NOT NULL,
+            max_drawdown_pct REAL NOT NULL,
+            number_of_trades INTEGER NOT NULL,
+            win_rate_pct REAL NOT NULL,
+            benchmark_return_pct REAL NOT NULL,
+            result_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        INSERT INTO strategies
+            (id, name, symbol, strategy_type, fast_window, slow_window,
+             status, created_at, updated_at)
+        VALUES
+            ('legacy-strategy', 'Legacy SMA', 'BTCUSDT', 'sma_crossover',
+             2, 3, 'draft', '2026-01-01T00:00:00+00:00',
+             '2026-01-01T00:00:00+00:00');
+
+        INSERT INTO backtests
+            (id, strategy_id, symbol, bars_count, initial_cash, final_equity,
+             total_return_pct, max_drawdown_pct, number_of_trades, win_rate_pct,
+             benchmark_return_pct, result_json, created_at)
+        VALUES
+            ('legacy-backtest', 'legacy-strategy', 'BTCUSDT', 5, 10000, 10100,
+             1, 0, 1, 100, 0, '{}', '2026-01-02T00:00:00+00:00');
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    Database(str(db_path))
+
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+    version = connection.execute(
+        "SELECT * FROM strategy_versions WHERE strategy_id = ?",
+        ("legacy-strategy",),
+    ).fetchone()
+    old_backtest = connection.execute(
+        "SELECT * FROM backtests WHERE id = ?", ("legacy-backtest",)
+    ).fetchone()
+    columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(backtests)")
+    }
+    connection.close()
+
+    assert version["version"] == 1
+    assert version["fast_window"] == 2
+    assert version["slow_window"] == 3
+    assert version["parameters_sha256"]
+    assert "strategy_version_id" in columns
+    assert old_backtest["strategy_version_id"] is None

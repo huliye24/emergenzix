@@ -18,7 +18,14 @@ from .dataset_quality import build_dataset_quality_report
 from .database import Database
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
-from .schemas import Bar, BacktestCreate, DatasetCreate, PaperOrderCreate, StrategyCreate
+from .schemas import (
+    Bar,
+    BacktestCreate,
+    DatasetCreate,
+    PaperOrderCreate,
+    StrategyCreate,
+    StrategyVersionCreate,
+)
 
 
 def _now() -> str:
@@ -27,6 +34,51 @@ def _now() -> str:
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
     return dict(row) if row is not None else {}
+
+
+def _canonical_strategy_parameters_json(
+    strategy_type: str, fast_window: int, slow_window: int
+) -> str:
+    return json.dumps(
+        {
+            "strategy_type": strategy_type,
+            "fast_window": int(fast_window),
+            "slow_window": int(slow_window),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _strategy_version_to_dict(row: Any) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "strategy_id": row["strategy_id"],
+        "version": int(row["version"]),
+        "strategy_type": row["strategy_type"],
+        "parameters": json.loads(row["parameters_json"]),
+        "parameters_sha256": row["parameters_sha256"],
+        "created_at": row["created_at"],
+    }
+
+
+def _strategy_with_current_version(connection: Any, strategy_id: str) -> Any:
+    return connection.execute(
+        """
+        SELECT s.*, v.id AS current_version_id, v.version AS current_version,
+               v.parameters_sha256 AS current_parameters_sha256
+        FROM strategies AS s
+        LEFT JOIN strategy_versions AS v
+          ON v.strategy_id = s.id
+         AND v.version = (
+             SELECT MAX(v2.version)
+             FROM strategy_versions AS v2
+             WHERE v2.strategy_id = s.id
+         )
+        WHERE s.id = ?
+        """,
+        (strategy_id,),
+    ).fetchone()
 
 
 def _dataset_to_dict(row: Any, *, include_bars: bool = False) -> dict[str, Any]:
@@ -293,7 +345,20 @@ def create_app(
         db: Database = request.app.state.database
         with db.connection() as connection:
             rows = connection.execute(
-                "SELECT * FROM strategies ORDER BY created_at DESC"
+                """
+                SELECT s.*, v.id AS current_version_id,
+                       v.version AS current_version,
+                       v.parameters_sha256 AS current_parameters_sha256
+                FROM strategies AS s
+                LEFT JOIN strategy_versions AS v
+                  ON v.strategy_id = s.id
+                 AND v.version = (
+                     SELECT MAX(v2.version)
+                     FROM strategy_versions AS v2
+                     WHERE v2.strategy_id = s.id
+                 )
+                ORDER BY s.created_at DESC
+                """
             ).fetchall()
         return [_row_to_dict(row) for row in rows]
 
@@ -303,7 +368,14 @@ def create_app(
     ) -> dict[str, Any]:
         db: Database = request.app.state.database
         strategy_id = str(uuid.uuid4())
+        version_id = str(uuid.uuid4())
         now = _now()
+        parameters_json = _canonical_strategy_parameters_json(
+            payload.strategy_type, payload.fast_window, payload.slow_window
+        )
+        parameters_sha256 = hashlib.sha256(
+            parameters_json.encode("utf-8")
+        ).hexdigest()
         with db.connection() as connection:
             connection.execute(
                 """
@@ -323,18 +395,124 @@ def create_app(
                     now,
                 ),
             )
-            row = connection.execute(
+            connection.execute(
+                """
+                INSERT INTO strategy_versions
+                    (id, strategy_id, version, strategy_type, fast_window,
+                     slow_window, parameters_json, parameters_sha256, created_at)
+                VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    version_id,
+                    strategy_id,
+                    payload.strategy_type,
+                    payload.fast_window,
+                    payload.slow_window,
+                    parameters_json,
+                    parameters_sha256,
+                    now,
+                ),
+            )
+            row = _strategy_with_current_version(connection, strategy_id)
+        return _row_to_dict(row)
+
+    @app.get("/api/v1/strategies/{strategy_id}/versions")
+    def list_strategy_versions(
+        strategy_id: str, request: Request
+    ) -> list[dict[str, Any]]:
+        db: Database = request.app.state.database
+        with db.connection() as connection:
+            strategy = connection.execute(
+                "SELECT id FROM strategies WHERE id = ?", (strategy_id,)
+            ).fetchone()
+            if strategy is None:
+                raise HTTPException(status_code=404, detail="Strategy not found")
+            rows = connection.execute(
+                """
+                SELECT * FROM strategy_versions
+                WHERE strategy_id = ?
+                ORDER BY version ASC
+                """,
+                (strategy_id,),
+            ).fetchall()
+        return [_strategy_version_to_dict(row) for row in rows]
+
+    @app.post(
+        "/api/v1/strategies/{strategy_id}/versions",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_strategy_version(
+        strategy_id: str, payload: StrategyVersionCreate, request: Request
+    ) -> dict[str, Any]:
+        db: Database = request.app.state.database
+        now = _now()
+        with db.connection() as connection:
+            strategy = connection.execute(
                 "SELECT * FROM strategies WHERE id = ?", (strategy_id,)
             ).fetchone()
-        return _row_to_dict(row)
+            if strategy is None:
+                raise HTTPException(status_code=404, detail="Strategy not found")
+
+            latest = connection.execute(
+                """
+                SELECT * FROM strategy_versions
+                WHERE strategy_id = ?
+                ORDER BY version DESC
+                LIMIT 1
+                """,
+                (strategy_id,),
+            ).fetchone()
+            parameters_json = _canonical_strategy_parameters_json(
+                strategy["strategy_type"], payload.fast_window, payload.slow_window
+            )
+            parameters_sha256 = hashlib.sha256(
+                parameters_json.encode("utf-8")
+            ).hexdigest()
+            if latest is not None and latest["parameters_sha256"] == parameters_sha256:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Parameters match the current strategy version",
+                )
+
+            next_version = int(latest["version"]) + 1 if latest is not None else 1
+            version_id = str(uuid.uuid4())
+            connection.execute(
+                """
+                INSERT INTO strategy_versions
+                    (id, strategy_id, version, strategy_type, fast_window,
+                     slow_window, parameters_json, parameters_sha256, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    version_id,
+                    strategy_id,
+                    next_version,
+                    strategy["strategy_type"],
+                    payload.fast_window,
+                    payload.slow_window,
+                    parameters_json,
+                    parameters_sha256,
+                    now,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE strategies
+                SET fast_window = ?, slow_window = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (payload.fast_window, payload.slow_window, now, strategy_id),
+            )
+            version_row = connection.execute(
+                "SELECT * FROM strategy_versions WHERE id = ?", (version_id,)
+            ).fetchone()
+        return _strategy_version_to_dict(version_row)
 
     @app.get("/api/v1/strategies/{strategy_id}")
     def get_strategy(strategy_id: str, request: Request) -> dict[str, Any]:
         db: Database = request.app.state.database
         with db.connection() as connection:
-            row = connection.execute(
-                "SELECT * FROM strategies WHERE id = ?", (strategy_id,)
-            ).fetchone()
+            row = _strategy_with_current_version(connection, strategy_id)
         if row is None:
             raise HTTPException(status_code=404, detail="Strategy not found")
         return _row_to_dict(row)
@@ -348,6 +526,23 @@ def create_app(
             strategy = connection.execute(
                 "SELECT * FROM strategies WHERE id = ?", (payload.strategy_id,)
             ).fetchone()
+            strategy_version = None
+            if strategy is not None:
+                if payload.strategy_version_id is not None:
+                    strategy_version = connection.execute(
+                        "SELECT * FROM strategy_versions WHERE id = ?",
+                        (payload.strategy_version_id,),
+                    ).fetchone()
+                else:
+                    strategy_version = connection.execute(
+                        """
+                        SELECT * FROM strategy_versions
+                        WHERE strategy_id = ?
+                        ORDER BY version DESC
+                        LIMIT 1
+                        """,
+                        (payload.strategy_id,),
+                    ).fetchone()
             dataset = (
                 connection.execute(
                     "SELECT * FROM market_datasets WHERE id = ?", (payload.dataset_id,)
@@ -357,7 +552,16 @@ def create_app(
             )
         if strategy is None:
             raise HTTPException(status_code=404, detail="Strategy not found")
+        if strategy_version is None:
+            raise HTTPException(status_code=404, detail="Strategy version not found")
+        if strategy_version["strategy_id"] != strategy["id"]:
+            raise HTTPException(
+                status_code=422,
+                detail="Strategy version does not belong to the selected strategy",
+            )
 
+        fast_window = int(strategy_version["fast_window"])
+        slow_window = int(strategy_version["slow_window"])
         data_provenance: dict[str, Any]
         if payload.dataset_id is not None:
             if dataset is None:
@@ -396,20 +600,20 @@ def create_app(
                 "timeframe": payload.data_timeframe,
             }
 
-        if len(bars) < int(strategy["slow_window"]) + 2:
+        if len(bars) < slow_window + 2:
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"At least {int(strategy['slow_window']) + 2} bars are required "
-                    "for this strategy"
+                    f"At least {slow_window + 2} bars are required "
+                    "for this strategy version"
                 ),
             )
 
         try:
             result = run_sma_crossover(
                 bars,
-                fast_window=int(strategy["fast_window"]),
-                slow_window=int(strategy["slow_window"]),
+                fast_window=fast_window,
+                slow_window=slow_window,
                 initial_cash=payload.initial_cash,
                 fee_bps=payload.fee_bps,
                 slippage_bps=payload.slippage_bps,
@@ -422,12 +626,17 @@ def create_app(
         result_payload = {
             "id": backtest_id,
             "strategy_id": payload.strategy_id,
+            "strategy_version_id": strategy_version["id"],
             "symbol": strategy["symbol"],
             "strategy": {
                 "name": strategy["name"],
-                "strategy_type": strategy["strategy_type"],
-                "fast_window": int(strategy["fast_window"]),
-                "slow_window": int(strategy["slow_window"]),
+                "strategy_type": strategy_version["strategy_type"],
+                "version": int(strategy_version["version"]),
+                "version_id": strategy_version["id"],
+                "parameters_sha256": strategy_version["parameters_sha256"],
+                "parameters": json.loads(strategy_version["parameters_json"]),
+                "fast_window": fast_window,
+                "slow_window": slow_window,
             },
             "created_at": created_at,
             "data_provenance": data_provenance,
@@ -437,15 +646,16 @@ def create_app(
             connection.execute(
                 """
                 INSERT INTO backtests
-                    (id, strategy_id, symbol, bars_count, initial_cash,
-                     final_equity, total_return_pct, max_drawdown_pct,
-                     number_of_trades, win_rate_pct, benchmark_return_pct,
-                     result_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, strategy_id, strategy_version_id, symbol, bars_count,
+                     initial_cash, final_equity, total_return_pct,
+                     max_drawdown_pct, number_of_trades, win_rate_pct,
+                     benchmark_return_pct, result_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     backtest_id,
                     payload.strategy_id,
+                    strategy_version["id"],
                     strategy["symbol"],
                     result["bars_count"],
                     result["initial_cash"],

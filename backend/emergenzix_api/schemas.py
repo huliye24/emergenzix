@@ -37,6 +37,19 @@ class StrategyCreate(StrictModel):
         return self
 
 
+class StrategyVersionCreate(StrictModel):
+    """A new immutable parameter snapshot for an existing strategy."""
+
+    fast_window: int = Field(ge=2, le=200)
+    slow_window: int = Field(ge=3, le=500)
+
+    @model_validator(mode="after")
+    def validate_windows(self) -> "StrategyVersionCreate":
+        if self.fast_window >= self.slow_window:
+            raise ValueError("fast_window must be smaller than slow_window")
+        return self
+
+
 class Bar(StrictModel):
     timestamp: datetime
     open: float = Field(gt=0, allow_inf_nan=False)
@@ -92,6 +105,7 @@ class DatasetCreate(StrictModel):
 
 class BacktestCreate(StrictModel):
     strategy_id: str = Field(min_length=1, max_length=64)
+    strategy_version_id: str | None = Field(default=None, min_length=1, max_length=64)
     dataset_id: str | None = Field(
         default=None,
         min_length=64,
