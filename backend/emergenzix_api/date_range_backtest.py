@@ -388,6 +388,13 @@ def create_date_range_backtest(
         "end_at": dataset_row["end_at"],
         "bars_count": int(dataset_row["bars_count"]),
     }
+    report["data_provenance"] = {
+        "dataset_id": dataset["id"],
+        "dataset_sha256": dataset["sha256"],
+        "source": dataset["source"],
+        "archive_checksum_verified": True,
+        "coverage_verified": bool(report["period"]["test_data_complete"]),
+    }
     configuration = {
         "start_date": start_date.isoformat(),
         "duration_days": duration_days,
