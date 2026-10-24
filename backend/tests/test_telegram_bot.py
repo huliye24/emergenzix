@@ -43,6 +43,21 @@ def _record() -> dict[str, object]:
                 "number_of_trades": 2,
                 "win_rate_pct": 100.0,
             },
+            "cost_sensitivity": {
+                "method": "fixed_fee_slippage_matrix_after_candidate_selection",
+                "strategy_reselected_per_scenario": False,
+                "scenarios": [
+                    {"fee_bps_per_side": 5.0, "slippage_bps_per_side": 0.0, "net_return_pct": 0.9102, "net_pnl": 91.02, "max_drawdown_pct": 1.0, "number_of_trades": 2},
+                    {"fee_bps_per_side": 5.0, "slippage_bps_per_side": 5.0, "net_return_pct": 0.8102, "net_pnl": 81.02, "max_drawdown_pct": 1.1, "number_of_trades": 2},
+                    {"fee_bps_per_side": 5.0, "slippage_bps_per_side": 10.0, "net_return_pct": 0.7102, "net_pnl": 71.02, "max_drawdown_pct": 1.2, "number_of_trades": 2},
+                    {"fee_bps_per_side": 10.0, "slippage_bps_per_side": 0.0, "net_return_pct": 0.6074, "net_pnl": 60.74, "max_drawdown_pct": 1.0, "number_of_trades": 2},
+                    {"fee_bps_per_side": 10.0, "slippage_bps_per_side": 5.0, "net_return_pct": 0.5074, "net_pnl": 50.74, "max_drawdown_pct": 1.2, "number_of_trades": 2},
+                    {"fee_bps_per_side": 10.0, "slippage_bps_per_side": 10.0, "net_return_pct": 0.4074, "net_pnl": 40.74, "max_drawdown_pct": 1.3, "number_of_trades": 2},
+                    {"fee_bps_per_side": 20.0, "slippage_bps_per_side": 0.0, "net_return_pct": 0.1074, "net_pnl": 10.74, "max_drawdown_pct": 1.0, "number_of_trades": 2},
+                    {"fee_bps_per_side": 20.0, "slippage_bps_per_side": 5.0, "net_return_pct": 0.0074, "net_pnl": 0.74, "max_drawdown_pct": 1.3, "number_of_trades": 2},
+                    {"fee_bps_per_side": 20.0, "slippage_bps_per_side": 10.0, "net_return_pct": -0.0938, "net_pnl": -9.38, "max_drawdown_pct": 1.5, "number_of_trades": 2},
+                ],
+            },
         },
     }
 
@@ -260,6 +275,31 @@ def test_backtest_summary_includes_daily_pnl_table_from_equity_curve() -> None:
     assert "每日收益明细（UTC；由 4 小时权益曲线计算）" in text
     assert "2025-10-21 | +100.00 USDT | +1.0000% | 10,100.00 USDT" in text
     assert "2025-10-22 | -50.00 USDT | -0.4950% | 10,050.00 USDT" in text
+
+
+def test_backtest_summary_includes_fixed_cost_sensitivity_matrix() -> None:
+    from emergenzix_api.telegram_bot import format_backtest_record
+
+    text = format_backtest_record(_record())
+
+    assert "交易成本敏感性（手续费/滑点均为单边；策略与测试区间固定）" in text
+    assert "手续费/滑点 | 净收益率 | 净盈亏 | 最大回撤 | 交易数" in text
+    assert "5/0 bps | +0.9102% | +91.02 USDT | 1.0000% | 2" in text
+    assert "10/5 bps | +0.5074% | +50.74 USDT | 1.2000% | 2" in text
+    assert "20/10 bps | -0.0938% | -9.38 USDT | 1.5000% | 2" in text
+
+
+def test_malformed_cost_sensitivity_matrix_is_omitted() -> None:
+    from emergenzix_api.telegram_bot import format_backtest_record
+
+    record = _record()
+    scenarios = record["report"]["cost_sensitivity"]["scenarios"]
+    record["report"]["cost_sensitivity"]["scenarios"] = scenarios[:-1]
+
+    text = format_backtest_record(record)
+
+    assert "交易成本敏感性" not in text
+    assert "净收益率：+0.5074%" in text
 
 
 def test_incomplete_equity_curve_does_not_emit_daily_table() -> None:
