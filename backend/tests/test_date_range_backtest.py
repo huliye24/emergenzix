@@ -320,6 +320,20 @@ def test_date_range_backtest_api_persists_idempotent_report(client, monkeypatch)
     assert detail.status_code == 200
     assert detail.json() == first
 
+    evidence_response = client.get(
+        f"/api/v1/research/date-range-backtests/{first['id']}/evidence"
+    )
+    assert evidence_response.status_code == 200, evidence_response.text
+    screening = evidence_response.json()
+    assert screening["record_id"] == first["id"]
+    assert screening["record_sha256"] == first["record_sha256"]
+    assert screening["automatic_strategy_promotion"] is False
+    assert screening["live_order_permission"] is False
+    assert len(screening["screening_checks"]) == 7
+    assert client.get(
+        "/api/v1/research/date-range-backtests/invalid/evidence"
+    ).status_code == 404
+
     with pytest.raises(sqlite3.IntegrityError, match="immutable"):
         with client.app.state.database.connection() as connection:
             connection.execute(
