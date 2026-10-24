@@ -50,6 +50,26 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  watch:
+    image: ghcr.io/huliye24/emergenzix-api:${EMERGENZIX_VERSION:-0.1.0}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["python", "-m", "emergenzix_api.watch_agent"]
+    environment:
+      EMERGENZIX_WATCH_EXCHANGE: "${EMERGENZIX_WATCH_EXCHANGE:-binance}"
+      EMERGENZIX_WATCH_SYMBOL: "${EMERGENZIX_WATCH_SYMBOL:-BTCUSDT}"
+      EMERGENZIX_WATCH_TIMEFRAME: "${EMERGENZIX_WATCH_TIMEFRAME:-4h}"
+      EMERGENZIX_WATCH_LIMIT: "${EMERGENZIX_WATCH_LIMIT:-200}"
+      EMERGENZIX_WATCH_LOOKBACK: "${EMERGENZIX_WATCH_LOOKBACK:-20}"
+      EMERGENZIX_WATCH_INTERVAL_SECONDS: "${EMERGENZIX_WATCH_INTERVAL_SECONDS:-300}"
+      EMERGENZIX_WATCH_STATE_PATH: /data/watch-state.json
+    volumes:
+      - emergenzix-data:/data
+    security_opt:
+      - no-new-privileges:true
+
 volumes:
   emergenzix-data:
     name: emergenzix-data

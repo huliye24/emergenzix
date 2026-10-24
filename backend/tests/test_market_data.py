@@ -102,3 +102,26 @@ def test_fetch_public_ohlcv_maps_network_errors(monkeypatch):
             timeframe="1h",
             limit=5,
         )
+
+
+def test_fetch_public_ohlcv_accepts_sync_exchange_without_close(monkeypatch):
+    timestamp_ms = int(datetime(2026, 1, 1, tzinfo=timezone.utc).timestamp() * 1000)
+
+    class FakeExchange:
+        def __init__(self, options):
+            pass
+
+        def load_markets(self):
+            return {"BTC/USDT": {"symbol": "BTC/USDT"}}
+
+        def fetch_ohlcv(self, symbol, *, timeframe, limit):
+            return [
+                [timestamp_ms + index * 3_600_000, 100, 110, 90, 105, 12]
+                for index in range(5)
+            ]
+
+    monkeypatch.setattr(ccxt, "binance", FakeExchange)
+    payload = fetch_public_ohlcv(
+        exchange_id="binance", symbol="BTCUSDT", timeframe="1h", limit=5
+    )
+    assert payload["bars_count"] == 5

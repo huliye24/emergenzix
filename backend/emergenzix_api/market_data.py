@@ -156,7 +156,9 @@ def fetch_public_ohlcv(
             "check exchange availability and retry later"
         ) from exc
     finally:
-        try:
-            exchange.close()
-        except ccxt.BaseError:
-            pass
+        close = getattr(exchange, "close", None)
+        if callable(close):
+            try:
+                close()
+            except ccxt.BaseError:
+                pass
