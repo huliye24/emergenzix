@@ -196,3 +196,42 @@ def test_run_once_does_not_advance_state_when_event_persistence_fails(
         )
 
     assert not state_path.exists()
+
+
+
+def test_watch_cycle_failure_queues_one_alert_and_returns_failure_in_once_mode(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from emergenzix_api import notifications, watch_agent
+
+    sent = []
+
+    class SuccessfulNotifier:
+        def __init__(self, **_kwargs):
+            pass
+
+        def send(self, event, image=None):
+            sent.append(event)
+
+    def failing_cycle(**_kwargs):
+        raise RuntimeError("provider details must not be exposed")
+
+    monkeypatch.setattr(watch_agent, "_arguments", lambda _argv=None: _main_args(tmp_path))
+    monkeypatch.setattr(notifications, "TelegramNotifier", SuccessfulNotifier)
+    monkeypatch.setenv("EMERGENZIX_TELEGRAM_REQUIRED", "true")
+    monkeypatch.setenv(
+        "EMERGENZIX_NOTIFICATION_DB_PATH",
+        str(tmp_path / "notification-outbox.sqlite3"),
+    )
+    monkeypatch.setenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "secret-token")
+    monkeypatch.setenv("EMERGENZIX_TELEGRAM_CHAT_ID", "12345")
+    monkeypatch.setattr(watch_agent, "run_once", failing_cycle)
+
+    assert watch_agent.main([]) == 1
+    assert [event.event_type for event in sent] == [
+        "watcher_startup",
+        "operational_alert",
+    ]
+    assert sent[1].details["condition"] == "watch_cycle_failure"
+    assert sent[1].details["error_type"] == "RuntimeError"
+    assert "provider details" not in sent[1].message
