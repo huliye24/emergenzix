@@ -197,3 +197,24 @@ class OperationalAlertMonitor:
             active[condition] = record
             self._save(active)
             queue_alert(condition, record)
+
+
+def watch_cycle_failure_condition(error_type: str) -> dict[str, Any]:
+    """Describe a sanitized watcher-cycle failure for transition-based alerting."""
+    candidate = str(error_type).strip()
+    if (
+        not candidate
+        or len(candidate) > 80
+        or not candidate[0].isalpha() and candidate[0] != "_"
+        or any(not (character.isalnum() or character in "._") for character in candidate)
+    ):
+        candidate = "UnknownError"
+    return {
+        "severity": "error",
+        "message": (
+            f"行情监控周期失败（错误类型：{candidate}）；"
+            "本周期未执行任何交易动作。"
+        ),
+        "recovery_message": "行情监控周期已恢复，监控已重新运行。",
+        "details": {"error_type": candidate},
+    }
