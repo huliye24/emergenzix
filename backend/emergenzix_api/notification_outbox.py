@@ -180,6 +180,62 @@ class NotificationOutbox:
             ).fetchone()
         return int(row["count"])
 
+    def summary(self, *, now: datetime | None = None) -> dict[str, Any]:
+        """Return aggregate delivery health without exposing message bodies or credentials."""
+        current = self._utc(now).isoformat()
+        with self._connection() as connection:
+            grouped = connection.execute(
+                "SELECT status, COUNT(*) AS count FROM notification_outbox GROUP BY status"
+            ).fetchall()
+            counts = {row["status"]: int(row["count"]) for row in grouped}
+            retrying = connection.execute(
+                """
+                SELECT COUNT(*) AS count FROM notification_outbox
+                WHERE status = 'pending' AND attempts > 0
+                """
+            ).fetchone()
+            due = connection.execute(
+                """
+                SELECT COUNT(*) AS count FROM notification_outbox
+                WHERE status = 'pending' AND next_attempt_at <= ?
+                """,
+                (current,),
+            ).fetchone()
+            oldest_pending = connection.execute(
+                """
+                SELECT MIN(created_at) AS timestamp FROM notification_outbox
+                WHERE status = 'pending'
+                """
+            ).fetchone()
+            last_delivered = connection.execute(
+                """
+                SELECT MAX(delivered_at) AS timestamp FROM notification_outbox
+                WHERE delivered_at IS NOT NULL
+                """
+            ).fetchone()
+            last_failure = connection.execute(
+                """
+                SELECT last_error_type FROM notification_outbox
+                WHERE last_error_type IS NOT NULL
+                ORDER BY created_at DESC LIMIT 1
+                """
+            ).fetchone()
+
+        pending_count = counts.get("pending", 0)
+        delivered_count = counts.get("delivered", 0)
+        dead_count = counts.get("dead", 0)
+        return {
+            "total": pending_count + delivered_count + dead_count,
+            "pending": pending_count,
+            "retrying": int(retrying["count"]),
+            "due": int(due["count"]),
+            "delivered": delivered_count,
+            "dead": dead_count,
+            "oldest_pending_at": oldest_pending["timestamp"],
+            "last_successful_delivery_at": last_delivered["timestamp"],
+            "last_error_type": last_failure["last_error_type"] if last_failure else None,
+        }
+
     def deliver_one(
         self,
         notifier: Any,
