@@ -209,10 +209,8 @@ def test_date_range_backtest_api_persists_idempotent_report(client, monkeypatch)
 def test_report_export_writes_summary_candidate_equity_trade_csv_and_markdown(
     tmp_path,
 ) -> None:
-    from emergenzix_api.date_range_backtest import (
-        DATE_RANGE_BACKTEST_PROTOCOL_VERSION,
-        write_report_artifacts,
-    )
+    from emergenzix_api.date_range_backtest import DATE_RANGE_BACKTEST_PROTOCOL_VERSION
+    from emergenzix_api.date_range_report import write_report_artifacts
 
     report = _run(_series())
     record = {
@@ -241,7 +239,7 @@ def test_report_export_writes_summary_candidate_equity_trade_csv_and_markdown(
 
 
 def test_report_export_requires_json_extension(tmp_path) -> None:
-    from emergenzix_api.date_range_backtest import write_report_artifacts
+    from emergenzix_api.date_range_report import write_report_artifacts
 
     with pytest.raises(ValueError, match="end in .json"):
         write_report_artifacts({}, tmp_path / "report.csv")
