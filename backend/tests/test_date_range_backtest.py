@@ -96,6 +96,58 @@ def test_date_range_backtest_returns_one_week_equity_and_trade_report() -> None:
     assert report["safety"]["live_trading_enabled"] is False
 
 
+def test_walk_forward_reports_three_deterministic_folds_and_aggregate() -> None:
+    first = _run(_series())
+    second = _run(_series())
+    validation = first["walk_forward_validation"]
+
+    assert validation == second["walk_forward_validation"]
+    assert validation["method"] == "three_fold_expanding_window"
+    assert validation["folds_count"] == 3
+    assert validation["future_visible_during_fold_selection"] is False
+    assert validation["automatic_promotion"] is False
+    assert [fold["evaluation_candles_count"] for fold in validation["folds"]] == [
+        54,
+        54,
+        54,
+    ]
+    assert [fold["selection_candles_count"] for fold in validation["folds"]] == [
+        378,
+        432,
+        486,
+    ]
+    assert validation["evaluation_region_start_at"] == "2025-09-24T00:00:00Z"
+    assert validation["evaluation_region_end_at_exclusive"] == "2025-10-21T00:00:00Z"
+    aggregate = validation["aggregate"]
+    assert "median_return_pct" in aggregate
+    assert "worst_max_drawdown_pct" in aggregate
+    assert 0 <= aggregate["folds_with_completed_trades"] <= 3
+    assert 0 <= aggregate["folds_with_minimum_trade_evidence"] <= 3
+
+
+def test_walk_forward_fold_selection_cannot_see_its_evaluation_candles() -> None:
+    baseline_bars = _series()
+    baseline_folds = _run(baseline_bars)["walk_forward_validation"]["folds"]
+
+    for fold_index, baseline_fold in enumerate(baseline_folds):
+        altered = list(baseline_bars)
+        fold_start = int(baseline_fold["selection_candles_count"])
+        fold_end = fold_start + int(baseline_fold["evaluation_candles_count"])
+        for index in range(fold_start, fold_end):
+            altered[index] = altered[index].model_copy(
+                update={
+                    "open": 50_000.0,
+                    "high": 50_100.0,
+                    "low": 49_900.0,
+                    "close": 50_000.0,
+                }
+            )
+
+        changed_fold = _run(altered)["walk_forward_validation"]["folds"][fold_index]
+        assert changed_fold["selected_candidate"] == baseline_fold["selected_candidate"]
+        assert changed_fold["metrics"] != baseline_fold["metrics"]
+
+
 def test_date_range_backtest_marks_candidate_selection_as_weak_when_no_trades() -> None:
     flat_bars = [
         bar.model_copy(

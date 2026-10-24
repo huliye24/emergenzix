@@ -61,7 +61,7 @@ The API downloads public historical archive data, validates coverage before pers
 
 ## Candidate selection and test isolation
 
-The candidate universe is versioned in `emergenzix_api/date_range_backtest.py`. Version 1 compares these SMA pairs:
+The candidate universe is versioned in `emergenzix_api/date_range_backtest.py`. Protocol version 2 compares these SMA pairs:
 
 - 3 / 10
 - 5 / 15
@@ -78,14 +78,22 @@ Candidates with at least two completed validation trades are preferred. If none 
 
 The selected parameters are frozen before the requested test period. The test-week candles are not passed to the candidate-ranking loop. The backtest starts with fresh cash at the evaluation boundary; pre-test bars provide indicator warm-up only. Signals use completed candles and execute at the next candle open, with configured fee and slippage assumptions. Any remaining position is closed at the last test candle's close.
 
+## Three-fold walk-forward evidence
+
+Protocol version 2 also divides the final 30% of the pre-test window into three consecutive folds. Each fold uses an expanding history ending immediately before its evaluation window to rank the same fixed SMA grid. The chosen parameters are then frozen and scored only on that fold. A fold's evaluation candles are never visible during its selection step.
+
+The report records each fold's selection cutoff, evaluation boundaries, candle counts, selected candidate, evidence status, and metrics. It also reports the median fold return, worst fold maximum drawdown, folds with completed trades, folds meeting the two-trade evidence threshold, and how often each candidate was selected. A fold with fewer than two completed trades is explicitly marked `insufficient_completed_trades`; it is not counted as adequate evidence.
+
+Walk-forward results are diagnostic research evidence. They do not replace the separate final test week and never promote a candidate to paper or live execution.
+
 ## Data and limitations
 
 - Data source: Binance public historical archive; archive checksums are verified by the existing ingestion module.
 - Timezone: UTC, including date boundaries.
-- Candle interval: fixed at 4 hours in protocol version `btc-date-range-backtest-v1`.
+- Candle interval: fixed at 4 hours in protocol version `btc-date-range-backtest-v2`.
 - Completeness: the full pre-test and test interval must contain every expected 4-hour candle.
 - Strategy universe: fixed SMA-crossover candidates, currently long-only.
 - Not modeled: futures short positions, funding, leverage, liquidation, hedging, and market impact beyond the configured slippage estimate.
 - No private exchange credentials are used. No exchange orders are created. `live_trading_enabled` remains false.
 
-This is the first end-to-end research workflow, not a profitability guarantee. Before expanding the candidate universe, the next validation steps should include multi-fold walk-forward evaluation, regime-separated results, stronger cost/slippage stress tests, and comparison with buy-and-hold.
+This is the first end-to-end research workflow, not a profitability guarantee. Three folds remain limited evidence; next validation steps should include regime-separated results, stronger cost/slippage stress tests, and comparison with buy-and-hold.
