@@ -144,7 +144,7 @@ class TelegramCommandBot:
 
     def _load_state(self) -> dict[str, Any]:
         if not self.state_path.exists():
-            return {"last_update_id": None, "last_backtest_at": None}
+            return {"last_update_id": None, "last_backtest_at": None, "poll_initialized": False}
         try:
             payload = json.loads(self.state_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -165,9 +165,13 @@ class TelegramCommandBot:
             or float(last_backtest_at) < 0
         ):
             raise ValueError("Telegram bot state file has an invalid cooldown timestamp")
+        poll_initialized = payload.get("poll_initialized", False)
+        if not isinstance(poll_initialized, bool):
+            raise ValueError("Telegram bot state file has an invalid initialization flag")
         return {
             "last_update_id": update_id,
             "last_backtest_at": last_backtest_at,
+            "poll_initialized": poll_initialized,
         }
 
     def _save_state(self) -> None:
@@ -412,6 +416,29 @@ class TelegramCommandBot:
         self._send_message(chat_id, reply)
 
     def poll_once(self) -> None:
+        if not self.state.get("poll_initialized", False):
+            # Drop updates queued before first startup so an old command cannot trigger work.
+            pending = self._telegram_call(
+                "getUpdates",
+                {"offset": -1, "timeout": 0, "allowed_updates": ["message"]},
+                timeout=10,
+            )
+            if not isinstance(pending, list):
+                raise TelegramBotError("Telegram getUpdates returned an invalid response")
+            pending_ids = [
+                item["update_id"]
+                for item in pending
+                if isinstance(item, dict)
+                and isinstance(item.get("update_id"), int)
+                and not isinstance(item.get("update_id"), bool)
+                and item["update_id"] >= 0
+            ]
+            if pending_ids:
+                self.state["last_update_id"] = max(pending_ids)
+            self.state["poll_initialized"] = True
+            self._save_state()
+            return
+
         last_update_id = self.state.get("last_update_id")
         payload: dict[str, Any] = {
             "timeout": self.poll_timeout_seconds,

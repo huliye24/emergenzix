@@ -235,24 +235,41 @@ def test_latest_returns_most_recent_saved_record(tmp_path: Path) -> None:
     assert "sma-3-10" in sent[0]
 
 
-def test_poll_once_persists_update_offset(tmp_path: Path) -> None:
+def test_poll_once_discards_stale_updates_then_persists_offset(tmp_path: Path) -> None:
     state_path = tmp_path / "telegram-state.json"
+    sent = []
 
     def requester(request, *, timeout):
         url = request.full_url
+        if "/getUpdates?" in url and "offset=-1" in url:
+            # A stale command pending before first startup must not be executed.
+            return FakeResponse({
+                "ok": True,
+                "result": [_update("/backtest 2025-10-21", update_id=41)],
+            })
         if "/getUpdates?" in url:
+            assert "offset=42" in url
             return FakeResponse({
                 "ok": True,
                 "result": [_update("/help", update_id=42)],
             })
         if url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
             return FakeResponse({"ok": True, "result": {"message_id": 16}})
         raise AssertionError(f"unexpected URL: {url}")
 
     bot = _bot(tmp_path, requester)
     bot.poll_once()
+    first_state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert first_state["last_update_id"] == 41
+    assert first_state["poll_initialized"] is True
+    assert sent == []
+
+    bot.poll_once()
     saved = json.loads(state_path.read_text(encoding="utf-8"))
     assert saved["last_update_id"] == 42
+    assert len(sent) == 1
+    assert "/status" in sent[0]
 
 
 def test_telegram_transport_error_does_not_expose_bot_token(tmp_path: Path) -> None:

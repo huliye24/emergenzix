@@ -35,7 +35,7 @@ Stop the services with:
 docker compose --profile telegram down
 ~~~
 
-The bot persists its update offset and backtest cooldown timestamp in the existing emergenzix-data volume. This reduces duplicate handling after restarts. The date-range API is idempotent for identical research inputs, but a Telegram response can still be lost if the process stops during a request.
+The bot persists its update offset, initialization flag, and backtest cooldown timestamp in the existing emergenzix-data volume. On first startup it intentionally discards any commands already queued before the bot was initialized, preventing stale messages from unexpectedly starting work. Later updates are offset-tracked across restarts. The date-range API is idempotent for identical research inputs, but a Telegram response can still be lost if the process stops during a request.
 
 ## Commands
 
