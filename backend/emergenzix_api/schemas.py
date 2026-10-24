@@ -92,7 +92,13 @@ class DatasetCreate(StrictModel):
 
 class BacktestCreate(StrictModel):
     strategy_id: str = Field(min_length=1, max_length=64)
-    bars: list[Bar] = Field(min_length=5, max_length=10_000)
+    dataset_id: str | None = Field(
+        default=None,
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    bars: list[Bar] | None = Field(default=None, min_length=5, max_length=10_000)
     initial_cash: float = Field(default=10_000.0, gt=0, le=1_000_000_000)
     fee_bps: float = Field(default=10.0, ge=0, le=1_000, allow_inf_nan=False)
     slippage_bps: float = Field(default=5.0, ge=0, le=1_000, allow_inf_nan=False)
@@ -102,7 +108,25 @@ class BacktestCreate(StrictModel):
     data_timeframe: Literal["1m", "5m", "15m", "30m", "1h", "4h", "1d"] | None = None
 
     @model_validator(mode="after")
-    def validate_bar_order(self) -> "BacktestCreate":
+    def validate_input_source(self) -> "BacktestCreate":
+        if (self.dataset_id is None) == (self.bars is None):
+            raise ValueError("provide exactly one of dataset_id or bars")
+
+        if self.dataset_id is not None:
+            if (
+                self.data_exchange is not None
+                or self.data_symbol is not None
+                or self.data_timeframe is not None
+                or "data_source" in self.model_fields_set
+            ):
+                raise ValueError(
+                    "dataset_id is the source of truth; do not supply data_* overrides"
+                )
+            return self
+
+        if self.bars is None:
+            raise ValueError("bars are required when dataset_id is not provided")
+
         timestamps = [bar.timestamp for bar in self.bars]
         if any(current <= previous for previous, current in zip(timestamps, timestamps[1:])):
             raise ValueError("bars must be in strictly increasing timestamp order")
