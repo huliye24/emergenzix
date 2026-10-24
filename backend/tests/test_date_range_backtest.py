@@ -166,7 +166,10 @@ def test_date_range_backtest_api_persists_idempotent_report(client, monkeypatch)
     assert first["dataset"]["source"] == "binance_public_archive"
     assert first["report"]["period"]["test_bars_count"] == 42
     assert first["safety"]["orders_created"] is False
+    assert first["safety"]["live_trading_enabled"] is False
     assert len(first["record_sha256"]) == 64
+    with client.app.state.database.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM paper_orders").fetchone()[0] == 0
 
     second_response = client.post(
         "/api/v1/research/date-range-backtests", json=body
