@@ -100,6 +100,7 @@ def evaluate_market_payload(
     trigger_key = f"{result.scenario}:{completed_at}" if result.scenario in ACTIONABLE_SCENARIOS else None
     state = WatchState(result.scenario, completed_at, trigger_key, None)
     details = result.as_dict()
+    details["bar_timestamp"] = completed_at
     events: list[WatchEvent] = []
     if previous.scenario is None:
         events.append(WatchEvent("initial_snapshot", "info", now.isoformat(), exchange, symbol, timeframe, f"Initial market scenario: {result.scenario}.", details))
@@ -135,35 +136,46 @@ def run_once(
     previous = load_state(state_path)
     payload = fetcher(exchange_id=exchange, symbol=symbol, timeframe=timeframe, limit=limit)
     state, events = evaluate_market_payload(payload, previous, lookback=lookback, now=now or _utc_now())
-    save_state(state_path, state)
     if observer is not None:
         completed = _parse_completed_bars(payload)
         for event in events:
             observer(event, completed)
+    save_state(state_path, state)
     return events
 
 
-def _emit(event: WatchEvent, notifier: Any | None = None, bars: Sequence[Bar] = ()) -> None:
+def _emit(
+    event: WatchEvent,
+    notifier: Any | None = None,
+    bars: Sequence[Bar] = (),
+    outbox: Any | None = None,
+) -> None:
+    """Log an event and durably queue Telegram delivery before attempting it."""
     print(json.dumps(asdict(event), sort_keys=True, ensure_ascii=False), flush=True)
-    if notifier is not None:
-        image = None
-        if bars and event.details.get("scenario"):
-            try:
-                from .watch_chart import render_watch_chart
+    if notifier is None:
+        return
 
-                image = render_watch_chart(event, bars)
-            except Exception as exc:
-                print(
-                    json.dumps(
-                        {
-                            "event_type": "chart_render_failed",
-                            "severity": "warning",
-                            "error_type": type(exc).__name__,
-                        },
-                        sort_keys=True,
-                    ),
-                    flush=True,
-                )
+    image = None
+    if bars and event.details.get("scenario"):
+        try:
+            from .watch_chart import render_watch_chart
+
+            image = render_watch_chart(event, bars)
+        except Exception as exc:
+            print(
+                json.dumps(
+                    {
+                        "event_type": "chart_render_failed",
+                        "severity": "warning",
+                        "error_type": type(exc).__name__,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+
+    if outbox is None:
+        # Compatibility fallback for callers that explicitly use _emit outside main().
         try:
             notifier.send(event, image=image)
         except Exception as exc:
@@ -179,6 +191,42 @@ def _emit(event: WatchEvent, notifier: Any | None = None, bars: Sequence[Bar] = 
                 ),
                 flush=True,
             )
+        return
+
+    try:
+        outbox.enqueue(event, image=image)
+        results = outbox.deliver_pending(notifier)
+        for result in results:
+            if result.status in {"pending", "dead"} and result.error_type:
+                print(
+                    json.dumps(
+                        {
+                            "event_type": "notification_delivery_failed",
+                            "severity": "error",
+                            "channel": "telegram",
+                            "notification_id": result.notification_id,
+                            "attempts": result.attempts,
+                            "status": result.status,
+                            "error_type": result.error_type,
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
+    except Exception as exc:
+        # Never fall back to a direct send if persistence itself failed.
+        print(
+            json.dumps(
+                {
+                    "event_type": "notification_queue_failed",
+                    "severity": "error",
+                    "channel": "telegram",
+                    "error_type": type(exc).__name__,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
 
 
 def _arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -219,10 +267,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     notifier = None
+    outbox = None
     if token and chat_id:
-        from .notifications import NotificationError, TelegramNotifier
+        from .notification_outbox import NotificationOutbox
+        from .notifications import TelegramNotifier
 
         notifier = TelegramNotifier(bot_token=token, chat_id=chat_id)
+        outbox_path = Path(
+            os.getenv(
+                "EMERGENZIX_NOTIFICATION_DB_PATH",
+                str(args.state_path.parent / "notification-outbox.sqlite3"),
+            )
+        )
+        outbox = NotificationOutbox(outbox_path)
         startup_event = WatchEvent(
             "watcher_startup", "info", _utc_now().isoformat(), args.exchange,
             args.symbol, args.timeframe,
@@ -230,13 +287,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             {"mode": "PAPER", "live_trading_enabled": False},
         )
         try:
-            notifier.send(startup_event)
+            startup_id = outbox.enqueue(startup_event)
+            startup_result = outbox.deliver_one(
+                notifier, startup_id, force=True
+            )
         except Exception as exc:
             _emit(WatchEvent(
                 "risk_alert", "error", _utc_now().isoformat(), args.exchange,
                 args.symbol, args.timeframe,
                 "Telegram startup delivery check failed; watcher will not start.",
-                {"error_type": type(exc).__name__ if isinstance(exc, Exception) else "NotificationError"},
+                {"error_type": type(exc).__name__},
+            ))
+            return 2
+        if startup_result.status != "delivered":
+            _emit(WatchEvent(
+                "risk_alert", "error", _utc_now().isoformat(), args.exchange,
+                args.symbol, args.timeframe,
+                "Telegram startup delivery check failed; watcher will not start.",
+                {
+                    "error_type": startup_result.error_type or "TelegramDeliveryUnavailable",
+                    "notification_id": startup_result.notification_id,
+                },
             ))
             return 2
     while True:
@@ -244,10 +315,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_once(
                 exchange=args.exchange, symbol=args.symbol, timeframe=args.timeframe,
                 limit=args.limit, lookback=args.lookback, state_path=args.state_path,
-                observer=lambda event, bars: _emit(event, notifier, bars),
+                observer=lambda event, bars: _emit(event, notifier, bars, outbox),
             )
         except Exception as exc:  # process boundary: report and retry without trading
-            _emit(WatchEvent("risk_alert", "error", _utc_now().isoformat(), args.exchange, args.symbol, args.timeframe, "Watch cycle failed; no trading action was taken.", {"error_type": type(exc).__name__, "error": str(exc)}), notifier)
+            _emit(WatchEvent("risk_alert", "error", _utc_now().isoformat(), args.exchange, args.symbol, args.timeframe, "Watch cycle failed; no trading action was taken.", {"error_type": type(exc).__name__, "error": str(exc)}), notifier, outbox=outbox)
             if args.once:
                 return 1
         if args.once:
