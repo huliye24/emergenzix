@@ -40,6 +40,6 @@ This startup gate confirms one real message can be delivered at startup. It does
 
 The watcher writes each Telegram notification to a separate SQLite outbox on the persistent `/data` volume before attempting delivery. Queue records retain the structured event and optional chart image across process restarts. A stable event key deduplicates reprocessing of the same completed candle; event keys use the completed-candle timestamp when available.
 
-Successful sends are marked delivered. Failures remain pending and are retried with exponential backoff (30 seconds up to one hour); after eight failed attempts, a record is marked dead and retained for inspection rather than silently deleted. Error logs record exception types only and do not include the bot token or Telegram response body.
+Successful sends are marked delivered. Failures remain pending and are retried with exponential backoff (30 seconds up to one hour); the watcher checks the queue on every polling cycle, even if no new market event was generated. After eight failed attempts, a record is marked dead and retained for inspection rather than silently deleted. Error logs record exception types only and do not include the bot token or Telegram response body.
 
 The watcher enqueues emitted events before saving its updated watcher state, reducing the crash window in which an event could be skipped. This is a single-consumer, SQLite-backed first version; it does not yet provide an operator UI for dead-letter replay or a multi-worker claim lease.
