@@ -17,6 +17,7 @@ from .backtesting import run_sma_crossover
 from .config import Settings
 from .dataset_quality import build_dataset_quality_report
 from .database import Database
+from .date_range_backtest_api import router as date_range_backtest_router
 from .historical_replay_api import router as historical_replay_router
 from .historical_data_api import router as historical_data_router
 from .dataset_store import persist_dataset
@@ -143,6 +144,7 @@ def create_app(
     )
     app.include_router(historical_replay_router)
     app.include_router(historical_data_router)
+    app.include_router(date_range_backtest_router)
     app.state.database = database
     app.state.notification_outbox_path = str(
         notification_db_path
