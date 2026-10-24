@@ -23,6 +23,7 @@ from .schemas import (
     BacktestCreate,
     DatasetCreate,
     PaperOrderCreate,
+    StrategyComparisonCreate,
     StrategyCreate,
     StrategyVersionCreate,
 )
@@ -670,6 +671,172 @@ def create_app(
                 ),
             )
         return result_payload
+
+    @app.post(
+        "/api/v1/strategy-comparisons",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_strategy_comparison(
+        payload: StrategyComparisonCreate, request: Request
+    ) -> dict[str, Any]:
+        """Compare selected versions on one immutable dataset and save the report."""
+        db: Database = request.app.state.database
+        placeholders = ",".join("?" for _ in payload.strategy_version_ids)
+        with db.connection() as connection:
+            strategy = connection.execute(
+                "SELECT * FROM strategies WHERE id = ?", (payload.strategy_id,)
+            ).fetchone()
+            dataset = connection.execute(
+                "SELECT * FROM market_datasets WHERE id = ?", (payload.dataset_id,)
+            ).fetchone()
+            version_rows = connection.execute(
+                f"SELECT * FROM strategy_versions WHERE id IN ({placeholders})",
+                tuple(payload.strategy_version_ids),
+            ).fetchall()
+
+        if strategy is None:
+            raise HTTPException(status_code=404, detail="Strategy not found")
+        if dataset is None:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+
+        versions_by_id = {row["id"]: row for row in version_rows}
+        missing_version_ids = [
+            version_id
+            for version_id in payload.strategy_version_ids
+            if version_id not in versions_by_id
+        ]
+        if missing_version_ids:
+            raise HTTPException(
+                status_code=404,
+                detail={"message": "Strategy version not found", "ids": missing_version_ids},
+            )
+
+        versions = [
+            versions_by_id[version_id]
+            for version_id in payload.strategy_version_ids
+        ]
+        if any(version["strategy_id"] != strategy["id"] for version in versions):
+            raise HTTPException(
+                status_code=422,
+                detail="All selected versions must belong to the selected strategy",
+            )
+        if _symbol_key(dataset["symbol"]) != _symbol_key(strategy["symbol"]):
+            raise HTTPException(
+                status_code=422,
+                detail="Dataset symbol does not match strategy symbol",
+            )
+
+        bars = [
+            Bar.model_validate(item)
+            for item in json.loads(dataset["bars_json"])
+        ]
+        required_bars = max(int(version["slow_window"]) + 2 for version in versions)
+        if len(bars) < required_bars:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Dataset has {len(bars)} bars; all selected versions require "
+                    f"at least {required_bars} bars"
+                ),
+            )
+
+        results: list[dict[str, Any]] = []
+        engine_assumptions: dict[str, Any] | None = None
+        for version in versions:
+            try:
+                run = run_sma_crossover(
+                    bars,
+                    fast_window=int(version["fast_window"]),
+                    slow_window=int(version["slow_window"]),
+                    initial_cash=payload.initial_cash,
+                    fee_bps=payload.fee_bps,
+                    slippage_bps=payload.slippage_bps,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+            if engine_assumptions is None:
+                engine_assumptions = run["assumptions"]
+            results.append(
+                {
+                    "strategy_version_id": version["id"],
+                    "version": int(version["version"]),
+                    "strategy_type": version["strategy_type"],
+                    "parameters": json.loads(version["parameters_json"]),
+                    "parameters_sha256": version["parameters_sha256"],
+                    "bars_count": run["bars_count"],
+                    "initial_cash": run["initial_cash"],
+                    "final_equity": run["final_equity"],
+                    "total_return_pct": run["total_return_pct"],
+                    "max_drawdown_pct": run["max_drawdown_pct"],
+                    "number_of_trades": run["number_of_trades"],
+                    "win_rate_pct": run["win_rate_pct"],
+                    "benchmark_return_pct": run["benchmark_return_pct"],
+                }
+            )
+
+        comparison_id = str(uuid.uuid4())
+        created_at = _now()
+        result_payload = {
+            "id": comparison_id,
+            "created_at": created_at,
+            "strategy_id": strategy["id"],
+            "strategy_name": strategy["name"],
+            "symbol": strategy["symbol"],
+            "data_provenance": {
+                "source": dataset["source"],
+                "exchange": dataset["exchange"],
+                "symbol": dataset["symbol"],
+                "timeframe": dataset["timeframe"],
+                "dataset_id": dataset["id"],
+                "dataset_sha256": dataset["content_sha256"],
+                "start_at": dataset["start_at"],
+                "end_at": dataset["end_at"],
+                "bars_count": int(dataset["bars_count"]),
+            },
+            "configuration": {
+                "initial_cash": payload.initial_cash,
+                "fee_bps": payload.fee_bps,
+                "slippage_bps": payload.slippage_bps,
+            },
+            "assumptions": engine_assumptions,
+            "results": results,
+        }
+        with db.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO strategy_comparisons
+                    (id, strategy_id, dataset_id, strategy_version_ids_json,
+                     initial_cash, fee_bps, slippage_bps, result_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    comparison_id,
+                    strategy["id"],
+                    dataset["id"],
+                    json.dumps(payload.strategy_version_ids, separators=(",", ":")),
+                    payload.initial_cash,
+                    payload.fee_bps,
+                    payload.slippage_bps,
+                    json.dumps(result_payload, separators=(",", ":"), allow_nan=False),
+                    created_at,
+                ),
+            )
+        return result_payload
+
+    @app.get("/api/v1/strategy-comparisons/{comparison_id}")
+    def get_strategy_comparison(
+        comparison_id: str, request: Request
+    ) -> dict[str, Any]:
+        db: Database = request.app.state.database
+        with db.connection() as connection:
+            row = connection.execute(
+                "SELECT result_json FROM strategy_comparisons WHERE id = ?",
+                (comparison_id,),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Strategy comparison not found")
+        return json.loads(row["result_json"])
 
     @app.get("/api/v1/backtests")
     def list_backtests(

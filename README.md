@@ -135,6 +135,8 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | POST | `/api/v1/backtests` | Run and persist a backtest from raw bars or a registered dataset ID |
 | GET | `/api/v1/backtests` | List recent backtests |
 | GET | `/api/v1/backtests/{id}` | Retrieve a saved backtest |
+| POST | `/api/v1/strategy-comparisons` | Compare 2–10 versions on one immutable dataset and persist the report |
+| GET | `/api/v1/strategy-comparisons/{id}` | Retrieve a saved strategy comparison |
 | GET | `/api/v1/paper/account` | Inspect the simulated account |
 | GET | `/api/v1/paper/positions` | List simulated positions |
 | GET / POST | `/api/v1/paper/orders` | List or create paper orders |
@@ -147,6 +149,8 @@ The read-only dataset quality endpoint reports timeframe-aligned candle gaps, ir
 Public OHLCV responses use a bounded, in-process TTL cache (30 seconds by default, up to 256 entries). Cache keys include exchange, normalized symbol, timeframe, and requested limit. Configure it with `EMERGENZIX_MARKET_DATA_CACHE_TTL_SECONDS` and `EMERGENZIX_MARKET_DATA_CACHE_MAX_ENTRIES`; set the TTL to `0` to disable caching. Only successful provider responses are cached. Each API process has its own cache, which is cleared on restart and is not shared across replicas.
 
 Each new strategy starts with immutable version 1. Create later parameter snapshots with `POST /api/v1/strategies/{id}/versions`; prior versions remain unchanged, and repeated submission of the current parameters returns `409`. Backtests use the latest version by default or can pin a specific `strategy_version_id`. Results retain the version ID, canonical parameter snapshot, and SHA-256 parameter fingerprint. Historical backtests from databases created before this feature remain unassigned because their original version cannot be inferred safely.
+
+Strategy comparisons require a registered immutable `dataset_id` and 2–10 unique version IDs from the same strategy. Every version is evaluated against the exact same saved candles, initial cash, fee rate, and slippage rate. The persisted report includes the dataset fingerprint, parameter fingerprints, and comparable return, drawdown, trade-count, win-rate, and benchmark metrics. Comparisons are descriptive research artifacts, not evidence of future profitability.
 
 ## Safety boundaries
 
