@@ -100,6 +100,23 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS historical_replay_records (
+                    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                    dataset_id TEXT NOT NULL REFERENCES market_datasets(id),
+                    dataset_sha256 TEXT NOT NULL CHECK (length(dataset_sha256) = 64),
+                    symbol TEXT NOT NULL,
+                    timeframe TEXT,
+                    protocol_version TEXT NOT NULL,
+                    seed INTEGER NOT NULL CHECK (seed >= 0),
+                    horizon_bars INTEGER NOT NULL CHECK (horizon_bars >= 1),
+                    lookback INTEGER NOT NULL CHECK (lookback >= 10),
+                    anchor_index INTEGER NOT NULL CHECK (anchor_index >= 0),
+                    record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
+                    record_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE (dataset_id, seed, horizon_bars, lookback, protocol_version)
+                );
+
                 CREATE TABLE IF NOT EXISTS strategy_comparisons (
                     id TEXT PRIMARY KEY,
                     strategy_id TEXT NOT NULL REFERENCES strategies(id),
@@ -158,6 +175,22 @@ class Database:
                     ON strategy_versions(strategy_id, version DESC);
                 CREATE INDEX IF NOT EXISTS idx_market_datasets_created_at
                     ON market_datasets(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_historical_replay_records_created_at
+                    ON historical_replay_records(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_historical_replay_records_dataset
+                    ON historical_replay_records(dataset_id, created_at DESC);
+
+                CREATE TRIGGER IF NOT EXISTS historical_replay_records_no_update
+                BEFORE UPDATE ON historical_replay_records
+                BEGIN
+                    SELECT RAISE(ABORT, 'historical replay records are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS historical_replay_records_no_delete
+                BEFORE DELETE ON historical_replay_records
+                BEGIN
+                    SELECT RAISE(ABORT, 'historical replay records are immutable');
+                END;
                 CREATE INDEX IF NOT EXISTS idx_backtests_created_at
                     ON backtests(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_strategy_comparisons_created_at
