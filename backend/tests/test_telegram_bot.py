@@ -512,6 +512,7 @@ def test_history_lists_five_max_and_full_ids_in_order(tmp_path: Path) -> None:
     assert sent[0].index("/report " + "a" * 64) < sent[0].index("/report " + "b" * 64)
     assert "sma-3-10" in sent[0]
     assert "+0.5074%" in sent[0]
+    assert "\n/report " + "a" * 64 in sent[0]
     assert "没有创建任何订单" in sent[0]
 
 
