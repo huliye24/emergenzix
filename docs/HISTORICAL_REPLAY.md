@@ -6,11 +6,22 @@ This workflow creates reproducible, point-in-time BTC research records from an a
 
 The first version deliberately accepts BTC quote pairs only. ETH, SOL, portfolio logic, spot/perpetual hedging, leverage, and live execution are outside this task.
 
+## Select a replay mode
+
+The replay API supports exactly one of two anchor modes:
+
+1. **Random mode** — provide a non-negative \`seed\`. The same dataset, protocol version, seed, lookback, and horizon choose the same anchor.
+2. **Timestamp mode** — provide a timezone-aware \`anchor_at\` and omit \`seed\`. The timestamp must exactly match a candle's opening timestamp after conversion to UTC. This is intended for replaying a moment selected from TradingView.
+
+For a chart whose displayed timezone is UTC+08:00, send the offset explicitly. For example, a chart label of \`2024-03-17 04:00\` becomes \`2024-03-17T04:00:00+08:00\`, not a timezone-naive timestamp. The API converts it to UTC before matching the dataset.
+
+The selected candle is the final candle visible to the scenario analyzer. The next \`horizon_bars\` candles are held out for outcome evaluation. The anchor must leave enough preceding bars for the lookback and enough subsequent bars for the requested outcome horizon. If the exact candle is absent or insufficient history remains on either side, the request is rejected rather than silently choosing a nearby candle.
+
 ## API
 
 Register the candles first through the existing dataset endpoint. The dataset should have a BTC symbol such as BTC/USDT, a declared timeframe, timezone-aware ordered candles, and enough history for the selected lookback and forward horizon.
 
-Create a replay:
+Example random replay request:
 
 ~~~json
 {
@@ -21,7 +32,18 @@ Create a replay:
 }
 ~~~
 
-POST to **/api/v1/research/historical-replays**. The dataset ID must refer to a registered dataset. The default horizon is 12 bars and the default lookback is 20 bars. The random seed is explicit so the selected anchor can be reproduced.
+Example timestamp-anchored replay request:
+
+~~~json
+{
+  "dataset_id": "64-character-dataset-sha256",
+  "anchor_at": "2024-03-17T04:00:00+08:00",
+  "horizon_bars": 12,
+  "lookback": 20
+}
+~~~
+
+POST to **/api/v1/research/historical-replays**. The default horizon is 12 bars and the default lookback is 20 bars.
 
 - **POST /api/v1/research/historical-replays** runs and stores a replay. The first insert returns HTTP 201; repeating the same dataset/configuration returns the existing record with HTTP 200.
 - **GET /api/v1/research/historical-replays** lists recent records. Optional dataset_id and limit query parameters filter the list.
@@ -32,10 +54,10 @@ POST to **/api/v1/research/historical-replays**. The dataset ID must refer to a 
 Each record includes:
 
 - The registered dataset ID and SHA-256 fingerprint, source, exchange, symbol, timeframe, date range, and bar count.
-- The replay protocol version, random seed, lookback, and outcome horizon.
-- The chosen anchor, the timestamp visible to the scenario analyzer, the hidden outcome interval, the scenario snapshot, and the subsequently measured outcome.
+- The replay protocol version, random seed or explicit anchor timestamp, lookback, and outcome horizon.
+- The chosen anchor index, the timestamp visible to the scenario analyzer, the hidden outcome interval, the scenario snapshot, and the subsequently measured outcome.
 - Explicit safety fields showing that no order was created and live trading was not enabled.
-- A deterministic record ID derived from the dataset fingerprint, protocol version, seed, lookback, and horizon.
+- A deterministic record ID derived from the dataset fingerprint, protocol version, replay mode, seed or timestamp, lookback, and horizon.
 - A record SHA-256 fingerprint over the canonical result payload. Creation time is metadata and is excluded from that reproducibility fingerprint.
 
 Before replay, the API recalculates the registered dataset fingerprint from its canonical metadata and candle payload. If the payload no longer matches the stored fingerprint, the request is rejected. SQLite triggers reject updates and deletes of replay records. Re-running the same configuration is idempotent; if the same protocol identity unexpectedly produces a different result, the API returns a conflict instead of silently replacing the prior record.
