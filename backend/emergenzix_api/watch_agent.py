@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from .market_data import fetch_public_ohlcv
+from .operational_alerts import OperationalAlertMonitor, notification_health_conditions
 from .scenarios import analyze_scenarios
 from .schemas import Bar
 
@@ -92,9 +93,18 @@ def evaluate_market_payload(
         return state, [WatchEvent(
             "risk_alert", "warning", now.isoformat(), exchange, symbol, timeframe,
             "Market data is stale; analysis and trading action are blocked.",
-            {"last_completed_at": last_bar.timestamp.isoformat(), "age_seconds": round(age_seconds, 3), "stale_limit_seconds": stale_limit},
+            {
+                "last_completed_at": last_bar.timestamp.isoformat(),
+                "stale_limit_seconds": stale_limit,
+                "alert_key": f"market-data-stale:{last_bar.timestamp.isoformat()}:active",
+            },
         )]
 
+    recovered_stale_key = (
+        previous.risk_key
+        if previous.risk_key and previous.risk_key.startswith("stale:")
+        else None
+    )
     result = analyze_scenarios(completed, lookback=lookback)
     completed_at = last_bar.timestamp.isoformat()
     trigger_key = f"{result.scenario}:{completed_at}" if result.scenario in ACTIONABLE_SCENARIOS else None
@@ -102,6 +112,25 @@ def evaluate_market_payload(
     details = result.as_dict()
     details["bar_timestamp"] = completed_at
     events: list[WatchEvent] = []
+    if recovered_stale_key is not None:
+        stale_timestamp = recovered_stale_key[len("stale:"):]
+        events.append(
+            WatchEvent(
+                "risk_recovered",
+                "info",
+                now.isoformat(),
+                exchange,
+                symbol,
+                timeframe,
+                "Market data has recovered; analysis is enabled again.",
+                {
+                    "condition": "market_data_stale",
+                    "last_completed_at": stale_timestamp,
+                    "stale_limit_seconds": stale_limit,
+                    "alert_key": f"market-data-stale:{stale_timestamp}:recovered",
+                },
+            )
+        )
     if previous.scenario is None:
         events.append(WatchEvent("initial_snapshot", "info", now.isoformat(), exchange, symbol, timeframe, f"Initial market scenario: {result.scenario}.", details))
     elif previous.scenario != result.scenario:
@@ -257,6 +286,58 @@ def _emit(
         ) from exc
 
 
+def _monitor_operational_health(
+    outbox: Any,
+    monitor: OperationalAlertMonitor,
+    notifier: Any,
+    args: argparse.Namespace,
+    *,
+    backlog_threshold: int,
+) -> None:
+    """Convert outbox health transitions into durable, deduplicated Telegram events."""
+    try:
+        conditions = notification_health_conditions(
+            outbox.summary(), backlog_threshold=backlog_threshold
+        )
+
+        def emit_transition(transition: Any) -> None:
+            event_type = (
+                "operational_alert"
+                if transition.transition == "active"
+                else "operational_recovery"
+            )
+            _emit(
+                WatchEvent(
+                    event_type,
+                    transition.severity,
+                    transition.occurred_at,
+                    args.exchange,
+                    args.symbol,
+                    args.timeframe,
+                    transition.message,
+                    transition.details,
+                ),
+                notifier,
+                outbox=outbox,
+            )
+
+        monitor.reconcile(conditions, emit=emit_transition)
+    except Exception as exc:
+        # The monitor must never crash the watcher; the durable transition is retried
+        # on a later cycle if enqueueing or state persistence fails.
+        print(
+            json.dumps(
+                {
+                    "event_type": "operational_monitor_failed",
+                    "severity": "error",
+                    "error_type": type(exc).__name__,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+
+
 def _arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the paper-only Emergenzix watch agent")
     parser.add_argument("--once", action="store_true")
@@ -267,6 +348,20 @@ def _arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--lookback", type=int, default=int(os.getenv("EMERGENZIX_WATCH_LOOKBACK", "20")))
     parser.add_argument("--interval", type=int, default=int(os.getenv("EMERGENZIX_WATCH_INTERVAL_SECONDS", "300")))
     parser.add_argument("--state-path", type=Path, default=Path(os.getenv("EMERGENZIX_WATCH_STATE_PATH", "/data/watch-state.json")))
+    parser.add_argument(
+        "--notification-backlog-threshold",
+        type=int,
+        default=int(os.getenv("EMERGENZIX_NOTIFICATION_BACKLOG_THRESHOLD", "20")),
+    )
+    parser.add_argument(
+        "--operational-alert-state-path",
+        type=Path,
+        default=(
+            Path(os.environ["EMERGENZIX_OPERATIONAL_ALERT_STATE_PATH"])
+            if os.getenv("EMERGENZIX_OPERATIONAL_ALERT_STATE_PATH")
+            else None
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -274,6 +369,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _arguments(argv)
     if args.interval < 10:
         raise ValueError("watch interval must be at least 10 seconds")
+    backlog_threshold = getattr(args, "notification_backlog_threshold", 20)
+    if backlog_threshold < 1:
+        raise ValueError("notification backlog threshold must be at least one")
     token = os.getenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.getenv("EMERGENZIX_TELEGRAM_CHAT_ID", "").strip()
     telegram_required = _env_bool("EMERGENZIX_TELEGRAM_REQUIRED", default=False)
@@ -308,6 +406,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
         outbox = NotificationOutbox(outbox_path)
+        operational_state_path = getattr(args, "operational_alert_state_path", None)
+        if operational_state_path is None:
+            operational_state_path = Path(
+                os.getenv(
+                    "EMERGENZIX_OPERATIONAL_ALERT_STATE_PATH",
+                    str(args.state_path.with_name("operational-alert-state.json")),
+                )
+            )
+        operational_monitor = OperationalAlertMonitor(operational_state_path)
         startup_event = WatchEvent(
             "watcher_startup", "info", _utc_now().isoformat(), args.exchange,
             args.symbol, args.timeframe,
@@ -364,6 +471,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.once:
                 return 1
         if notifier is not None and outbox is not None:
+            _flush_outbox(outbox, notifier)
+            _monitor_operational_health(
+                outbox,
+                operational_monitor,
+                notifier,
+                args,
+                backlog_threshold=backlog_threshold,
+            )
             _flush_outbox(outbox, notifier)
         if args.once:
             return 0
