@@ -86,7 +86,12 @@ def test_date_range_backtest_returns_one_week_equity_and_trade_report() -> None:
     assert period["test_bars_count"] == 42
     assert period["test_data_complete"] is True
     assert report["market"]["symbol"] == "BTC/USDT"
-    assert report["strategy_selection"]["selected_candidate"]["candidate_id"].startswith("sma-")
+    candidate_ids = {
+        candidate["candidate_id"]
+        for candidate in report["strategy_selection"]["candidates"]
+    }
+    assert "donchian-20-10" in candidate_ids
+    assert any(candidate_id.startswith("sma-") for candidate_id in candidate_ids)
     assert report["strategy_selection"]["future_visible_during_selection"] is False
     assert metrics["bars_count"] == 42
     assert len(metrics["equity_curve"]) == 43
@@ -311,7 +316,15 @@ def test_report_export_writes_summary_candidate_equity_trade_csv_and_markdown(
     assert (tmp_path / "btc-week.md").exists()
     assert "Net return" in (tmp_path / "btc-week.md").read_text(encoding="utf-8")
     assert "total_return_pct" in (tmp_path / "btc-week.summary.csv").read_text(encoding="utf-8-sig")
-    assert len((tmp_path / "btc-week.candidates.csv").read_text(encoding="utf-8-sig").splitlines()) == 7
+    candidate_csv = (tmp_path / "btc-week.candidates.csv").read_text(
+        encoding="utf-8-sig"
+    )
+    assert len(candidate_csv.splitlines()) == 8
+    assert "donchian_breakout" in candidate_csv
+    assert '""entry_window"":20' in candidate_csv
+    markdown = (tmp_path / "btc-week.md").read_text(encoding="utf-8")
+    assert "donchian-20-10" in markdown
+    assert "donchian_breakout" in markdown
     assert len((tmp_path / "btc-week.equity.csv").read_text(encoding="utf-8-sig").splitlines()) == 44
     assert "net_pnl" in (tmp_path / "btc-week.trades.csv").read_text(encoding="utf-8-sig")
 

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Run a repeatable historical BTC experiment by specifying a calendar start date and duration. The first version is intentionally narrow: Binance BTC/USDT spot, verified 4-hour candles, a fixed SMA-crossover candidate grid, long-only simulation, and no exchange orders.
+Run a repeatable historical BTC experiment by specifying a calendar start date and duration. The current protocol is intentionally narrow: Binance BTC/USDT spot, verified 4-hour candles, six fixed SMA-crossover candidates plus one Donchian breakout candidate, long-only simulation, and no exchange orders.
 
 ## CLI
 
@@ -61,7 +61,7 @@ The API downloads public historical archive data, validates coverage before pers
 
 ## Candidate selection and test isolation
 
-The candidate universe is versioned in `emergenzix_api/date_range_backtest.py`. Protocol version 2 compares these SMA pairs:
+The candidate universe is versioned in `emergenzix_api/date_range_backtest.py`. Protocol version 3 compares these SMA pairs:
 
 - 3 / 10
 - 5 / 15
@@ -69,6 +69,8 @@ The candidate universe is versioned in `emergenzix_api/date_range_backtest.py`. 
 - 7 / 28
 - 10 / 30
 - 15 / 40
+
+It also compares one Donchian breakout candidate with a 20-bar entry channel and a 10-bar exit channel. The current candle's close is tested against channels built only from earlier completed candles, and any resulting signal executes at the next candle's open.
 
 The first 70% of the pre-test window is used to warm indicators. Candidate scores are calculated on the final 30% of the pre-test window only. The ranking score is:
 
@@ -80,7 +82,7 @@ The selected parameters are frozen before the requested test period. The test-we
 
 ## Three-fold walk-forward evidence
 
-Protocol version 2 also divides the final 30% of the pre-test window into three consecutive folds. Each fold uses an expanding history ending immediately before its evaluation window to rank the same fixed SMA grid. The chosen parameters are then frozen and scored only on that fold. A fold's evaluation candles are never visible during its selection step.
+Protocol version 3 also divides the final 30% of the pre-test window into three consecutive folds. Each fold uses an expanding history ending immediately before its evaluation window to rank the same fixed candidate registry. The chosen strategy and parameters are then frozen and scored only on that fold. A fold's evaluation candles are never visible during its selection step.
 
 The report records each fold's selection cutoff, evaluation boundaries, candle counts, selected candidate, evidence status, and metrics. It also reports the median fold return, worst fold maximum drawdown, folds with completed trades, folds meeting the two-trade evidence threshold, and how often each candidate was selected. A fold with fewer than two completed trades is explicitly marked `insufficient_completed_trades`; it is not counted as adequate evidence.
 
@@ -90,9 +92,9 @@ Walk-forward results are diagnostic research evidence. They do not replace the s
 
 - Data source: Binance public historical archive; archive checksums are verified by the existing ingestion module.
 - Timezone: UTC, including date boundaries.
-- Candle interval: fixed at 4 hours in protocol version `btc-date-range-backtest-v2`.
+- Candle interval: fixed at 4 hours in protocol version `btc-date-range-backtest-v3`.
 - Completeness: the full pre-test and test interval must contain every expected 4-hour candle.
-- Strategy universe: fixed SMA-crossover candidates, currently long-only.
+- Strategy universe: six fixed SMA-crossover candidates and one Donchian breakout candidate, currently long-only.
 - Not modeled: futures short positions, funding, leverage, liquidation, hedging, and market impact beyond the configured slippage estimate.
 - No private exchange credentials are used. No exchange orders are created. `live_trading_enabled` remains false.
 

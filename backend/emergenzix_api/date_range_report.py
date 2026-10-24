@@ -48,8 +48,8 @@ def write_report_artifacts(
         "test_end_at_exclusive": report["period"]["test_end_at_exclusive"],
         "test_bars_count": report["period"]["test_bars_count"],
         "selected_candidate": selected["candidate_id"],
-        "fast_window": parameters["fast_window"],
-        "slow_window": parameters["slow_window"],
+        "strategy_type": selected["strategy_type"],
+        "parameters_json": json.dumps(parameters, sort_keys=True, separators=(",", ":")),
         "initial_cash": metrics["initial_cash"],
         "final_equity": metrics["final_equity"],
         "net_pnl": metrics["net_pnl"],
@@ -69,8 +69,10 @@ def write_report_artifacts(
         candidate_rows.append(
             {
                 "candidate_id": item["candidate_id"],
-                "fast_window": item["parameters"]["fast_window"],
-                "slow_window": item["parameters"]["slow_window"],
+                "strategy_type": item["strategy_type"],
+                "parameters_json": json.dumps(
+                    item["parameters"], sort_keys=True, separators=(",", ":")
+                ),
                 "eligible": item["eligible"],
                 "selection_score": item["selection_score"],
                 "validation_return_pct": item["total_return_pct"],
@@ -84,8 +86,8 @@ def write_report_artifacts(
         candidates_path,
         [
             "candidate_id",
-            "fast_window",
-            "slow_window",
+            "strategy_type",
+            "parameters_json",
             "eligible",
             "selection_score",
             "validation_return_pct",
@@ -116,15 +118,17 @@ def write_report_artifacts(
         return "N/A" if value is None else f"{float(value):.4f}%"
 
     candidate_table = [
-        "| Candidate | Fast | Slow | Validation return | Max drawdown | Trades | Score |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Candidate | Type | Parameters | Validation return | Max drawdown | Trades | Score |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: |",
     ]
     for item in selection["candidates"]:
         candidate_table.append(
-            "| {candidate} | {fast} | {slow} | {ret} | {drawdown} | {trades} | {score:.4f} |".format(
+            "| {candidate} | {strategy_type} | `{parameters}` | {ret} | {drawdown} | {trades} | {score:.4f} |".format(
                 candidate=item["candidate_id"],
-                fast=item["parameters"]["fast_window"],
-                slow=item["parameters"]["slow_window"],
+                strategy_type=item["strategy_type"],
+                parameters=json.dumps(
+                    item["parameters"], sort_keys=True, separators=(",", ":")
+                ),
                 ret=pct(item["total_return_pct"]),
                 drawdown=pct(item["max_drawdown_pct"]),
                 trades=item["number_of_trades"],
@@ -162,7 +166,7 @@ def write_report_artifacts(
             f"- Protocol: {record['protocol_version']}",
             f"- Test period (UTC): {report['period']['test_start_at']} to {report['period']['test_end_at_exclusive']} (end exclusive)",
             f"- Training period: {report['period']['training_days']} days; test candles: {report['period']['test_bars_count']}",
-            f"- Selected candidate: {selected['candidate_id']} (SMA fast={parameters['fast_window']}, slow={parameters['slow_window']})",
+            f"- Selected candidate: {selected['candidate_id']} ({selected['strategy_type']}, parameters={json.dumps(parameters, sort_keys=True, separators=(',', ':'))})",
             f"- Selection status: {selection['status']}",
             "",
             "## Test-week results",
@@ -192,7 +196,7 @@ def write_report_artifacts(
             "",
             "- Candidate selection is cut off before the test start; the test week does not select parameters.",
             "- Simulation includes configured fee and slippage assumptions; results are not a promise of future returns.",
-            "- This first protocol is BTC/USDT spot, long-only SMA. It does not model futures shorts, funding, leverage, liquidation, or hedges.",
+            "- This protocol is BTC/USDT spot and long-only. It does not model futures shorts, funding, leverage, liquidation, or hedges.",
             "- No exchange orders were created; live trading remains disabled.",
             "",
         ]
