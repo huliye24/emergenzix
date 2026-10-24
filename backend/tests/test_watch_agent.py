@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from emergenzix_api.watch_agent import WatchState, evaluate_market_payload, run_once
 
 
@@ -49,3 +51,88 @@ def test_run_once_persists_and_suppresses_duplicate_events(tmp_path: Path) -> No
     assert run_once(exchange="binance", symbol="BTCUSDT", timeframe="4h", limit=200, lookback=20, state_path=state_path, fetcher=fetcher, now=now)
     assert state_path.exists()
     assert run_once(exchange="binance", symbol="BTCUSDT", timeframe="4h", limit=200, lookback=20, state_path=state_path, fetcher=fetcher, now=now) == []
+
+
+def _main_args(tmp_path: Path, *, once: bool = True):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        interval=300,
+        exchange="binance",
+        symbol="BTCUSDT",
+        timeframe="4h",
+        limit=200,
+        lookback=20,
+        state_path=tmp_path / "watch.json",
+        once=once,
+    )
+
+
+def test_telegram_required_fails_closed_when_credentials_are_missing(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    from emergenzix_api import watch_agent
+
+    monkeypatch.setattr(watch_agent, "_arguments", lambda _argv=None: _main_args(tmp_path))
+    monkeypatch.setenv("EMERGENZIX_TELEGRAM_REQUIRED", "true")
+    monkeypatch.delenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("EMERGENZIX_TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.setattr(watch_agent, "run_once", lambda **_kwargs: pytest.fail("watcher must not run"))
+
+    assert watch_agent.main([]) == 2
+    output = capsys.readouterr().out
+    assert "MissingTelegramConfiguration" in output
+    assert "watcher will not start" in output
+
+
+def test_telegram_startup_delivery_failure_blocks_watcher(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    from emergenzix_api import notifications, watch_agent
+
+    class FailingNotifier:
+        def __init__(self, **_kwargs):
+            pass
+
+        def send(self, _event):
+            raise notifications.NotificationError("Telegram delivery failed")
+
+    monkeypatch.setattr(watch_agent, "_arguments", lambda _argv=None: _main_args(tmp_path))
+    monkeypatch.setattr(notifications, "TelegramNotifier", FailingNotifier)
+    monkeypatch.setenv("EMERGENZIX_TELEGRAM_REQUIRED", "true")
+    monkeypatch.setenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "secret-token")
+    monkeypatch.setenv("EMERGENZIX_TELEGRAM_CHAT_ID", "12345")
+    monkeypatch.setattr(watch_agent, "run_once", lambda **_kwargs: pytest.fail("watcher must not run"))
+
+    assert watch_agent.main([]) == 2
+    output = capsys.readouterr().out
+    assert "Telegram startup delivery check failed" in output
+    assert "NotificationError" in output
+    assert "secret-token" not in output
+
+
+def test_telegram_startup_success_sends_paper_only_message(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from emergenzix_api import notifications, watch_agent
+
+    sent = []
+
+    class SuccessfulNotifier:
+        def __init__(self, **_kwargs):
+            pass
+
+        def send(self, event):
+            sent.append(event)
+
+    monkeypatch.setattr(watch_agent, "_arguments", lambda _argv=None: _main_args(tmp_path))
+    monkeypatch.setattr(notifications, "TelegramNotifier", SuccessfulNotifier)
+    monkeypatch.setenv("EMERGENZIX_TELEGRAM_REQUIRED", "true")
+    monkeypatch.setenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "secret-token")
+    monkeypatch.setenv("EMERGENZIX_TELEGRAM_CHAT_ID", "12345")
+    monkeypatch.setattr(watch_agent, "run_once", lambda **_kwargs: [])
+
+    assert watch_agent.main([]) == 0
+    assert len(sent) == 1
+    assert sent[0].event_type == "watcher_startup"
+    assert sent[0].details["live_trading_enabled"] is False
