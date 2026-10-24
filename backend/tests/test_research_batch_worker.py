@@ -311,7 +311,7 @@ def test_legacy_migration_preserves_all_job_states_and_live_fencing(tmp_path) ->
     ]
     assert [j["attempts"] for j in after["jobs"]] == [1, 1, 3]
     assert after["jobs"][1]["last_error_code"] == "lease_expired"
-    with pytest.raises(BatchStateError, match="expired or superseded"):
+    with pytest.raises(BatchStateError, match="expired or not extendable"):
         renew_research_job_lease(
             upgraded, leased_job, "1" * 32,
             now=now + timedelta(minutes=16),
