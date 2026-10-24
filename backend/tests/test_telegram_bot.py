@@ -46,6 +46,8 @@ def _record() -> dict[str, object]:
             "cost_sensitivity": {
                 "method": "fixed_fee_slippage_matrix_after_candidate_selection",
                 "strategy_reselected_per_scenario": False,
+                "test_window_changed_per_scenario": False,
+                "stress_test_only": True,
                 "scenarios": [
                     {"fee_bps_per_side": 5.0, "slippage_bps_per_side": 0.0, "net_return_pct": 0.9102, "net_pnl": 91.02, "max_drawdown_pct": 1.0, "number_of_trades": 2},
                     {"fee_bps_per_side": 5.0, "slippage_bps_per_side": 5.0, "net_return_pct": 0.8102, "net_pnl": 81.02, "max_drawdown_pct": 1.1, "number_of_trades": 2},
