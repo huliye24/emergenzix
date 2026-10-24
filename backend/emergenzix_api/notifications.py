@@ -44,7 +44,8 @@ def _translate_instruction(value: object) -> str:
     )
     for pattern, replacement in patterns:
         if re.fullmatch(pattern, text):
-            return re.sub(pattern, replacement, text)
+            translated = re.sub(pattern, replacement, text)
+            return translated.replace("support", "支撑位").replace("resistance", "压力位")
     return text
 
 
