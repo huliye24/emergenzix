@@ -568,7 +568,7 @@ class TelegramCommandBot:
             return "尚无已保存的日期区间回测。发送 /help 查看如何启动一次历史回测。"
         return format_backtest_record(records[0])
 
-    def _backtest_text(self, arguments: list[str]) -> str:
+    def _backtest_text(self, arguments: list[str], *, chat_id: str | None = None) -> str:
         usage = "用法：/backtest YYYY-MM-DD [days]（days 为 1–30，默认 7）"
         if len(arguments) not in {1, 2}:
             return usage
@@ -607,6 +607,25 @@ class TelegramCommandBot:
             "fee_bps": 10.0,
             "slippage_bps": 5.0,
         }
+        if chat_id is not None:
+            try:
+                self._send_message(
+                    chat_id,
+                    f"已接受回测请求：{start_date.isoformat()} 起，{duration_days} 天（UTC）。"
+                    "正在获取历史数据并筛选策略；仅 PAPER 研究，不会创建订单。",
+                )
+            except TelegramBotError as exc:
+                # A transient progress-notification failure must not expose secrets or crash the poller.
+                print(
+                    json.dumps(
+                        {
+                            "event_type": "telegram_backtest_progress_notice_failed",
+                            "error_type": type(exc).__name__,
+                        },
+                        sort_keys=True,
+                    ),
+                    flush=True,
+                )
         try:
             record = self._api_request(
                 "POST", "/api/v1/research/date-range-backtests", payload
@@ -648,7 +667,7 @@ class TelegramCommandBot:
         elif command == "/latest":
             reply = self._latest_text()
         elif command == "/backtest":
-            reply = self._backtest_text(arguments)
+            reply = self._backtest_text(arguments, chat_id=chat_id)
         else:
             reply = "未知命令。发送 /help 查看可用命令。"
         self._send_message(chat_id, reply)
