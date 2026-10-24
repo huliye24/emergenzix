@@ -661,7 +661,8 @@ def format_saved_period_statistics(statistics: object, requested_limit: int) -> 
         or not isinstance(ids, list)
         or len(records) != sample
         or len(ids) != sample
-        or len(set(ids)) != sample if all(isinstance(item, str) for item in ids or []) else True
+        or any(not isinstance(item, str) for item in ids)
+        or len(set(ids)) != sample
     ):
         return invalid
 
