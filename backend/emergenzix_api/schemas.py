@@ -172,6 +172,18 @@ class StrategyComparisonCreate(StrictModel):
         return values
 
 
+class StrategyValidationCreate(StrictModel):
+    """Run a fixed strategy version on chronological in-sample and holdout periods."""
+
+    strategy_id: str = Field(min_length=1, max_length=64)
+    strategy_version_id: str = Field(min_length=1, max_length=64)
+    dataset_id: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    train_fraction: float = Field(default=0.7, ge=0.5, le=0.9, allow_inf_nan=False)
+    initial_cash: float = Field(default=10_000.0, gt=0, le=1_000_000_000)
+    fee_bps: float = Field(default=10.0, ge=0, le=1_000, allow_inf_nan=False)
+    slippage_bps: float = Field(default=5.0, ge=0, le=1_000, allow_inf_nan=False)
+
+
 class PaperOrderCreate(StrictModel):
     symbol: str = Field(pattern=SYMBOL_PATTERN)
     side: Literal["BUY", "SELL"]

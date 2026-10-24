@@ -137,6 +137,8 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | GET | `/api/v1/backtests/{id}` | Retrieve a saved backtest |
 | POST | `/api/v1/strategy-comparisons` | Compare 2–10 versions on one immutable dataset and persist the report |
 | GET | `/api/v1/strategy-comparisons/{id}` | Retrieve a saved strategy comparison |
+| POST | `/api/v1/strategy-validations` | Evaluate a pinned strategy version on chronological in-sample and out-of-sample periods |
+| GET | `/api/v1/strategy-validations/{id}` | Retrieve a saved validation report |
 | GET | `/api/v1/paper/account` | Inspect the simulated account |
 | GET | `/api/v1/paper/positions` | List simulated positions |
 | GET / POST | `/api/v1/paper/orders` | List or create paper orders |
@@ -151,6 +153,8 @@ Public OHLCV responses use a bounded, in-process TTL cache (30 seconds by defaul
 Each new strategy starts with immutable version 1. Create later parameter snapshots with `POST /api/v1/strategies/{id}/versions`; prior versions remain unchanged, and repeated submission of the current parameters returns `409`. Backtests use the latest version by default or can pin a specific `strategy_version_id`. Results retain the version ID, canonical parameter snapshot, and SHA-256 parameter fingerprint. Historical backtests from databases created before this feature remain unassigned because their original version cannot be inferred safely.
 
 Strategy comparisons require a registered immutable `dataset_id` and 2–10 unique version IDs from the same strategy. Every version is evaluated against the exact same saved candles, initial cash, fee rate, and slippage rate. The persisted report includes the dataset fingerprint, parameter fingerprints, and comparable return, drawdown, trade-count, win-rate, and benchmark metrics. Comparisons are descriptive research artifacts, not evidence of future profitability.
+
+Strategy validation requires a registered immutable `dataset_id`, an explicit strategy version ID, and a chronological split fraction from 0.5 to 0.9 (default 0.7). The API runs the pinned version on the in-sample prefix and on the later holdout period with identical initial cash, fees, and slippage. Pre-split candles are used only to initialize holdout indicators; no position is carried into the holdout, and holdout metrics begin at the first holdout candle. The report records split boundaries, actual split fraction, dataset and parameter fingerprints, and both periods' return, drawdown, trade-count, win-rate, and benchmark metrics. The holdout is an evaluation period, not a parameter-selection loop; a caller can still misuse it by repeatedly tuning against holdout results, so review discipline remains necessary.
 
 ## Safety boundaries
 

@@ -20,18 +20,27 @@ def run_sma_crossover(
     initial_cash: float,
     fee_bps: float,
     slippage_bps: float,
+    evaluation_start_index: int = 0,
 ) -> dict[str, Any]:
     """Run a long-only, all-cash SMA crossover simulation.
 
     A signal is computed from a completed bar and executed at the next bar's
     open, reducing look-ahead bias. Open positions are closed at the final
     bar's close so final equity includes estimated fees and slippage.
+
+    When evaluation_start_index is positive, earlier bars are indicator warm-up
+    only: no position is opened before the evaluation boundary, the portfolio
+    starts with initial_cash at the prior candle's close, and reported metrics
+    cover only candles from the requested evaluation index onward.
     """
     if fast_window >= slow_window:
         raise ValueError("fast_window must be smaller than slow_window")
     if len(bars) < slow_window + 2:
         raise ValueError(f"at least {slow_window + 2} bars are required")
+    if not 0 <= evaluation_start_index < len(bars):
+        raise ValueError("evaluation_start_index must point to an existing bar")
 
+    execution_start_index = max(1, evaluation_start_index)
     closes = [float(bar.close) for bar in bars]
     cash = float(initial_cash)
     quantity = 0.0
@@ -40,12 +49,15 @@ def run_sma_crossover(
     entry_timestamp: str | None = None
     trades: list[dict[str, Any]] = []
     equity_curve: list[dict[str, Any]] = [
-        {"timestamp": bars[0].timestamp.isoformat(), "equity": round(cash, 8)}
+        {
+            "timestamp": bars[execution_start_index - 1].timestamp.isoformat(),
+            "equity": round(cash, 8),
+        }
     ]
     fee_rate = fee_bps / 10_000.0
     slippage_rate = slippage_bps / 10_000.0
 
-    for execution_index in range(1, len(bars)):
+    for execution_index in range(execution_start_index, len(bars)):
         signal_index = execution_index - 1
 
         if signal_index >= slow_window:
@@ -130,11 +142,16 @@ def run_sma_crossover(
 
     completed_trades = len(trades)
     wins = sum(1 for trade in trades if trade["net_pnl"] > 0)
-    first_close = closes[0]
+    first_close = closes[execution_start_index - 1]
     benchmark_return_pct = ((closes[-1] / first_close) - 1.0) * 100.0
+    evaluated_bars_count = (
+        len(bars)
+        if evaluation_start_index == 0
+        else len(bars) - evaluation_start_index
+    )
 
     return {
-        "bars_count": len(bars),
+        "bars_count": evaluated_bars_count,
         "initial_cash": round(initial_cash, 8),
         "final_equity": round(final_equity, 8),
         "total_return_pct": round((final_equity / initial_cash - 1.0) * 100.0, 6),

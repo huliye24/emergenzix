@@ -49,7 +49,7 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [ ] Store versioned strategy parameters and input-data references (parameter snapshots implemented in PR; verification pending).
 - [ ] Compare strategy versions on one immutable dataset and persist comparison provenance (implementation in PR; verification pending).
 - [ ] Display assumptions, transaction costs, drawdown, and data coverage.
-- [ ] Separate training/in-sample and validation/out-of-sample results.
+- [ ] Separate training/in-sample and validation/out-of-sample results (implementation in PR; verification pending).
 - [ ] Record the provenance of imported NEMT research evidence.
 - [ ] Add exportable evaluation reports.
 - [ ] Implement a Freqtrade adapter in a separate runtime and compare results against the current compatibility engine.
