@@ -23,7 +23,7 @@ A research result must carry provenance and pass review before it informs a prod
 - SQLite-backed paper account, positions, and simulated order history
 - Server-side notional limit, available-cash checks, and no-short-selling validation
 - Responsive Next.js/React workspace with dedicated Overview, Strategies, Backtests, Paper Trading, and Activity views; strategy, backtest, paper-order, position, and history workflows share the existing API
-- Public spot OHLCV retrieval through CCXT for an explicit exchange allowlist, plus synthetic demo candles
+- Public spot OHLCV retrieval through CCXT, plus verified Binance BTC/USDT 4h historical archive imports with SHA-256 checksum validation
 - Content-addressed OHLCV dataset registry with canonical SHA-256 IDs, immutable duplicate handling, persisted candle payloads, and dataset metadata/list/detail endpoints
 - BTC point-in-time historical replay records linked to immutable datasets, with deterministic IDs, record fingerprints, database-enforced immutability, and random or explicit timestamp anchors
 - Freqtrade source pinned as a Git submodule for evaluation as the mature strategy/backtesting/dry-run engine; its adapter is not yet wired into the current backtest endpoint
@@ -131,6 +131,7 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | GET | `/api/v1/market-data/ohlcv` | Fetch public OHLCV candles through CCXT; no exchange credentials required |
 | POST | `/api/v1/scenarios/analyze` | Classify completed candles into four reviewable market scenarios; never places orders |
 | GET / POST | `/api/v1/datasets` | Register a validated OHLCV dataset by content hash or list saved dataset metadata |
+| POST | `/api/v1/datasets/import/binance-btc-4h` | Download and checksum-verify official BTCUSDT 4h archive files for a requested date range, then register the immutable dataset |
 | GET | `/api/v1/datasets/{dataset_id}` | Retrieve an immutable dataset and its exact saved candles |
 | GET | `/api/v1/datasets/{dataset_id}/quality` | Diagnose interval gaps, coverage, and freshness without modifying the dataset |
 | POST | `/api/v1/research/historical-replays` | Run and persist a reproducible BTC point-in-time replay; never creates orders |
