@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from emergenzix_api.market_data import MarketDataUnavailable
+
 
 def _bars(closes: list[float]) -> list[dict[str, object]]:
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -177,8 +179,10 @@ def test_order_cannot_be_linked_to_a_different_symbol_strategy(client):
 
 def test_public_market_data_endpoint_uses_provider_without_network(client, monkeypatch):
     expected_bars = _bars([10, 11, 12, 13, 14, 15])
+    calls = []
 
     def fake_fetch_public_ohlcv(*, exchange_id, symbol, timeframe, limit):
+        calls.append((exchange_id, symbol, timeframe, limit))
         assert exchange_id == "binance"
         assert symbol == "BTCUSDT"
         assert timeframe == "1h"
@@ -197,21 +201,23 @@ def test_public_market_data_endpoint_uses_provider_without_network(client, monke
     monkeypatch.setattr(
         "emergenzix_api.main.fetch_public_ohlcv", fake_fetch_public_ohlcv
     )
-    response = client.get(
-        "/api/v1/market-data/ohlcv",
-        params={
-            "exchange": "binance",
-            "symbol": "BTCUSDT",
-            "timeframe": "1h",
-            "limit": 120,
-        },
-    )
+    params = {
+        "exchange": "binance",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "limit": 120,
+    }
+    response = client.get("/api/v1/market-data/ohlcv", params=params)
+    repeated = client.get("/api/v1/market-data/ohlcv", params=params)
 
     assert response.status_code == 200, response.text
+    assert repeated.status_code == 200, repeated.text
     payload = response.json()
     assert payload["source"] == "ccxt_public_ohlcv"
     assert payload["symbol"] == "BTC/USDT"
     assert payload["bars_count"] == 6
+    assert repeated.json() == payload
+    assert len(calls) == 1
 
 
 def test_public_market_data_endpoint_rejects_provider_input_errors(client, monkeypatch):
@@ -358,3 +364,124 @@ def test_dataset_quality_without_timeframe_marks_checks_unavailable(client):
 def test_dataset_quality_returns_404_for_unknown_dataset(client):
     response = client.get(f"/api/v1/datasets/{'f' * 64}/quality")
     assert response.status_code == 404
+
+
+
+def test_public_market_data_cache_key_includes_request_limit(client, monkeypatch):
+    calls = []
+
+    def fake_fetch_public_ohlcv(*, exchange_id, symbol, timeframe, limit):
+        calls.append(limit)
+        return {
+            "source": "ccxt_public_ohlcv",
+            "exchange": exchange_id,
+            "symbol": "BTC/USDT",
+            "timeframe": timeframe,
+            "fetched_at": f"limit-{limit}",
+            "bars_count": 5,
+            "bars": _bars([10, 11, 12, 13, 14]),
+            "limitations": [],
+        }
+
+    monkeypatch.setattr(
+        "emergenzix_api.main.fetch_public_ohlcv", fake_fetch_public_ohlcv
+    )
+    first = client.get(
+        "/api/v1/market-data/ohlcv",
+        params={"exchange": "binance", "symbol": "BTCUSDT", "timeframe": "1h", "limit": 120},
+    )
+    second = client.get(
+        "/api/v1/market-data/ohlcv",
+        params={"exchange": "binance", "symbol": "BTCUSDT", "timeframe": "1h", "limit": 121},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["fetched_at"] == "limit-120"
+    assert second.json()["fetched_at"] == "limit-121"
+    assert calls == [120, 121]
+
+
+def test_public_market_data_failures_are_not_cached(client, monkeypatch):
+    calls = 0
+
+    def fake_fetch_public_ohlcv(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise MarketDataUnavailable("temporary exchange failure")
+        return {
+            "source": "ccxt_public_ohlcv",
+            "exchange": "binance",
+            "symbol": "BTC/USDT",
+            "timeframe": "1h",
+            "fetched_at": "recovered",
+            "bars_count": 5,
+            "bars": _bars([10, 11, 12, 13, 14]),
+            "limitations": [],
+        }
+
+    monkeypatch.setattr(
+        "emergenzix_api.main.fetch_public_ohlcv", fake_fetch_public_ohlcv
+    )
+    params = {
+        "exchange": "binance",
+        "symbol": "BTCUSDT",
+        "timeframe": "1h",
+        "limit": 120,
+    }
+    failed = client.get("/api/v1/market-data/ohlcv", params=params)
+    recovered = client.get("/api/v1/market-data/ohlcv", params=params)
+
+    assert failed.status_code == 502
+    assert recovered.status_code == 200
+    assert recovered.json()["fetched_at"] == "recovered"
+    assert calls == 2
+
+
+def test_ttl_cache_expires_values_and_returns_copies():
+    from emergenzix_api.market_data_cache import TTLCache
+
+    clock_value = [0.0]
+    calls = []
+    cache = TTLCache(
+        ttl_seconds=10,
+        max_entries=2,
+        clock=lambda: clock_value[0],
+    )
+
+    def factory():
+        calls.append(len(calls) + 1)
+        return {"value": calls[-1]}
+
+    first = cache.get_or_create(("binance", "BTC/USDT", "1h", 120), factory)
+    first["value"] = 999
+    repeated = cache.get_or_create(("binance", "BTC/USDT", "1h", 120), factory)
+    assert repeated == {"value": 1}
+    assert len(calls) == 1
+
+    clock_value[0] = 11.0
+    expired = cache.get_or_create(("binance", "BTC/USDT", "1h", 120), factory)
+    assert expired == {"value": 2}
+    assert len(calls) == 2
+
+
+def test_ttl_cache_evicts_least_recently_used_entry():
+    from emergenzix_api.market_data_cache import TTLCache
+
+    cache = TTLCache(ttl_seconds=30, max_entries=2)
+    calls = []
+
+    def factory(name):
+        def create():
+            calls.append(name)
+            return {"name": name}
+        return create
+
+    cache.get_or_create("a", factory("a"))
+    cache.get_or_create("b", factory("b"))
+    cache.get_or_create("a", factory("a"))
+    cache.get_or_create("c", factory("c"))
+    cache.get_or_create("b", factory("b"))
+
+    assert calls == ["a", "b", "c", "b"]
