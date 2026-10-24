@@ -31,6 +31,7 @@ def write_report_artifacts(
     candidates_path = json_path.with_name(f"{stem}.candidates.csv")
     equity_path = json_path.with_name(f"{stem}.equity.csv")
     trades_path = json_path.with_name(f"{stem}.trades.csv")
+    cost_sensitivity_path = json_path.with_name(f"{stem}.cost-sensitivity.csv")
     markdown_path = json_path.with_suffix(".md")
 
     def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, Any]]) -> None:
@@ -113,6 +114,31 @@ def write_report_artifacts(
         ],
         list(metrics.get("trades", [])),
     )
+    cost_rows = list(report["cost_sensitivity"]["scenarios"])
+    write_csv(
+        cost_sensitivity_path,
+        [
+            "candidate_id",
+            "strategy_type",
+            "parameters",
+            "initial_cash",
+            "fee_bps_per_side",
+            "slippage_bps_per_side",
+            "net_return_pct",
+            "net_pnl",
+            "max_drawdown_pct",
+            "number_of_trades",
+        ],
+        [
+            {
+                **row,
+                "parameters": json.dumps(
+                    row["parameters"], sort_keys=True, separators=(",", ":")
+                ),
+            }
+            for row in cost_rows
+        ],
+    )
 
     def pct(value: Any) -> str:
         return "N/A" if value is None else f"{float(value):.4f}%"
@@ -151,6 +177,22 @@ def write_report_artifacts(
         )
     if len(trade_table) == 2:
         trade_table.append("| No completed trades | — | — | — | 0.0000 |")
+
+    cost_table = [
+        "| Fee/side | Slippage/side | Net return | Net PnL | Max drawdown | Trades |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in cost_rows:
+        cost_table.append(
+            "| {fee:.1f} bps | {slippage:.1f} bps | {ret} | {pnl:.4f} | {drawdown} | {trades} |".format(
+                fee=float(row["fee_bps_per_side"]),
+                slippage=float(row["slippage_bps_per_side"]),
+                ret=pct(row["net_return_pct"]),
+                pnl=float(row["net_pnl"]),
+                drawdown=pct(row["max_drawdown_pct"]),
+                trades=int(row["number_of_trades"]),
+            )
+        )
 
     profit_factor_display = (
         "N/A"
@@ -192,6 +234,12 @@ def write_report_artifacts(
             "",
             *trade_table,
             "",
+            "## Transaction-cost sensitivity",
+            "",
+            "The selected strategy and test window are frozen for every row. This is a stress test, not a profitability guarantee.",
+            "",
+            *cost_table,
+            "",
             "## Interpretation and safety",
             "",
             "- Candidate selection is cut off before the test start; the test week does not select parameters.",
@@ -209,4 +257,5 @@ def write_report_artifacts(
         "candidates_csv": str(candidates_path),
         "equity_csv": str(equity_path),
         "trades_csv": str(trades_path),
+        "cost_sensitivity_csv": str(cost_sensitivity_path),
     }

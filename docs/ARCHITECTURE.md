@@ -12,7 +12,7 @@ Implemented on the initial backend branch:
 - A deterministic long-only SMA-crossover backtest (temporary compatibility baseline)
 - Public spot OHLCV retrieval through CCXT for an explicit exchange allowlist
 - Backtest result JSON that records data source, exchange, symbol, and timeframe
-- Date-driven BTC range backtests that select from a versioned SMA and Donchian candidate registry using only pre-test validation candles, then score the requested holdout period with fees and slippage
+- Date-driven BTC range backtests that select from a versioned SMA and Donchian candidate registry using only pre-test validation candles, then score the requested holdout period and a fixed fee/slippage sensitivity matrix
 - Immutable date-range run records tied to content-addressed Binance 4h datasets, with SHA-256 integrity checks and JSON/Markdown/CSV exports
 - Freqtrade source pinned as a Git submodule; its engine is not yet wired into the backtest API
 - Persisted backtest metrics, assumptions, equity curve, and closed trades

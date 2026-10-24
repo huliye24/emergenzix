@@ -44,6 +44,7 @@ Verify the command produces:
 - `../data/reports/btc-2025-10-21.candidates.csv`
 - `../data/reports/btc-2025-10-21.equity.csv`
 - `../data/reports/btc-2025-10-21.trades.csv`
+- `../data/reports/btc-2025-10-21.cost-sensitivity.csv`
 
 Inspect the JSON and confirm:
 

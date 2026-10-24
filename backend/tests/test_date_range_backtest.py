@@ -153,6 +153,52 @@ def test_walk_forward_fold_selection_cannot_see_its_evaluation_candles() -> None
         assert changed_fold["metrics"] != baseline_fold["metrics"]
 
 
+def test_cost_sensitivity_keeps_strategy_and_trade_sequence_fixed() -> None:
+    report = _run(_series())
+    selected = report["strategy_selection"]["selected_candidate"]
+    sensitivity = report["cost_sensitivity"]
+    scenarios = sensitivity["scenarios"]
+
+    assert sensitivity["strategy_reselected_per_scenario"] is False
+    assert sensitivity["test_window_changed_per_scenario"] is False
+    assert sensitivity["stress_test_only"] is True
+    assert len(scenarios) == 9
+    assert {row["candidate_id"] for row in scenarios} == {
+        selected["candidate_id"]
+    }
+    assert {row["strategy_type"] for row in scenarios} == {
+        selected["strategy_type"]
+    }
+    assert all(row["parameters"] == selected["parameters"] for row in scenarios)
+    assert len({row["number_of_trades"] for row in scenarios}) == 1
+
+
+def test_higher_costs_do_not_improve_net_pnl() -> None:
+    scenarios = _run(_series())["cost_sensitivity"]["scenarios"]
+
+    for slippage_bps in (0.0, 5.0, 10.0):
+        rows = sorted(
+            (
+                row
+                for row in scenarios
+                if row["slippage_bps_per_side"] == slippage_bps
+            ),
+            key=lambda row: row["fee_bps_per_side"],
+        )
+        assert [row["net_pnl"] for row in rows] == sorted(
+            (row["net_pnl"] for row in rows), reverse=True
+        )
+
+    for fee_bps in (5.0, 10.0, 20.0):
+        rows = sorted(
+            (row for row in scenarios if row["fee_bps_per_side"] == fee_bps),
+            key=lambda row: row["slippage_bps_per_side"],
+        )
+        assert [row["net_pnl"] for row in rows] == sorted(
+            (row["net_pnl"] for row in rows), reverse=True
+        )
+
+
 def test_date_range_backtest_marks_candidate_selection_as_weak_when_no_trades() -> None:
     flat_bars = [
         bar.model_copy(
@@ -311,6 +357,7 @@ def test_report_export_writes_summary_candidate_equity_trade_csv_and_markdown(
         "candidates_csv",
         "equity_csv",
         "trades_csv",
+        "cost_sensitivity_csv",
     }
     assert (tmp_path / "btc-week.json").exists()
     assert (tmp_path / "btc-week.md").exists()
@@ -327,6 +374,13 @@ def test_report_export_writes_summary_candidate_equity_trade_csv_and_markdown(
     assert "donchian_breakout" in markdown
     assert len((tmp_path / "btc-week.equity.csv").read_text(encoding="utf-8-sig").splitlines()) == 44
     assert "net_pnl" in (tmp_path / "btc-week.trades.csv").read_text(encoding="utf-8-sig")
+    sensitivity_csv = (tmp_path / "btc-week.cost-sensitivity.csv").read_text(
+        encoding="utf-8-sig"
+    )
+    assert len(sensitivity_csv.splitlines()) == 10
+    assert "fee_bps_per_side" in sensitivity_csv
+    assert "Transaction-cost sensitivity" in markdown
+    assert "stress test, not a profitability guarantee" in markdown
 
 
 def test_report_export_requires_json_extension(tmp_path) -> None:

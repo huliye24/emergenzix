@@ -31,6 +31,7 @@ The command uses the same `EMERGENZIX_DB_PATH` database as the application unles
 - `*.candidates.csv`: all candidate parameters and pre-test selection metrics.
 - `*.equity.csv`: time-stamped simulated equity curve.
 - `*.trades.csv`: entry/exit timestamps, prices, fees, quantity, and net PnL.
+- `*.cost-sensitivity.csv`: the frozen selected strategy rerun under the fixed fee/slippage stress matrix.
 
 The `data/` folder is ignored by Git so generated reports and local databases are not accidentally committed.
 
@@ -88,14 +89,20 @@ The report records each fold's selection cutoff, evaluation boundaries, candle c
 
 Walk-forward results are diagnostic research evidence. They do not replace the separate final test week and never promote a candidate to paper or live execution.
 
+## Transaction-cost sensitivity
+
+Protocol version 4 freezes the selected strategy before rerunning the same test candles and initial cash under nine cost scenarios: fees of 5, 10, and 20 basis points per side crossed with slippage of 0, 5, and 10 basis points per side. The matrix never re-selects or optimizes the strategy. Each row records net return, net PnL, maximum drawdown, and completed trades using the same execution semantics as the primary result.
+
+The matrix is exported to `*.cost-sensitivity.csv` and summarized in Markdown. It is a stress test for cost fragility, not a profitability guarantee.
+
 ## Data and limitations
 
 - Data source: Binance public historical archive; archive checksums are verified by the existing ingestion module.
 - Timezone: UTC, including date boundaries.
-- Candle interval: fixed at 4 hours in protocol version `btc-date-range-backtest-v3`.
+- Candle interval: fixed at 4 hours in protocol version `btc-date-range-backtest-v4`.
 - Completeness: the full pre-test and test interval must contain every expected 4-hour candle.
 - Strategy universe: six fixed SMA-crossover candidates and one Donchian breakout candidate, currently long-only.
 - Not modeled: futures short positions, funding, leverage, liquidation, hedging, and market impact beyond the configured slippage estimate.
 - No private exchange credentials are used. No exchange orders are created. `live_trading_enabled` remains false.
 
-This is the first end-to-end research workflow, not a profitability guarantee. Three folds remain limited evidence; next validation steps should include regime-separated results, stronger cost/slippage stress tests, and comparison with buy-and-hold.
+This is the first end-to-end research workflow, not a profitability guarantee. Three folds and a small fixed cost matrix remain limited evidence; next validation steps should include regime-separated results and comparison with buy-and-hold.
