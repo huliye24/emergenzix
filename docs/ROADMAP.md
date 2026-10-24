@@ -10,7 +10,7 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [x] Confirm GPL-3.0 at the repository root.
 - [x] Define product scope, security principles, and AI engineering rules.
 - [x] Inventory the NEMT application code proposed for migration.
-- [x] Record ADR-001 for the first backend baseline.
+- [x] Record ADR-001 for the product baseline and NEMT migration boundary.
 - [x] Create the first product implementation milestone from the verified inventory.
 
 **Exit gate:** the team can explain which responsibilities belong in Emergenzix and NEMT, what the first backend supports, and what remains unimplemented.

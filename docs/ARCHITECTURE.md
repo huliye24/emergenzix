@@ -1,6 +1,6 @@
 # Emergenzix Architecture
 
-The initial backend decision is recorded in [ADR-001](adr/ADR-001-product-backend-baseline.md). The architecture remains provisional outside that first vertical slice; production and multi-user decisions require further review.
+The initial product and migration decision is recorded in [ADR-001](adr/ADR-001-product-baseline-and-migration.md). The architecture remains provisional outside that first vertical slice; production and multi-user decisions require further review.
 
 ## 1. Current implementation
 
