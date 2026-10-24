@@ -74,7 +74,7 @@ docker compose --profile telegram up -d --build
 docker compose --profile telegram logs -f telegram-bot
 ~~~
 
-Available commands are /status, /latest, /history, /report RECORD_ID, and /backtest YYYY-MM-DD [days]. See [Telegram bot setup and safety](docs/TELEGRAM_BOT.md). The bot only runs historical PAPER research and status queries; it has no order commands.
+Available commands are /status, /latest, /history, /report RECORD_ID, /compare ID1 ID2, and /backtest YYYY-MM-DD [days]. The /compare command requires the comparison API to be deployed. See [Telegram bot setup and safety](docs/TELEGRAM_BOT.md). The bot only runs historical PAPER research and status queries; it has no order commands.
 
 SQLite data is stored in the named volume emergenzix-data and survives container recreation. **Do not run `docker compose down -v` unless you intend to delete that volume and the paper-trading records.**
 

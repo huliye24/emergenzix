@@ -349,6 +349,80 @@ def format_backtest_record(record: object) -> str:
     return "\n".join(lines)
 
 
+def format_saved_comparison(comparison: object, record_ids: list[str]) -> str:
+    """Present two independent saved observations without ranking strategies."""
+    invalid = "历史比较响应格式异常，请检查 API；未运行策略或创建订单。"
+    if not isinstance(comparison, dict) or len(record_ids) != 2:
+        return invalid
+    if (
+        comparison.get("comparison_type") != "independent_saved_observations"
+        or comparison.get("controlled_head_to_head") is not False
+        or comparison.get("automatic_winner_selection") is not False
+        or not isinstance(comparison.get("different_test_periods"), bool)
+        or not isinstance(comparison.get("different_cost_assumptions"), bool)
+    ):
+        return invalid
+    observations = comparison.get("observations")
+    if not isinstance(observations, list) or len(observations) != 2:
+        return invalid
+
+    lines = ["Emergenzix · 已保存回测比较（独立样本）"]
+    dataset_ids: list[str] = []
+    for index, (record, expected_id) in enumerate(zip(observations, record_ids), start=1):
+        if not isinstance(record, dict) or record.get("record_id") != expected_id:
+            return invalid
+        selected = record.get("selected_candidate")
+        strategy = record.get("strategy_type")
+        start = record.get("test_start_at")
+        end = record.get("test_end_at_exclusive")
+        dataset_id = record.get("dataset_sha256")
+        trades = record.get("number_of_trades")
+        if (
+            not all(isinstance(value, str) and value.strip()
+                    for value in (selected, strategy, start, end))
+            or not _valid_record_id(dataset_id)
+            or isinstance(trades, bool)
+            or not isinstance(trades, int)
+            or trades < 0
+        ):
+            return invalid
+        numeric_keys = (
+            "net_return_pct",
+            "benchmark_return_pct",
+            "max_drawdown_pct",
+            "win_rate_pct",
+            "total_fees",
+            "fee_bps_per_side",
+            "slippage_bps_per_side",
+        )
+        numbers = {key: _finite_number(record.get(key)) for key in numeric_keys}
+        if any(value is None for value in numbers.values()):
+            return invalid
+        dataset_ids.append(dataset_id)
+        lines.extend([
+            "",
+            f"【{index}】{_one_line(selected, 50)} · {_one_line(strategy, 40)}",
+            f"测试期（UTC）：{_one_line(start, 35)} 至 {_one_line(end, 35)}（不含结束）",
+            f"净收益：{_percent(numbers['net_return_pct'], signed=True)}；"
+            f"基准：{_percent(numbers['benchmark_return_pct'], signed=True)}",
+            f"最大回撤：{_percent(numbers['max_drawdown_pct'])}；"
+            f"交易次数：{trades}；胜率：{_percent(numbers['win_rate_pct'])}",
+            f"单边手续费/滑点：{numbers['fee_bps_per_side']:g}/"
+            f"{numbers['slippage_bps_per_side']:g} bps；总手续费：{numbers['total_fees']:,.2f}",
+            f"记录：{expected_id[:16]}…",
+        ])
+
+    lines.append("")
+    if comparison["different_test_periods"]:
+        lines.append("⚠ 测试区间不同，收益率不能直接比较优劣。")
+    if comparison["different_cost_assumptions"]:
+        lines.append("⚠ 手续费或滑点假设不同，结果不具有可比性。")
+    if len(set(dataset_ids)) > 1:
+        lines.append("⚠ 数据集不同，不属于同一数据条件下的对照。")
+    lines.append("仅为两次独立历史研究观察，不是受控策略对照；不自动选优或创建订单。")
+    return "\n".join(lines)
+
+
 class TelegramCommandBot:
     """Poll Telegram updates and expose a small, allowlisted research command set."""
 
@@ -516,6 +590,7 @@ class TelegramCommandBot:
             "/latest — 查看最近一次日期区间回测\n"
             "/history — 查看最近 5 条已保存回测及完整记录 ID\n"
             "/report RECORD_ID — 按完整记录 ID 查看历史报告\n"
+            "/compare ID1 ID2 — 对比两条已保存的历史回测\n"
             "/backtest YYYY-MM-DD [days] — 回测历史区间，days 默认为 7，范围 1–30 天\n"
             "/help — 查看此说明\n\n"
             "回测固定使用 90 天训练窗口、10 bps 单边手续费和 5 bps 单边滑点。"
@@ -637,6 +712,25 @@ class TelegramCommandBot:
             return f"查询历史报告失败：{_one_line(exc)}"
         return format_backtest_record(record)
 
+    def _compare_text(self, arguments: list[str]) -> str:
+        usage = "用法：/compare ID1 ID2（使用 /history 获取两个完整的 64 位记录 ID）"
+        if (
+            len(arguments) != 2
+            or arguments[0] == arguments[1]
+            or any(not _valid_record_id(record_id) for record_id in arguments)
+        ):
+            return usage
+        query = urllib.parse.urlencode(
+            [("record_ids", record_id) for record_id in arguments]
+        )
+        try:
+            comparison = self._api_request(
+                "GET", f"/api/v1/research/date-range-comparisons?{query}"
+            )
+        except ApiRequestError as exc:
+            return f"比较历史回测失败：{_one_line(exc)}\n没有运行策略或创建订单。"
+        return format_saved_comparison(comparison, arguments)
+
     def _backtest_text(self, arguments: list[str], *, chat_id: str | None = None) -> str:
         usage = "用法：/backtest YYYY-MM-DD [days]（days 为 1–30，默认 7）"
         if len(arguments) not in {1, 2}:
@@ -742,6 +836,8 @@ class TelegramCommandBot:
             reply = self._history_text() if not arguments else "用法：/history（不需要参数）"
         elif command == "/report":
             reply = self._report_text(arguments)
+        elif command == "/compare":
+            reply = self._compare_text(arguments)
         elif command == "/backtest":
             reply = self._backtest_text(arguments, chat_id=chat_id)
         else:

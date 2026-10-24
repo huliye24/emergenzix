@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -240,6 +241,7 @@ def test_help_command_sends_usage_to_authorized_chat(tmp_path: Path) -> None:
     assert "/status" in sent[0]["text"]
     assert "/history" in sent[0]["text"]
     assert "/report RECORD_ID" in sent[0]["text"]
+    assert "/compare ID1 ID2" in sent[0]["text"]
     assert "/backtest YYYY-MM-DD [days]" in sent[0]["text"]
     assert "不会创建订单" in sent[0]["text"]
 
@@ -602,6 +604,156 @@ def test_unauthorized_history_is_ignored(tmp_path: Path) -> None:
         raise AssertionError(f"unauthorized query: {request.full_url}")
 
     _bot(tmp_path, requester).handle_update(_update("/history", chat_id=99999))
+
+
+def _comparison_fixture(
+    first_id: str = "a" * 64,
+    second_id: str = "b" * 64,
+    *,
+    different_periods: bool = False,
+    different_costs: bool = False,
+) -> dict[str, object]:
+    def row(record_id: str) -> dict[str, object]:
+        return {
+            "record_id": record_id,
+            "selected_candidate": "sma-3-10",
+            "strategy_type": "sma_crossover",
+            "test_start_at": "2025-10-21T00:00:00Z",
+            "test_end_at_exclusive": "2025-10-28T00:00:00Z",
+            "dataset_sha256": "d" * 64,
+            "net_return_pct": 0.5074,
+            "benchmark_return_pct": 3.2,
+            "max_drawdown_pct": 1.2,
+            "number_of_trades": 2,
+            "win_rate_pct": 50.0,
+            "total_fees": 39.3,
+            "fee_bps_per_side": 10.0,
+            "slippage_bps_per_side": 5.0,
+        }
+
+    first, second = row(first_id), row(second_id)
+    if different_periods:
+        second["test_start_at"] = "2025-11-01T00:00:00Z"
+        second["test_end_at_exclusive"] = "2025-11-08T00:00:00Z"
+    if different_costs:
+        second["fee_bps_per_side"] = 20.0
+    return {
+        "comparison_type": "independent_saved_observations",
+        "controlled_head_to_head": False,
+        "automatic_winner_selection": False,
+        "different_test_periods": different_periods,
+        "different_cost_assumptions": different_costs,
+        "observations": [first, second],
+    }
+
+
+def test_compare_command_gets_two_saved_records_without_rerun(tmp_path: Path) -> None:
+    sent, api_requests = [], []
+
+    def requester(request, *, timeout):
+        url = request.full_url
+        if "/api/v1/research/date-range-comparisons?" in url:
+            api_requests.append(request)
+            return FakeResponse(_comparison_fixture())
+        if url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 31}})
+        raise AssertionError(f"unexpected URL: {url}")
+
+    _bot(tmp_path, requester).handle_update(
+        _update("/compare " + "a" * 64 + " " + "b" * 64)
+    )
+    assert len(api_requests) == 1
+    assert api_requests[0].get_method() == "GET"
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(api_requests[0].full_url).query)
+    assert query["record_ids"] == ["a" * 64, "b" * 64]
+    assert len(sent) == 1
+    assert "净收益：+0.5074%" in sent[0]
+    assert "最大回撤：1.2000%" in sent[0]
+    assert "不自动选优或创建订单" in sent[0]
+
+
+def test_compare_command_displays_cost_and_period_warnings(tmp_path: Path) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if "/date-range-comparisons?" in request.full_url:
+            return FakeResponse(
+                _comparison_fixture(different_periods=True, different_costs=True)
+            )
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 32}})
+        raise AssertionError(f"unexpected URL: {request.full_url}")
+
+    _bot(tmp_path, requester).handle_update(
+        _update("/compare " + "a" * 64 + " " + "b" * 64)
+    )
+    assert "测试区间不同" in sent[0]
+    assert "手续费或滑点假设不同" in sent[0]
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        "/compare",
+        "/compare " + "a" * 64,
+        "/compare " + "a" * 64 + " " + "a" * 64,
+        "/compare " + "a" * 64 + " " + "B" * 64,
+        "/compare " + "a" * 64 + " " + "../etc/passwd",
+        "/compare " + "a" * 64 + " " + "b" * 64 + " extra",
+    ],
+)
+def test_compare_rejects_invalid_requests_without_api_call(tmp_path: Path, argument: str) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 33}})
+        raise AssertionError(f"should not call API: {request.full_url}")
+
+    _bot(tmp_path, requester).handle_update(_update(argument))
+    assert len(sent) == 1
+    assert "用法：/compare" in sent[0]
+
+
+def test_compare_fails_closed_if_api_response_is_not_independent(tmp_path: Path) -> None:
+    sent = []
+    bad = _comparison_fixture()
+    bad["automatic_winner_selection"] = True
+
+    def requester(request, *, timeout):
+        if "/date-range-comparisons?" in request.full_url:
+            return FakeResponse(bad)
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 34}})
+        raise AssertionError(f"unexpected URL: {request.full_url}")
+
+    _bot(tmp_path, requester).handle_update(
+        _update("/compare " + "a" * 64 + " " + "b" * 64)
+    )
+    assert "响应格式异常" in sent[0]
+    assert "净收益：" not in sent[0]
+
+
+def test_compare_mismatched_record_id_rejects_result(tmp_path: Path) -> None:
+    from emergenzix_api.telegram_bot import format_saved_comparison
+
+    comparison = _comparison_fixture()
+    assert "响应格式异常" in format_saved_comparison(
+        comparison, ["c" * 64, "b" * 64]
+    )
+
+
+def test_compare_unauthorized_chat_is_silent(tmp_path: Path) -> None:
+    def requester(request, *, timeout):
+        raise AssertionError(f"unauthorized call: {request.full_url}")
+
+    _bot(tmp_path, requester).handle_update(
+        _update("/compare " + "a" * 64 + " " + "b" * 64, chat_id=99999)
+    )
 
 def test_poll_once_discards_stale_updates_then_persists_offset(tmp_path: Path) -> None:
     state_path = tmp_path / "telegram-state.json"
