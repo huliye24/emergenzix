@@ -25,7 +25,7 @@ A research result must carry provenance and pass review before it informs a prod
 - Responsive Next.js/React workspace with dedicated Overview, Strategies, Backtests, Paper Trading, and Activity views; strategy, backtest, paper-order, position, and history workflows share the existing API
 - Public spot OHLCV retrieval through CCXT for an explicit exchange allowlist, plus synthetic demo candles
 - Content-addressed OHLCV dataset registry with canonical SHA-256 IDs, immutable duplicate handling, persisted candle payloads, and dataset metadata/list/detail endpoints
-- BTC point-in-time historical replay records linked to immutable datasets, with deterministic IDs, record fingerprints, and database-enforced immutability
+- BTC point-in-time historical replay records linked to immutable datasets, with deterministic IDs, record fingerprints, database-enforced immutability, and random or explicit timestamp anchors
 - Freqtrade source pinned as a Git submodule for evaluation as the mature strategy/backtesting/dry-run engine; its adapter is not yet wired into the current backtest endpoint
 - Dataset source, exchange, symbol, and timeframe persisted with backtest results
 - Deterministic completed-candle scenario analysis for downside continuation, false breakdown, range, and upside reversal
