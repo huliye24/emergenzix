@@ -24,6 +24,10 @@ EVENT_LABELS = {
     "scenario_changed": "场景发生切换",
     "trade_trigger": "PAPER 策略触发",
     "risk_alert": "风控警报",
+    "risk_recovered": "行情数据恢复",
+    "operational_alert": "运维告警",
+    "operational_recovery": "运维恢复",
+    "watcher_startup": "监控服务启动",
 }
 
 SEVERITY_LABELS = {"info": "信息", "warning": "警告", "error": "错误"}
@@ -129,5 +133,5 @@ class TelegramNotifier:
             payload = json.loads(response.read().decode("utf-8"))
         except (OSError, ValueError, urllib.error.URLError) as exc:
             raise NotificationError("Telegram delivery failed") from exc
-        if payload.get("ok") is not True:
-            raise NotificationError("Telegram rejected the notification")
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
+            raise NotificationError("Telegram rejected or returned an invalid response")

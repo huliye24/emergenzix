@@ -20,12 +20,20 @@ class Settings:
     paper_fee_bps: float = 10.0
     market_data_cache_ttl_seconds: int = 30
     market_data_cache_max_entries: int = 256
+    notification_db_path: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
         default_db = _REPOSITORY_ROOT / "data" / "emergenzix.db"
+        db_path = os.environ.get("EMERGENZIX_DB_PATH", str(default_db))
+        default_notification_db = (
+            Path(db_path).expanduser().parent / "notification-outbox.sqlite3"
+        )
         return cls(
-            db_path=os.environ.get("EMERGENZIX_DB_PATH", str(default_db)),
+            db_path=db_path,
+            notification_db_path=os.environ.get(
+                "EMERGENZIX_NOTIFICATION_DB_PATH", str(default_notification_db)
+            ),
             initial_paper_cash=_positive_float(
                 "EMERGENZIX_INITIAL_PAPER_CASH", 100_000.0
             ),

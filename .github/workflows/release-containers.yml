@@ -4,15 +4,126 @@ on:
   push:
     tags:
       - "v*.*.*"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/release-containers.yml"
+      - "VERSION"
+      - "backend/pyproject.toml"
+      - "backend/emergenzix_api/__init__.py"
+      - "web/package.json"
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
+  validate:
+    name: Validate release candidate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify release tag, version metadata, and main ancestry
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          root_version="$(tr -d '[:space:]' < VERSION)"
+          backend_project_version="$(python -c 'import tomllib; print(tomllib.load(open("backend/pyproject.toml", "rb"))["project"]["version"])')"
+          backend_module_version="$(PYTHONPATH=backend python -c 'from emergenzix_api import __version__; print(__version__)')"
+          web_version="$(node -p "require('./web/package.json').version")"
+
+          for item in \
+            "tag=$tag_version" \
+            "VERSION=$root_version" \
+            "backend/pyproject.toml=$backend_project_version" \
+            "backend/emergenzix_api/__init__.py=$backend_module_version" \
+            "web/package.json=$web_version"; do
+            value="${item#*=}"
+            if [ "$value" != "$tag_version" ]; then
+              echo "::error::Release version mismatch: $item, expected $tag_version"
+              exit 1
+            fi
+          done
+
+          git fetch origin main --no-tags
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Release tags must point to a commit already contained in main."
+            exit 1
+          fi
+
+          echo "Release tag and all version metadata agree on $tag_version."
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile backend and run tests
+        working-directory: backend
+        run: |
+          python -m compileall -q emergenzix_api tests
+          pytest -q
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm install --no-audit --no-fund
+
+      - name: Type-check web application
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Build web application
+        working-directory: web
+        run: npm run build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image without publishing
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          tags: emergenzix-api:release-validation
+
+      - name: Build web image without publishing
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
+          file: ./web/Dockerfile
+          push: false
+          tags: emergenzix-web:release-validation
+          build-args: |
+            EMERGENZIX_API_URL=http://api:8000
+
   publish:
     name: Publish versioned container images
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: validate
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

@@ -14,12 +14,22 @@ GitHub Actions runs the backend tests, frontend type-check/build, and container 
 
 ## CD responsibilities
 
-Pushing a version tag matching v*.*.* starts the release-containers workflow. It builds and pushes:
+Pushing a version tag matching v*.*.* starts the release-containers workflow. **Publishing is blocked until the validation job passes.** Before publishing, it:
+
+1. Verifies that the tag points to a commit already contained in main.
+2. Confirms the tag version matches VERSION, backend/pyproject.toml, backend/emergenzix_api/__init__.py, and web/package.json.
+3. Compiles the backend and runs the backend test suite.
+4. Runs the web type-check and production build.
+5. Builds both Docker images without publishing them.
+
+Only after all validation steps pass does the separate publish job push:
 
 - ghcr.io/huliye24/emergenzix-api
 - ghcr.io/huliye24/emergenzix-web
 
 The workflow creates a GitHub Release with generated notes. Each image receives semantic-version, v-prefixed tag, and latest tags. The GitHub Container Registry package visibility may need to be changed in GitHub package settings if public pulls are desired.
+
+A pull-request trigger also exercises the release validation steps when the release workflow or version metadata changes; it never publishes images from a pull request.
 
 This is container delivery, not automatic AWS deployment. AWS deployment should be added after the target instance, access-control design, persistent storage, reverse proxy/TLS, and authentication approach are confirmed. Do not store long-lived AWS keys in the repository; prefer GitHub Actions OIDC with a least-privilege AWS role when the deployment workflow is introduced.
 

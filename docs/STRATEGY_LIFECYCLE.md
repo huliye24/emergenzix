@@ -21,7 +21,7 @@ For each candidate, record as applicable:
 - Hypothesis and intended market/instrument
 - Data source, version, range, timezone, and quality checks
 - Code/configuration revision and parameter set
-- Train/validation/test partition and leakage controls
+- Train/validation/test partition and leakage controls; the date-range BTC workflow selects its fixed SMA candidate grid using only pre-test validation candles and never promotes the selected candidate automatically
 - Fees, slippage, liquidity, and execution assumptions
 - Return, volatility, drawdown, exposure, turnover, and benchmark comparisons
 - Known limitations, failure modes, and rejected alternatives

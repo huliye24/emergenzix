@@ -51,3 +51,60 @@ def test_future_changes_cannot_change_anchor_analysis() -> None:
 def test_replay_rejects_insufficient_history() -> None:
     with pytest.raises(ValueError, match="too short"):
         run_historical_replay(_bars(30), seed=1, horizon_bars=12, lookback=20)
+
+
+def test_replay_can_use_an_exact_timezone_aware_anchor() -> None:
+    bars = _bars()
+    anchor = bars[40].timestamp.astimezone(timezone(timedelta(hours=8)))
+    replay = run_historical_replay(
+        bars,
+        anchor_at=anchor,
+        horizon_bars=12,
+        lookback=20,
+    )
+    assert replay.anchor_index == 40
+    assert replay.seed is None
+    assert replay.anchor_at == bars[40].timestamp.isoformat().replace("+00:00", "Z")
+    assert replay.observed_bars_count == 41
+    assert replay.outcome_start == bars[41].timestamp.isoformat().replace("+00:00", "Z")
+
+
+def test_explicit_anchor_analysis_is_not_changed_by_future_candles() -> None:
+    original = _bars()
+    anchor = original[40].timestamp
+    baseline = run_historical_replay(original, anchor_at=anchor, horizon_bars=10)
+    changed = list(original)
+    for index in range(41, len(changed)):
+        changed[index] = changed[index].model_copy(
+            update={"open": 40_000.0, "high": 41_000.0, "low": 39_000.0, "close": 40_000.0}
+        )
+    replayed = run_historical_replay(changed, anchor_at=anchor, horizon_bars=10)
+    assert replayed.anchor_index == baseline.anchor_index
+    assert replayed.scenario_at_anchor == baseline.scenario_at_anchor
+    assert replayed.outcome != baseline.outcome
+
+
+def test_replay_rejects_naive_or_unmatched_anchor_timestamp() -> None:
+    bars = _bars()
+    with pytest.raises(ValueError, match="timezone offset"):
+        run_historical_replay(
+            bars,
+            anchor_at=datetime(2025, 1, 2, 0, 0),
+            horizon_bars=12,
+        )
+    with pytest.raises(ValueError, match="exactly match"):
+        run_historical_replay(
+            bars,
+            anchor_at=datetime(2025, 1, 2, 0, 1, tzinfo=timezone.utc),
+            horizon_bars=12,
+        )
+
+
+def test_replay_rejects_anchor_without_enough_future_bars() -> None:
+    bars = _bars()
+    with pytest.raises(ValueError, match="enough past lookback and future"):
+        run_historical_replay(
+            bars,
+            anchor_at=bars[-2].timestamp,
+            horizon_bars=12,
+        )

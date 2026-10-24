@@ -7,6 +7,7 @@ services:
     restart: unless-stopped
     environment:
       EMERGENZIX_DB_PATH: /data/emergenzix.db
+      EMERGENZIX_NOTIFICATION_DB_PATH: "${EMERGENZIX_NOTIFICATION_DB_PATH:-/data/notification-outbox.sqlite3}"
       EMERGENZIX_INITIAL_PAPER_CASH: "${EMERGENZIX_INITIAL_PAPER_CASH:-100000}"
       EMERGENZIX_MAX_ORDER_NOTIONAL: "${EMERGENZIX_MAX_ORDER_NOTIONAL:-5000}"
       EMERGENZIX_PAPER_FEE_BPS: "${EMERGENZIX_PAPER_FEE_BPS:-10}"
@@ -17,7 +18,7 @@ services:
     expose:
       - "8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
       interval: 30s
       timeout: 5s
       start_period: 20s
@@ -53,6 +54,9 @@ services:
   watch:
     image: ghcr.io/huliye24/emergenzix-api:${EMERGENZIX_VERSION:-0.1.0}
     restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
     command: ["python", "-m", "emergenzix_api.watch_agent"]
     environment:
       EMERGENZIX_WATCH_EXCHANGE: "${EMERGENZIX_WATCH_EXCHANGE:-binance}"
@@ -62,6 +66,10 @@ services:
       EMERGENZIX_WATCH_LOOKBACK: "${EMERGENZIX_WATCH_LOOKBACK:-20}"
       EMERGENZIX_WATCH_INTERVAL_SECONDS: "${EMERGENZIX_WATCH_INTERVAL_SECONDS:-300}"
       EMERGENZIX_WATCH_STATE_PATH: /data/watch-state.json
+      EMERGENZIX_OPERATIONAL_ALERT_STATE_PATH: "${EMERGENZIX_OPERATIONAL_ALERT_STATE_PATH:-/data/operational-alert-state.json}"
+      EMERGENZIX_NOTIFICATION_BACKLOG_THRESHOLD: "${EMERGENZIX_NOTIFICATION_BACKLOG_THRESHOLD:-20}"
+      EMERGENZIX_NOTIFICATION_DB_PATH: "${EMERGENZIX_NOTIFICATION_DB_PATH:-/data/notification-outbox.sqlite3}"
+      EMERGENZIX_TELEGRAM_REQUIRED: "${EMERGENZIX_TELEGRAM_REQUIRED:-true}"
       EMERGENZIX_TELEGRAM_BOT_TOKEN: "${EMERGENZIX_TELEGRAM_BOT_TOKEN:-}"
       EMERGENZIX_TELEGRAM_CHAT_ID: "${EMERGENZIX_TELEGRAM_CHAT_ID:-}"
     volumes:

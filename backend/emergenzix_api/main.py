@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,8 +17,13 @@ from .backtesting import run_sma_crossover
 from .config import Settings
 from .dataset_quality import build_dataset_quality_report
 from .database import Database
+from .date_range_backtest_api import router as date_range_backtest_router
+from .historical_replay_api import router as historical_replay_router
+from .historical_data_api import router as historical_data_router
+from .dataset_store import persist_dataset
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
+from .notification_outbox import NotificationOutbox
 from .scenarios import analyze_scenarios
 from .schemas import (
     Bar,
@@ -115,6 +121,7 @@ def create_app(
     initial_paper_cash: float | None = None,
     max_order_notional: float | None = None,
     paper_fee_bps: float | None = None,
+    notification_db_path: str | Path | None = None,
 ) -> FastAPI:
     settings = Settings.from_env()
     starting_cash = (
@@ -135,7 +142,16 @@ def create_app(
         ),
         version=__version__,
     )
+    app.include_router(historical_replay_router)
+    app.include_router(historical_data_router)
+    app.include_router(date_range_backtest_router)
     app.state.database = database
+    app.state.notification_outbox_path = str(
+        notification_db_path
+        if notification_db_path is not None
+        else settings.notification_db_path
+        or (Path(settings.db_path).expanduser().parent / "notification-outbox.sqlite3")
+    )
     app.state.market_data_cache = TTLCache(
         ttl_seconds=settings.market_data_cache_ttl_seconds,
         max_entries=settings.market_data_cache_max_entries,
@@ -157,6 +173,78 @@ def create_app(
             "version": __version__,
             "mode": "PAPER",
             "live_trading_enabled": False,
+        }
+
+    @app.get("/ready")
+    def readiness(request: Request) -> dict[str, Any]:
+        """Report readiness only when the database and paper account are usable."""
+        db: Database = request.app.state.database
+        try:
+            with db.connection() as connection:
+                connection.execute("SELECT 1").fetchone()
+                paper_account = connection.execute(
+                    "SELECT id FROM paper_account WHERE id = 1"
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise HTTPException(
+                status_code=503, detail="database is unavailable"
+            ) from exc
+
+        if paper_account is None:
+            raise HTTPException(
+                status_code=503, detail="paper account is not initialized"
+            )
+
+        return {
+            "status": "ready",
+            "service": "emergenzix-api",
+            "version": __version__,
+            "mode": "PAPER",
+            "live_trading_enabled": False,
+            "checks": {
+                "database": "ok",
+                "paper_account": "ok",
+            },
+        }
+
+    @app.get("/api/v1/notifications/status")
+    def notification_status(request: Request) -> dict[str, Any]:
+        """Expose aggregate outbox health without event bodies or Telegram credentials."""
+        path = Path(request.app.state.notification_outbox_path)
+        empty_metrics = {
+            "total": 0,
+            "pending": 0,
+            "retrying": 0,
+            "due": 0,
+            "failed_attempts": 0,
+            "delivered": 0,
+            "dead": 0,
+            "oldest_pending_at": None,
+            "last_successful_delivery_at": None,
+            "last_error_type": None,
+        }
+        if not path.exists():
+            return {
+                "status": "not_initialized",
+                "service": "emergenzix-notification-outbox",
+                "mode": "PAPER",
+                "live_trading_enabled": False,
+                "metrics": empty_metrics,
+            }
+
+        try:
+            metrics = NotificationOutbox(path).summary()
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="notification outbox is unavailable"
+            ) from exc
+
+        return {
+            "status": "attention_required" if metrics["dead"] else "ok",
+            "service": "emergenzix-notification-outbox",
+            "mode": "PAPER",
+            "live_trading_enabled": False,
+            "metrics": metrics,
         }
 
     @app.get("/api/v1/market-data/ohlcv")
@@ -203,70 +291,11 @@ def create_app(
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-        canonical_bars = [
-            {
-                "timestamp": bar.timestamp.astimezone(timezone.utc)
-                .isoformat(timespec="microseconds")
-                .replace("+00:00", "Z"),
-                "open": float(bar.open),
-                "high": float(bar.high),
-                "low": float(bar.low),
-                "close": float(bar.close),
-                "volume": float(bar.volume),
-            }
-            for bar in payload.bars
-        ]
-        canonical_payload = {
-            "source": payload.source,
-            "exchange": payload.exchange,
-            "symbol": dataset_symbol,
-            "timeframe": payload.timeframe,
-            "bars": canonical_bars,
-        }
-        canonical_json = json.dumps(
-            canonical_payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=True,
-            allow_nan=False,
+        row, inserted = persist_dataset(
+            db, payload, symbol=dataset_symbol
         )
-        dataset_id = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
-        bars_json = json.dumps(
-            canonical_bars,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=True,
-            allow_nan=False,
-        )
-        created_at = _now()
-
-        with db.connection() as connection:
-            inserted = connection.execute(
-                """
-                INSERT OR IGNORE INTO market_datasets
-                    (id, content_sha256, source, exchange, symbol, timeframe,
-                     start_at, end_at, bars_count, bars_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    dataset_id,
-                    dataset_id,
-                    payload.source,
-                    payload.exchange,
-                    dataset_symbol,
-                    payload.timeframe,
-                    canonical_bars[0]["timestamp"],
-                    canonical_bars[-1]["timestamp"],
-                    len(canonical_bars),
-                    bars_json,
-                    created_at,
-                ),
-            )
-            if inserted.rowcount == 0:
-                response.status_code = status.HTTP_200_OK
-            row = connection.execute(
-                "SELECT * FROM market_datasets WHERE id = ?", (dataset_id,)
-            ).fetchone()
+        if not inserted:
+            response.status_code = status.HTTP_200_OK
         return _dataset_to_dict(row)
 
     @app.get("/api/v1/datasets")

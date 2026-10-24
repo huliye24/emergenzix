@@ -72,7 +72,7 @@ class Bar(StrictModel):
 class DatasetCreate(StrictModel):
     """A validated OHLCV dataset to register as an immutable content-addressed record."""
 
-    source: Literal["user_supplied", "ccxt_public_ohlcv", "synthetic_demo"] = "user_supplied"
+    source: Literal["user_supplied", "ccxt_public_ohlcv", "synthetic_demo", "binance_public_archive"] = "user_supplied"
     exchange: Literal["binance", "bybit", "okx", "kraken", "coinbase"] | None = None
     symbol: str = Field(
         min_length=3,
@@ -80,7 +80,7 @@ class DatasetCreate(StrictModel):
         pattern=r"^[A-Za-z0-9]{1,20}(?:/[A-Za-z0-9]{1,10})?$",
     )
     timeframe: Literal["1m", "5m", "15m", "30m", "1h", "4h", "1d"] | None = None
-    bars: list[Bar] = Field(min_length=5, max_length=10_000)
+    bars: list[Bar] = Field(min_length=5, max_length=50_000)
 
     @field_validator("symbol")
     @classmethod
@@ -95,10 +95,10 @@ class DatasetCreate(StrictModel):
             for previous, current in zip(timestamps, timestamps[1:])
         ):
             raise ValueError("bars must be in strictly increasing timestamp order")
-        if self.source == "ccxt_public_ohlcv":
+        if self.source in {"ccxt_public_ohlcv", "binance_public_archive"}:
             if not self.exchange or not self.timeframe:
                 raise ValueError(
-                    "CCXT datasets must record exchange and timeframe metadata"
+                    "Market-data datasets must record exchange and timeframe metadata"
                 )
         return self
 
@@ -116,7 +116,7 @@ class BacktestCreate(StrictModel):
     initial_cash: float = Field(default=10_000.0, gt=0, le=1_000_000_000)
     fee_bps: float = Field(default=10.0, ge=0, le=1_000, allow_inf_nan=False)
     slippage_bps: float = Field(default=5.0, ge=0, le=1_000, allow_inf_nan=False)
-    data_source: Literal["user_supplied", "ccxt_public_ohlcv", "synthetic_demo"] = "user_supplied"
+    data_source: Literal["user_supplied", "ccxt_public_ohlcv", "synthetic_demo", "binance_public_archive"] = "user_supplied"
     data_exchange: str | None = Field(default=None, min_length=1, max_length=32)
     data_symbol: str | None = Field(default=None, min_length=3, max_length=30)
     data_timeframe: Literal["1m", "5m", "15m", "30m", "1h", "4h", "1d"] | None = None
@@ -144,10 +144,10 @@ class BacktestCreate(StrictModel):
         timestamps = [bar.timestamp for bar in self.bars]
         if any(current <= previous for previous, current in zip(timestamps, timestamps[1:])):
             raise ValueError("bars must be in strictly increasing timestamp order")
-        if self.data_source == "ccxt_public_ohlcv":
+        if self.data_source in {"ccxt_public_ohlcv", "binance_public_archive"}:
             if not self.data_exchange or not self.data_symbol or not self.data_timeframe:
                 raise ValueError(
-                    "CCXT backtests must record data_exchange, data_symbol, and data_timeframe"
+                    "Market-data backtests must record data_exchange, data_symbol, and data_timeframe"
                 )
         return self
 

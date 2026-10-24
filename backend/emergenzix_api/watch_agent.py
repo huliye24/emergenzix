@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from .market_data import fetch_public_ohlcv
+from .operational_alerts import (
+    OperationalAlertMonitor,
+    notification_health_conditions,
+    watch_cycle_failure_condition,
+)
 from .scenarios import analyze_scenarios
 from .schemas import Bar
 
@@ -42,6 +47,19 @@ class WatchEvent:
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _env_bool(name: str, *, default: bool = False) -> bool:
+    """Read a strict boolean environment variable without silently weakening gates."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean value")
 
 
 def _parse_completed_bars(payload: dict[str, Any]) -> list[Bar]:
@@ -79,15 +97,44 @@ def evaluate_market_payload(
         return state, [WatchEvent(
             "risk_alert", "warning", now.isoformat(), exchange, symbol, timeframe,
             "Market data is stale; analysis and trading action are blocked.",
-            {"last_completed_at": last_bar.timestamp.isoformat(), "age_seconds": round(age_seconds, 3), "stale_limit_seconds": stale_limit},
+            {
+                "last_completed_at": last_bar.timestamp.isoformat(),
+                "stale_limit_seconds": stale_limit,
+                "alert_key": f"market-data-stale:{last_bar.timestamp.isoformat()}:active",
+            },
         )]
 
+    recovered_stale_key = (
+        previous.risk_key
+        if previous.risk_key and previous.risk_key.startswith("stale:")
+        else None
+    )
     result = analyze_scenarios(completed, lookback=lookback)
     completed_at = last_bar.timestamp.isoformat()
     trigger_key = f"{result.scenario}:{completed_at}" if result.scenario in ACTIONABLE_SCENARIOS else None
     state = WatchState(result.scenario, completed_at, trigger_key, None)
     details = result.as_dict()
+    details["bar_timestamp"] = completed_at
     events: list[WatchEvent] = []
+    if recovered_stale_key is not None:
+        stale_timestamp = recovered_stale_key[len("stale:"):]
+        events.append(
+            WatchEvent(
+                "risk_recovered",
+                "info",
+                now.isoformat(),
+                exchange,
+                symbol,
+                timeframe,
+                "Market data has recovered; analysis is enabled again.",
+                {
+                    "condition": "market_data_stale",
+                    "last_completed_at": stale_timestamp,
+                    "stale_limit_seconds": stale_limit,
+                    "alert_key": f"market-data-stale:{stale_timestamp}:recovered",
+                },
+            )
+        )
     if previous.scenario is None:
         events.append(WatchEvent("initial_snapshot", "info", now.isoformat(), exchange, symbol, timeframe, f"Initial market scenario: {result.scenario}.", details))
     elif previous.scenario != result.scenario:
@@ -122,35 +169,88 @@ def run_once(
     previous = load_state(state_path)
     payload = fetcher(exchange_id=exchange, symbol=symbol, timeframe=timeframe, limit=limit)
     state, events = evaluate_market_payload(payload, previous, lookback=lookback, now=now or _utc_now())
-    save_state(state_path, state)
     if observer is not None:
         completed = _parse_completed_bars(payload)
         for event in events:
             observer(event, completed)
+    save_state(state_path, state)
     return events
 
 
-def _emit(event: WatchEvent, notifier: Any | None = None, bars: Sequence[Bar] = ()) -> None:
-    print(json.dumps(asdict(event), sort_keys=True, ensure_ascii=False), flush=True)
-    if notifier is not None:
-        image = None
-        if bars and event.details.get("scenario"):
-            try:
-                from .watch_chart import render_watch_chart
+class NotificationQueuePersistenceError(RuntimeError):
+    """Raised when a watch event cannot be durably recorded."""
 
-                image = render_watch_chart(event, bars)
-            except Exception as exc:
-                print(
-                    json.dumps(
-                        {
-                            "event_type": "chart_render_failed",
-                            "severity": "warning",
-                            "error_type": type(exc).__name__,
-                        },
-                        sort_keys=True,
-                    ),
-                    flush=True,
-                )
+
+def _flush_outbox(outbox: Any, notifier: Any) -> None:
+    """Retry due messages on every watcher cycle, even when no new event occurs."""
+    try:
+        results = outbox.deliver_pending(notifier)
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "event_type": "notification_queue_failed",
+                    "severity": "error",
+                    "channel": "telegram",
+                    "error_type": type(exc).__name__,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        return
+
+    for result in results:
+        if result.status in {"pending", "dead"} and result.error_type:
+            print(
+                json.dumps(
+                    {
+                        "event_type": "notification_delivery_failed",
+                        "severity": "error",
+                        "channel": "telegram",
+                        "notification_id": result.notification_id,
+                        "attempts": result.attempts,
+                        "status": result.status,
+                        "error_type": result.error_type,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+
+
+def _emit(
+    event: WatchEvent,
+    notifier: Any | None = None,
+    bars: Sequence[Bar] = (),
+    outbox: Any | None = None,
+) -> None:
+    """Log an event and durably queue Telegram delivery before advancing state."""
+    print(json.dumps(asdict(event), sort_keys=True, ensure_ascii=False), flush=True)
+    if notifier is None:
+        return
+
+    image = None
+    if bars and event.details.get("scenario"):
+        try:
+            from .watch_chart import render_watch_chart
+
+            image = render_watch_chart(event, bars)
+        except Exception as exc:
+            print(
+                json.dumps(
+                    {
+                        "event_type": "chart_render_failed",
+                        "severity": "warning",
+                        "error_type": type(exc).__name__,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+
+    if outbox is None:
+        # Compatibility fallback for callers that explicitly use _emit outside main().
         try:
             notifier.send(event, image=image)
         except Exception as exc:
@@ -166,6 +266,85 @@ def _emit(event: WatchEvent, notifier: Any | None = None, bars: Sequence[Bar] = 
                 ),
                 flush=True,
             )
+        return
+
+    try:
+        outbox.enqueue(event, image=image)
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "event_type": "notification_queue_failed",
+                    "severity": "error",
+                    "channel": "telegram",
+                    "error_type": type(exc).__name__,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        # run_once calls observers before saving state. Propagating here means the
+        # same candle is evaluated again after recovery instead of silently skipped.
+        raise NotificationQueuePersistenceError(
+            "notification event could not be persisted"
+        ) from exc
+
+
+def _monitor_operational_health(
+    outbox: Any,
+    monitor: OperationalAlertMonitor,
+    notifier: Any,
+    args: argparse.Namespace,
+    *,
+    backlog_threshold: int,
+    watch_cycle_error: str | None = None,
+) -> None:
+    """Convert outbox health transitions into durable, deduplicated Telegram events."""
+    try:
+        conditions = notification_health_conditions(
+            outbox.summary(), backlog_threshold=backlog_threshold
+        )
+        if watch_cycle_error is not None:
+            conditions["watch_cycle_failure"] = watch_cycle_failure_condition(
+                watch_cycle_error
+            )
+
+        def emit_transition(transition: Any) -> None:
+            event_type = (
+                "operational_alert"
+                if transition.transition == "active"
+                else "operational_recovery"
+            )
+            _emit(
+                WatchEvent(
+                    event_type,
+                    transition.severity,
+                    transition.occurred_at,
+                    args.exchange,
+                    args.symbol,
+                    args.timeframe,
+                    transition.message,
+                    transition.details,
+                ),
+                notifier,
+                outbox=outbox,
+            )
+
+        monitor.reconcile(conditions, emit=emit_transition)
+    except Exception as exc:
+        # The monitor must never crash the watcher; the durable transition is retried
+        # on a later cycle if enqueueing or state persistence fails.
+        print(
+            json.dumps(
+                {
+                    "event_type": "operational_monitor_failed",
+                    "severity": "error",
+                    "error_type": type(exc).__name__,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
 
 
 def _arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -178,6 +357,20 @@ def _arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--lookback", type=int, default=int(os.getenv("EMERGENZIX_WATCH_LOOKBACK", "20")))
     parser.add_argument("--interval", type=int, default=int(os.getenv("EMERGENZIX_WATCH_INTERVAL_SECONDS", "300")))
     parser.add_argument("--state-path", type=Path, default=Path(os.getenv("EMERGENZIX_WATCH_STATE_PATH", "/data/watch-state.json")))
+    parser.add_argument(
+        "--notification-backlog-threshold",
+        type=int,
+        default=int(os.getenv("EMERGENZIX_NOTIFICATION_BACKLOG_THRESHOLD", "20")),
+    )
+    parser.add_argument(
+        "--operational-alert-state-path",
+        type=Path,
+        default=(
+            Path(os.environ["EMERGENZIX_OPERATIONAL_ALERT_STATE_PATH"])
+            if os.getenv("EMERGENZIX_OPERATIONAL_ALERT_STATE_PATH")
+            else None
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -185,28 +378,118 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _arguments(argv)
     if args.interval < 10:
         raise ValueError("watch interval must be at least 10 seconds")
+    backlog_threshold = getattr(args, "notification_backlog_threshold", 20)
+    if backlog_threshold < 1:
+        raise ValueError("notification backlog threshold must be at least one")
     token = os.getenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.getenv("EMERGENZIX_TELEGRAM_CHAT_ID", "").strip()
+    telegram_required = _env_bool("EMERGENZIX_TELEGRAM_REQUIRED", default=False)
     if bool(token) != bool(chat_id):
-        raise ValueError("Telegram bot token and chat ID must be configured together")
+        _emit(WatchEvent(
+            "risk_alert", "error", _utc_now().isoformat(), args.exchange,
+            args.symbol, args.timeframe,
+            "Telegram configuration is incomplete; watcher will not start.",
+            {"error_type": "IncompleteTelegramConfiguration"},
+        ))
+        return 2
+    if telegram_required and not (token and chat_id):
+        _emit(WatchEvent(
+            "risk_alert", "error", _utc_now().isoformat(), args.exchange,
+            args.symbol, args.timeframe,
+            "Telegram is required but bot token/chat ID are missing; watcher will not start.",
+            {"error_type": "MissingTelegramConfiguration"},
+        ))
+        return 2
+
     notifier = None
+    outbox = None
     if token and chat_id:
+        from .notification_outbox import NotificationOutbox
         from .notifications import TelegramNotifier
 
         notifier = TelegramNotifier(bot_token=token, chat_id=chat_id)
+        outbox_path = Path(
+            os.getenv(
+                "EMERGENZIX_NOTIFICATION_DB_PATH",
+                str(args.state_path.parent / "notification-outbox.sqlite3"),
+            )
+        )
+        outbox = NotificationOutbox(outbox_path)
+        operational_state_path = getattr(args, "operational_alert_state_path", None)
+        if operational_state_path is None:
+            operational_state_path = Path(
+                os.getenv(
+                    "EMERGENZIX_OPERATIONAL_ALERT_STATE_PATH",
+                    str(args.state_path.with_name("operational-alert-state.json")),
+                )
+            )
+        operational_monitor = OperationalAlertMonitor(operational_state_path)
+        startup_event = WatchEvent(
+            "watcher_startup", "info", _utc_now().isoformat(), args.exchange,
+            args.symbol, args.timeframe,
+            "Telegram delivery check passed; paper-only watcher is starting.",
+            {"mode": "PAPER", "live_trading_enabled": False},
+        )
+        try:
+            startup_id = outbox.enqueue(startup_event)
+            startup_result = outbox.deliver_one(
+                notifier, startup_id, force=True
+            )
+        except Exception as exc:
+            _emit(WatchEvent(
+                "risk_alert", "error", _utc_now().isoformat(), args.exchange,
+                args.symbol, args.timeframe,
+                "Telegram startup delivery check failed; watcher will not start.",
+                {"error_type": type(exc).__name__},
+            ))
+            return 2
+        if startup_result.status != "delivered":
+            _emit(WatchEvent(
+                "risk_alert", "error", _utc_now().isoformat(), args.exchange,
+                args.symbol, args.timeframe,
+                "Telegram startup delivery check failed; watcher will not start.",
+                {
+                    "error_type": startup_result.error_type or "TelegramDeliveryUnavailable",
+                    "notification_id": startup_result.notification_id,
+                },
+            ))
+            return 2
     while True:
+        cycle_error: str | None = None
         try:
             run_once(
                 exchange=args.exchange, symbol=args.symbol, timeframe=args.timeframe,
                 limit=args.limit, lookback=args.lookback, state_path=args.state_path,
-                observer=lambda event, bars: _emit(event, notifier, bars),
+                observer=lambda event, bars: _emit(event, notifier, bars, outbox),
             )
         except Exception as exc:  # process boundary: report and retry without trading
-            _emit(WatchEvent("risk_alert", "error", _utc_now().isoformat(), args.exchange, args.symbol, args.timeframe, "Watch cycle failed; no trading action was taken.", {"error_type": type(exc).__name__, "error": str(exc)}), notifier)
-            if args.once:
-                return 1
+            cycle_error = type(exc).__name__
+            print(
+                json.dumps(
+                    {
+                        "event_type": "watch_cycle_failed",
+                        "severity": "error",
+                        "error_type": cycle_error,
+                        "message": "Watch cycle failed; no trading action was taken.",
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+
+        if notifier is not None and outbox is not None:
+            _flush_outbox(outbox, notifier)
+            _monitor_operational_health(
+                outbox,
+                operational_monitor,
+                notifier,
+                args,
+                backlog_threshold=backlog_threshold,
+                watch_cycle_error=cycle_error,
+            )
+            _flush_outbox(outbox, notifier)
         if args.once:
-            return 0
+            return 1 if cycle_error is not None else 0
         time.sleep(args.interval)
 
 
