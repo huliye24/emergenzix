@@ -10,6 +10,9 @@ from .scenarios import analyze_scenarios
 from .schemas import Bar
 
 
+REPLAY_PROTOCOL_VERSION = "btc-point-in-time-v1"
+
+
 @dataclass(frozen=True)
 class ReplayExperiment:
     """One reproducible scenario decision and its separately revealed outcome."""
