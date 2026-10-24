@@ -71,6 +71,7 @@ def test_failed_delivery_survives_restart_and_retries_after_backoff(tmp_path: Pa
     assert notifier.images == [b"chart"]
     assert restarted.pending_count() == 0
     assert restarted.get_status(notification_id).status == "delivered"
+    assert restarted.summary()["failed_attempts"] == 1
 
 
 def test_dead_letter_is_retained_after_maximum_attempts(tmp_path: Path) -> None:
@@ -138,6 +139,7 @@ def test_summary_reports_retrying_due_dead_and_last_success(tmp_path: Path) -> N
     assert summary["pending"] == 1
     assert summary["retrying"] == 1
     assert summary["due"] == 1
+    assert summary["failed_attempts"] == 1
     assert summary["delivered"] == 1
     assert summary["dead"] == 0
     assert summary["last_successful_delivery_at"] == now.isoformat()
