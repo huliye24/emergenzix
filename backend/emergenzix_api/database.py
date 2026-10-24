@@ -118,6 +118,20 @@ class Database:
                     UNIQUE (dataset_id, seed, anchor_at, horizon_bars, lookback, protocol_version)
                 );
 
+                CREATE TABLE IF NOT EXISTS date_range_backtest_records (
+                    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                    dataset_id TEXT NOT NULL REFERENCES market_datasets(id),
+                    dataset_sha256 TEXT NOT NULL CHECK (length(dataset_sha256) = 64),
+                    start_at TEXT NOT NULL,
+                    end_at TEXT NOT NULL,
+                    duration_days INTEGER NOT NULL CHECK (duration_days BETWEEN 1 AND 30),
+                    training_days INTEGER NOT NULL CHECK (training_days BETWEEN 60 AND 365),
+                    protocol_version TEXT NOT NULL,
+                    record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
+                    record_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS strategy_comparisons (
                     id TEXT PRIMARY KEY,
                     strategy_id TEXT NOT NULL REFERENCES strategies(id),
@@ -181,6 +195,11 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_historical_replay_records_dataset
                     ON historical_replay_records(dataset_id, created_at DESC);
 
+                CREATE INDEX IF NOT EXISTS idx_date_range_backtest_records_created_at
+                    ON date_range_backtest_records(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_date_range_backtest_records_period
+                    ON date_range_backtest_records(start_at DESC, end_at DESC);
+
                 CREATE TRIGGER IF NOT EXISTS historical_replay_records_no_update
                 BEFORE UPDATE ON historical_replay_records
                 BEGIN
@@ -192,6 +211,18 @@ class Database:
                 BEGIN
                     SELECT RAISE(ABORT, 'historical replay records are immutable');
                 END;
+                CREATE TRIGGER IF NOT EXISTS date_range_backtest_records_no_update
+                BEFORE UPDATE ON date_range_backtest_records
+                BEGIN
+                    SELECT RAISE(ABORT, 'date-range backtest records are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS date_range_backtest_records_no_delete
+                BEFORE DELETE ON date_range_backtest_records
+                BEGIN
+                    SELECT RAISE(ABORT, 'date-range backtest records are immutable');
+                END;
+
                 CREATE INDEX IF NOT EXISTS idx_backtests_created_at
                     ON backtests(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_strategy_comparisons_created_at
