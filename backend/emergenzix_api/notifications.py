@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -11,25 +12,63 @@ from typing import Callable
 from .watch_agent import WatchEvent
 
 
+SCENARIO_LABELS = {
+    "continuation_down": "延续下跌",
+    "false_breakdown": "假跌破",
+    "range": "震荡区间",
+    "reversal_up": "向上反转",
+}
+
+EVENT_LABELS = {
+    "initial_snapshot": "初始行情快照",
+    "scenario_changed": "场景发生切换",
+    "trade_trigger": "PAPER 策略触发",
+    "risk_alert": "风控警报",
+}
+
+SEVERITY_LABELS = {"info": "信息", "warning": "警告", "error": "错误"}
+
+
+def _translate_instruction(value: object) -> str:
+    """Translate known scenario instructions while preserving calculated prices."""
+    text = str(value)
+    patterns = (
+        (r"two completed closes below (.+)", r"连续两根已收盘K线跌破 \1"),
+        (r"completed close back above (.+)", r"已收盘K线重新站上 \1"),
+        (r"support sweep followed by close above (.+)", r"下探支撑后，已收盘K线重新站上 \1"),
+        (r"completed close below (.+)", r"已收盘K线跌破 \1"),
+        (r"price remains between (.+) and (.+)", r"价格继续运行在 \1 至 \2 之间"),
+        (r"two completed closes outside the range buffer", r"连续两根已收盘K线有效离开震荡区间"),
+        (r"two completed closes above (.+)", r"连续两根已收盘K线突破 \1"),
+        (r"completed close back below (.+)", r"已收盘K线重新跌回 \1 下方"),
+    )
+    for pattern, replacement in patterns:
+        if re.fullmatch(pattern, text):
+            return re.sub(pattern, replacement, text)
+    return text
+
+
 class NotificationError(RuntimeError):
     """Raised when a notification cannot be delivered without exposing credentials."""
 
 
 def format_watch_event(event: WatchEvent) -> str:
-    """Render a compact human-readable alert from a structured watch event."""
+    """Render a compact Chinese alert from a structured watch event."""
     details = event.details
     levels = details.get("key_levels", {}) if isinstance(details, dict) else {}
     scenario = details.get("scenario") if isinstance(details, dict) else None
+    scenario_label = SCENARIO_LABELS.get(str(scenario), str(scenario)) if scenario else None
+    event_label = EVENT_LABELS.get(event.event_type, event.event_type)
+    severity_label = SEVERITY_LABELS.get(event.severity.lower(), event.severity.upper())
     lines = [
-        f"Emergenzix · {event.event_type}",
-        f"{event.symbol} · {event.timeframe} · {event.severity.upper()}",
-        event.message,
+        f"Emergenzix · {event_label}",
+        f"{event.symbol} · {event.timeframe} · {severity_label}",
     ]
-    if scenario:
-        lines.append(f"Scenario: {scenario}")
+    if scenario_label:
+        lines.append(f"当前场景：{scenario_label}")
     if isinstance(levels, dict) and levels:
         lines.append(
-            "Levels: support={support} resistance={resistance} ATR={atr}".format(
+            "关键位置：支撑={support}　压力={resistance}　ATR={atr}".format(
                 support=levels.get("support", "-"),
                 resistance=levels.get("resistance", "-"),
                 atr=levels.get("atr", "-"),
@@ -38,10 +77,12 @@ def format_watch_event(event: WatchEvent) -> str:
     trigger = details.get("trigger") if isinstance(details, dict) else None
     invalidation = details.get("invalidation") if isinstance(details, dict) else None
     if trigger:
-        lines.append(f"Trigger: {trigger}")
+        lines.append(f"触发条件：{_translate_instruction(trigger)}")
     if invalidation:
-        lines.append(f"Invalidation: {invalidation}")
-    lines.append("Mode: PAPER review only; no order was created.")
+        lines.append(f"失效条件：{_translate_instruction(invalidation)}")
+    if not scenario_label:
+        lines.append(f"说明：{event.message}")
+    lines.append("模式：仅 PAPER 模拟观察；本通知不会创建任何订单。")
     return "\n".join(lines)
 
 
