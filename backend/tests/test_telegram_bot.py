@@ -238,6 +238,8 @@ def test_help_command_sends_usage_to_authorized_chat(tmp_path: Path) -> None:
     assert len(sent) == 1
     assert sent[0]["chat_id"] == "12345"
     assert "/status" in sent[0]["text"]
+    assert "/history" in sent[0]["text"]
+    assert "/report RECORD_ID" in sent[0]["text"]
     assert "/backtest YYYY-MM-DD [days]" in sent[0]["text"]
     assert "不会创建订单" in sent[0]["text"]
 
@@ -482,6 +484,123 @@ def test_latest_returns_most_recent_saved_record(tmp_path: Path) -> None:
     assert "历史回测完成" in sent[0]
     assert "sma-3-10" in sent[0]
 
+
+
+def test_history_lists_five_max_and_full_ids_in_order(tmp_path: Path) -> None:
+    sent = []
+    api_requests = []
+    recent = _record()
+    older = _record()
+    older["id"] = "b" * 64
+    older["report"]["period"]["test_start_at"] = "2025-09-01T00:00:00Z"
+
+    def requester(request, *, timeout):
+        url = request.full_url
+        if url.endswith("/api/v1/research/date-range-backtests?limit=5"):
+            api_requests.append((request.get_method(), url))
+            return FakeResponse([recent, older])
+        if url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 20}})
+        raise AssertionError(f"unexpected URL: {url}")
+
+    bot = _bot(tmp_path, requester)
+    bot.handle_update(_update("/history"))
+    assert len(api_requests) == 1
+    assert api_requests[0][0] == "GET"
+    assert len(sent) == 1
+    assert sent[0].index("/report " + "a" * 64) < sent[0].index("/report " + "b" * 64)
+    assert "sma-3-10" in sent[0]
+    assert "+0.5074%" in sent[0]
+    assert "没有创建任何订单" in sent[0]
+
+
+def test_report_fetches_one_saved_record_without_rerun(tmp_path: Path) -> None:
+    sent = []
+    fetched = []
+    record_id = "a" * 64
+
+    def requester(request, *, timeout):
+        url = request.full_url
+        if url.endswith("/api/v1/research/date-range-backtests/" + record_id):
+            fetched.append(request.get_method())
+            return FakeResponse(_record())
+        if url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 21}})
+        raise AssertionError(f"unexpected URL: {url}")
+
+    bot = _bot(tmp_path, requester)
+    bot.handle_update(_update("/report " + record_id))
+    assert fetched == ["GET"]
+    assert "历史回测完成" in sent[0]
+    assert "净收益率：+0.5074%" in sent[0]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/report",
+        "/report abc",
+        "/report " + "A" * 64,
+        "/report " + "a" * 63 + "/",
+        "/report " + "a" * 64 + " extra",
+        "/history extra",
+    ],
+)
+def test_invalid_archive_commands_never_call_api(tmp_path: Path, command: str) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 22}})
+        raise AssertionError(f"invalid command called API: {request.full_url}")
+
+    _bot(tmp_path, requester).handle_update(_update(command))
+    assert len(sent) == 1
+    assert "用法：" in sent[0]
+
+
+def test_history_empty_and_malformed_responses_fail_closed(tmp_path: Path) -> None:
+    sent = []
+    payloads = [[], [{"id": "invalid"}]]
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/api/v1/research/date-range-backtests?limit=5"):
+            return FakeResponse(payloads.pop(0))
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 23}})
+        raise AssertionError(f"unexpected URL: {request.full_url}")
+
+    bot = _bot(tmp_path, requester)
+    bot.handle_update(_update("/history"))
+    bot.handle_update(_update("/history", update_id=2))
+    assert "尚无已保存" in sent[0]
+    assert "响应格式异常" in sent[1]
+    assert "/report " not in sent[1]
+
+
+def test_report_api_error_is_sanitized(tmp_path: Path) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 24}})
+        raise urllib.error.URLError("do not leak internal address")
+
+    _bot(tmp_path, requester).handle_update(_update("/report " + "a" * 64))
+    assert "查询历史报告失败" in sent[0]
+    assert "do not leak" not in sent[0]
+
+
+def test_unauthorized_history_is_ignored(tmp_path: Path) -> None:
+    def requester(request, *, timeout):
+        raise AssertionError(f"unauthorized query: {request.full_url}")
+
+    _bot(tmp_path, requester).handle_update(_update("/history", chat_id=99999))
 
 def test_poll_once_discards_stale_updates_then_persists_offset(tmp_path: Path) -> None:
     state_path = tmp_path / "telegram-state.json"

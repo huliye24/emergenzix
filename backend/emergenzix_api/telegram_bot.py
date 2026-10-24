@@ -36,6 +36,15 @@ def _finite_number(value: object) -> float | None:
     return number if math.isfinite(number) else None
 
 
+def _valid_record_id(value: object) -> bool:
+    """Accept only canonical SHA-256 record IDs, never path-like user input."""
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _money(value: object) -> str:
     number = _finite_number(value)
     return "N/A" if number is None else f"{number:+,.2f} USDT"
@@ -505,6 +514,8 @@ class TelegramCommandBot:
             "Emergenzix · Telegram 命令\n"
             "/status — 查看 API、PAPER 模式与通知队列\n"
             "/latest — 查看最近一次日期区间回测\n"
+            "/history — 查看最近 5 条已保存回测及完整记录 ID\n"
+            "/report RECORD_ID — 按完整记录 ID 查看历史报告\n"
             "/backtest YYYY-MM-DD [days] — 回测历史区间，days 默认为 7，范围 1–30 天\n"
             "/help — 查看此说明\n\n"
             "回测固定使用 90 天训练窗口、10 bps 单边手续费和 5 bps 单边滑点。"
@@ -567,6 +578,64 @@ class TelegramCommandBot:
         if not records:
             return "尚无已保存的日期区间回测。发送 /help 查看如何启动一次历史回测。"
         return format_backtest_record(records[0])
+
+    def _history_text(self) -> str:
+        """List saved observations without running a strategy or placing orders."""
+        try:
+            records = self._api_request(
+                "GET", "/api/v1/research/date-range-backtests?limit=5"
+            )
+        except ApiRequestError as exc:
+            return f"查询历史回测失败：{_one_line(exc)}"
+        if not isinstance(records, list) or len(records) > 5:
+            return "回测历史响应格式异常，请检查 API。"
+        if not records:
+            return "尚无已保存的日期区间回测。发送 /help 查看回测命令。"
+
+        lines = ["Emergenzix · 最近 5 条历史回测（新到旧）"]
+        for record in records:
+            if not isinstance(record, dict) or not _valid_record_id(record.get("id")):
+                return "回测历史响应格式异常，请检查 API。"
+            report = record.get("report")
+            if not isinstance(report, dict):
+                return "回测历史响应格式异常，请检查 API。"
+            period = report.get("period")
+            selection = report.get("strategy_selection")
+            metrics = report.get("test_result")
+            if not all(isinstance(value, dict) for value in (period, selection, metrics)):
+                return "回测历史响应格式异常，请检查 API。"
+            selected = selection.get("selected_candidate")
+            start_at = period.get("test_start_at")
+            candidate_id = selected.get("candidate_id") if isinstance(selected, dict) else None
+            net_return = _finite_number(metrics.get("total_return_pct"))
+            if (
+                not isinstance(start_at, str)
+                or len(start_at) < 10
+                or not isinstance(candidate_id, str)
+                or not candidate_id.strip()
+                or net_return is None
+            ):
+                return "回测历史响应格式异常，请检查 API。"
+            lines.append(
+                f"{_one_line(start_at[:10])} | {_one_line(candidate_id, 48)} | "
+                f"{_percent(net_return, signed=True)}"
+            )
+            lines.append(f"/report {record['id']}")
+
+        lines.append("以上为独立历史研究记录，不代表未来收益；没有创建任何订单。")
+        return "\\n".join(lines)
+
+    def _report_text(self, arguments: list[str]) -> str:
+        usage = "用法：/report RECORD_ID（使用 /history 获取完整的 64 位记录 ID）"
+        if len(arguments) != 1 or not _valid_record_id(arguments[0]):
+            return usage
+        try:
+            record = self._api_request(
+                "GET", f"/api/v1/research/date-range-backtests/{arguments[0]}"
+            )
+        except ApiRequestError as exc:
+            return f"查询历史报告失败：{_one_line(exc)}"
+        return format_backtest_record(record)
 
     def _backtest_text(self, arguments: list[str], *, chat_id: str | None = None) -> str:
         usage = "用法：/backtest YYYY-MM-DD [days]（days 为 1–30，默认 7）"
@@ -669,6 +738,10 @@ class TelegramCommandBot:
             reply = self._status_text()
         elif command == "/latest":
             reply = self._latest_text()
+        elif command == "/history":
+            reply = self._history_text() if not arguments else "用法：/history（不需要参数）"
+        elif command == "/report":
+            reply = self._report_text(arguments)
         elif command == "/backtest":
             reply = self._backtest_text(arguments, chat_id=chat_id)
         else:

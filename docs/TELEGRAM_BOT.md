@@ -42,9 +42,13 @@ The bot persists its update offset, initialization flag, and backtest cooldown t
 - **/help** — list available commands.
 - **/status** — report API health/readiness, mode, live-trading state, and notification queue counts.
 - **/latest** — summarize the most recent saved date-range backtest.
+- **/history** — list up to five most recent saved date-range backtests with UTC start date, chosen candidate, net return, and **full 64-character record IDs**.
+- **/report RECORD_ID** — retrieve one immutable saved date-range backtest report using an exact lowercase 64-character ID copied from /history; invalid IDs are rejected before contacting the API.
 - **/backtest YYYY-MM-DD [days]** — run a historical BTC/USDT spot 4-hour backtest. Duration defaults to 7 days and must be 1–30 days. The full requested interval must end in the past.
 
 The backtest command uses the existing date-range research API with a fixed 90-day training window, 10 basis points of fee per side, 5 basis points of slippage per side, and 10,000 USDT initial simulated cash. It reports the selected candidate, net PnL, return, maximum drawdown, completed trades, win rate, and validation-evidence status. When the API returns complete data, the report also includes the pre-test candidate validation table, a UTC daily PnL/return/equity table derived from the holdout 4-hour equity curve, and the fixed 3×3 fee/slippage sensitivity matrix for the selected strategy. Candidate metrics are explicitly labeled as pre-test validation, and cost scenarios do not reselect the strategy or change the test window. The daily table is omitted when the curve is incomplete or malformed, and the cost matrix is omitted when its data or protocol metadata is incomplete, rather than estimating missing values. These settings are intentionally fixed in this first command interface.
+
+The /history and /report commands call only the existing read-only date-range research API endpoints. The API verifies saved record integrity before returning results. These commands never rerun a strategy, download market data, consume the backtest cooldown, or place any order. A malformed history response is rejected rather than displaying partial results.
 
 ## Operational limitations
 
