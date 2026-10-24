@@ -144,3 +144,25 @@ def test_summary_reports_retrying_due_dead_and_last_success(tmp_path: Path) -> N
     assert summary["dead"] == 0
     assert summary["last_successful_delivery_at"] == now.isoformat()
     assert summary["last_error_type"] == "RuntimeError"
+
+
+def test_operational_transition_dedupes_across_retries_with_stable_alert_key(
+    tmp_path: Path,
+) -> None:
+    outbox = NotificationOutbox(tmp_path / "outbox.sqlite3")
+    first = _event()
+    first = replace(
+        first,
+        event_type="operational_alert",
+        occurred_at="2026-10-24T04:00:00+00:00",
+        message="Notification queue backlog reached threshold.",
+        details={
+            "condition": "notification_backlog",
+            "transition": "active",
+            "alert_key": "operational:notification_backlog:incident-123:active",
+            "pending_count_at_alert": 20,
+        },
+    )
+    retry = replace(first, occurred_at="2026-10-24T04:05:00+00:00")
+    assert outbox.enqueue(first) == outbox.enqueue(retry)
+    assert outbox.pending_count() == 1
