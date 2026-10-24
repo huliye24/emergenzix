@@ -11,7 +11,7 @@ From the repository root, install the backend requirements once and run:
 ```bash
 cd backend
 python -m pip install -r requirements.txt
-python -m emergenzix_api.date_range_backtest \
+python -m emergenzix_api.date_range_backtest_cli \
   --start-date 2025-10-21 \
   --duration-days 7 \
   --training-days 90 \
