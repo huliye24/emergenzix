@@ -15,12 +15,12 @@ class Settings:
     """Runtime settings with safe, paper-only defaults."""
 
     db_path: str
-    notification_db_path: str | None = None
     initial_paper_cash: float = 100_000.0
     max_order_notional: float = 5_000.0
     paper_fee_bps: float = 10.0
     market_data_cache_ttl_seconds: int = 30
     market_data_cache_max_entries: int = 256
+    notification_db_path: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
