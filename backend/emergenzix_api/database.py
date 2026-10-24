@@ -69,6 +69,20 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS market_datasets (
+                    id TEXT PRIMARY KEY,
+                    content_sha256 TEXT NOT NULL UNIQUE,
+                    source TEXT NOT NULL,
+                    exchange TEXT,
+                    symbol TEXT NOT NULL,
+                    timeframe TEXT,
+                    start_at TEXT NOT NULL,
+                    end_at TEXT NOT NULL,
+                    bars_count INTEGER NOT NULL CHECK (bars_count >= 5),
+                    bars_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS paper_account (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     cash REAL NOT NULL,
@@ -97,6 +111,8 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE INDEX IF NOT EXISTS idx_market_datasets_created_at
+                    ON market_datasets(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_backtests_created_at
                     ON backtests(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_paper_orders_created_at

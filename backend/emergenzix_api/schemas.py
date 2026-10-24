@@ -56,6 +56,40 @@ class Bar(StrictModel):
         return self
 
 
+class DatasetCreate(StrictModel):
+    """A validated OHLCV dataset to register as an immutable content-addressed record."""
+
+    source: Literal["user_supplied", "ccxt_public_ohlcv", "synthetic_demo"] = "user_supplied"
+    exchange: Literal["binance", "bybit", "okx", "kraken", "coinbase"] | None = None
+    symbol: str = Field(
+        min_length=3,
+        max_length=30,
+        pattern=r"^[A-Za-z0-9]{1,20}(?:/[A-Za-z0-9]{1,10})?$",
+    )
+    timeframe: Literal["1m", "5m", "15m", "30m", "1h", "4h", "1d"] | None = None
+    bars: list[Bar] = Field(min_length=5, max_length=10_000)
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_dataset_symbol(cls, value: str) -> str:
+        return value.strip().upper()
+
+    @model_validator(mode="after")
+    def validate_dataset(self) -> "DatasetCreate":
+        timestamps = [bar.timestamp for bar in self.bars]
+        if any(
+            current <= previous
+            for previous, current in zip(timestamps, timestamps[1:])
+        ):
+            raise ValueError("bars must be in strictly increasing timestamp order")
+        if self.source == "ccxt_public_ohlcv":
+            if not self.exchange or not self.timeframe:
+                raise ValueError(
+                    "CCXT datasets must record exchange and timeframe metadata"
+                )
+        return self
+
+
 class BacktestCreate(StrictModel):
     strategy_id: str = Field(min_length=1, max_length=64)
     bars: list[Bar] = Field(min_length=5, max_length=10_000)
