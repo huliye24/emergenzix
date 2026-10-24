@@ -44,7 +44,7 @@ The bot persists its update offset, initialization flag, and backtest cooldown t
 - **/latest** — summarize the most recent saved date-range backtest.
 - **/backtest YYYY-MM-DD [days]** — run a historical BTC/USDT spot 4-hour backtest. Duration defaults to 7 days and must be 1–30 days. The full requested interval must end in the past.
 
-The backtest command uses the existing date-range research API with a fixed 90-day training window, 10 basis points of fee per side, 5 basis points of slippage per side, and 10,000 USDT initial simulated cash. It reports the selected candidate, net PnL, return, maximum drawdown, completed trades, win rate, and validation-evidence status. These settings are intentionally fixed in this first command interface.
+The backtest command uses the existing date-range research API with a fixed 90-day training window, 10 basis points of fee per side, 5 basis points of slippage per side, and 10,000 USDT initial simulated cash. It reports the selected candidate, net PnL, return, maximum drawdown, completed trades, win rate, validation-evidence status, and a UTC daily PnL/return/equity table derived from the holdout 4-hour equity curve. The daily table is omitted when the curve is incomplete or malformed rather than estimating missing values. These settings are intentionally fixed in this first command interface.
 
 ## Operational limitations
 
