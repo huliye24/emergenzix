@@ -44,6 +44,19 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _env_bool(name: str, *, default: bool = False) -> bool:
+    """Read a strict boolean environment variable without silently weakening gates."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean value")
+
+
 def _parse_completed_bars(payload: dict[str, Any]) -> list[Bar]:
     raw_bars = payload.get("bars")
     if not isinstance(raw_bars, list) or len(raw_bars) < 2:
@@ -187,13 +200,45 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("watch interval must be at least 10 seconds")
     token = os.getenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.getenv("EMERGENZIX_TELEGRAM_CHAT_ID", "").strip()
+    telegram_required = _env_bool("EMERGENZIX_TELEGRAM_REQUIRED", default=False)
     if bool(token) != bool(chat_id):
-        raise ValueError("Telegram bot token and chat ID must be configured together")
+        _emit(WatchEvent(
+            "risk_alert", "error", _utc_now().isoformat(), args.exchange,
+            args.symbol, args.timeframe,
+            "Telegram configuration is incomplete; watcher will not start.",
+            {"error_type": "IncompleteTelegramConfiguration"},
+        ))
+        return 2
+    if telegram_required and not (token and chat_id):
+        _emit(WatchEvent(
+            "risk_alert", "error", _utc_now().isoformat(), args.exchange,
+            args.symbol, args.timeframe,
+            "Telegram is required but bot token/chat ID are missing; watcher will not start.",
+            {"error_type": "MissingTelegramConfiguration"},
+        ))
+        return 2
+
     notifier = None
     if token and chat_id:
-        from .notifications import TelegramNotifier
+        from .notifications import NotificationError, TelegramNotifier
 
         notifier = TelegramNotifier(bot_token=token, chat_id=chat_id)
+        startup_event = WatchEvent(
+            "watcher_startup", "info", _utc_now().isoformat(), args.exchange,
+            args.symbol, args.timeframe,
+            "Telegram delivery check passed; paper-only watcher is starting.",
+            {"mode": "PAPER", "live_trading_enabled": False},
+        )
+        try:
+            notifier.send(startup_event)
+        except Exception as exc:
+            _emit(WatchEvent(
+                "risk_alert", "error", _utc_now().isoformat(), args.exchange,
+                args.symbol, args.timeframe,
+                "Telegram startup delivery check failed; watcher will not start.",
+                {"error_type": type(exc).__name__ if isinstance(exc, Exception) else "NotificationError"},
+            ))
+            return 2
     while True:
         try:
             run_once(
