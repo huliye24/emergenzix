@@ -22,6 +22,7 @@ from .historical_data_api import router as historical_data_router
 from .dataset_store import persist_dataset
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
+from .notification_outbox import NotificationOutbox
 from .scenarios import analyze_scenarios
 from .schemas import (
     Bar,
@@ -119,6 +120,7 @@ def create_app(
     initial_paper_cash: float | None = None,
     max_order_notional: float | None = None,
     paper_fee_bps: float | None = None,
+    notification_db_path: str | Path | None = None,
 ) -> FastAPI:
     settings = Settings.from_env()
     starting_cash = (
@@ -142,6 +144,12 @@ def create_app(
     app.include_router(historical_replay_router)
     app.include_router(historical_data_router)
     app.state.database = database
+    app.state.notification_outbox_path = str(
+        notification_db_path
+        if notification_db_path is not None
+        else settings.notification_db_path
+        or (Path(settings.db_path).expanduser().parent / "notification-outbox.sqlite3")
+    )
     app.state.market_data_cache = TTLCache(
         ttl_seconds=settings.market_data_cache_ttl_seconds,
         max_entries=settings.market_data_cache_max_entries,
@@ -195,6 +203,45 @@ def create_app(
                 "database": "ok",
                 "paper_account": "ok",
             },
+        }
+
+    @app.get("/api/v1/notifications/status")
+    def notification_status(request: Request) -> dict[str, Any]:
+        """Expose aggregate outbox health without event bodies or Telegram credentials."""
+        path = Path(request.app.state.notification_outbox_path)
+        empty_metrics = {
+            "total": 0,
+            "pending": 0,
+            "retrying": 0,
+            "due": 0,
+            "delivered": 0,
+            "dead": 0,
+            "oldest_pending_at": None,
+            "last_successful_delivery_at": None,
+            "last_error_type": None,
+        }
+        if not path.exists():
+            return {
+                "status": "not_initialized",
+                "service": "emergenzix-notification-outbox",
+                "mode": "PAPER",
+                "live_trading_enabled": False,
+                "metrics": empty_metrics,
+            }
+
+        try:
+            metrics = NotificationOutbox(path).summary()
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            raise HTTPException(
+                status_code=503, detail="notification outbox is unavailable"
+            ) from exc
+
+        return {
+            "status": "attention_required" if metrics["dead"] else "ok",
+            "service": "emergenzix-notification-outbox",
+            "mode": "PAPER",
+            "live_trading_enabled": False,
+            "metrics": metrics,
         }
 
     @app.get("/api/v1/market-data/ohlcv")
