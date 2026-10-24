@@ -42,6 +42,23 @@ def test_stale_data_blocks_analysis_and_deduplicates_warning() -> None:
     assert repeated == []
 
 
+def test_fresh_data_emits_recovery_after_stale_warning() -> None:
+    now = datetime(2026, 10, 24, 4, tzinfo=timezone.utc)
+    stale_payload = _payload([100.0] * 31, now - timedelta(days=3))
+    stale_state, stale_events = evaluate_market_payload(
+        stale_payload, WatchState(), lookback=20, now=now
+    )
+    assert [event.event_type for event in stale_events] == ["risk_alert"]
+
+    fresh_payload = _payload([100 + (index % 3) for index in range(31)], now)
+    _, recovered_events = evaluate_market_payload(
+        fresh_payload, stale_state, lookback=20, now=now
+    )
+    assert recovered_events[0].event_type == "risk_recovered"
+    assert recovered_events[0].details["condition"] == "market_data_stale"
+    assert recovered_events[0].details["alert_key"].endswith(":recovered")
+
+
 def test_run_once_persists_and_suppresses_duplicate_events(tmp_path: Path) -> None:
     now = datetime(2026, 10, 24, 4, tzinfo=timezone.utc)
     payload = _payload([100 + (i % 3) for i in range(31)], now)
@@ -64,6 +81,8 @@ def _main_args(tmp_path: Path, *, once: bool = True):
         limit=200,
         lookback=20,
         state_path=tmp_path / "watch.json",
+        notification_backlog_threshold=20,
+        operational_alert_state_path=tmp_path / "operational-alert-state.json",
         once=once,
     )
 
