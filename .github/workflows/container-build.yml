@@ -11,13 +11,7 @@ on:
       - "VERSION"
       - ".github/workflows/**"
   pull_request:
-    paths:
-      - "backend/**"
-      - "web/**"
-      - "docker-compose.yml"
-      - ".env.example"
-      - "VERSION"
-      - ".github/workflows/**"
+    branches: [main]
   workflow_dispatch:
 
 permissions:
