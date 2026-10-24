@@ -33,6 +33,38 @@ def _record() -> dict[str, object]:
                     "parameters": {"fast_window": 3, "slow_window": 10},
                 },
                 "status": "sufficient_validation_trades",
+                "candidates": [
+                    {
+                        "candidate_id": "sma-3-10",
+                        "strategy_type": "sma_crossover",
+                        "parameters": {"fast_window": 3, "slow_window": 10},
+                        "eligible": True,
+                        "selection_score": 8.268134,
+                        "total_return_pct": 8.9,
+                        "max_drawdown_pct": 1.2,
+                        "number_of_trades": 2,
+                    },
+                    {
+                        "candidate_id": "sma-5-15",
+                        "strategy_type": "sma_crossover",
+                        "parameters": {"fast_window": 5, "slow_window": 15},
+                        "eligible": True,
+                        "selection_score": 7.2,
+                        "total_return_pct": 7.5,
+                        "max_drawdown_pct": 0.6,
+                        "number_of_trades": 3,
+                    },
+                    {
+                        "candidate_id": "donchian-20-10",
+                        "strategy_type": "donchian_breakout",
+                        "parameters": {"entry_window": 20, "exit_window": 10},
+                        "eligible": False,
+                        "selection_score": 2.3,
+                        "total_return_pct": 2.0,
+                        "max_drawdown_pct": 3.0,
+                        "number_of_trades": 1,
+                    },
+                ],
             },
             "test_result": {
                 "initial_cash": 10_000.0,
@@ -289,6 +321,31 @@ def test_backtest_summary_includes_fixed_cost_sensitivity_matrix() -> None:
     assert "5/0 bps | +0.9102% | +91.02 USDT | 1.0000% | 2" in text
     assert "10/5 bps | +0.5074% | +50.74 USDT | 1.2000% | 2" in text
     assert "20/10 bps | -0.0938% | -9.38 USDT | 1.5000% | 2" in text
+
+
+def test_backtest_summary_includes_candidate_selection_evidence() -> None:
+    from emergenzix_api.telegram_bot import format_backtest_record
+
+    text = format_backtest_record(_record())
+
+    assert "策略候选验证（仅训练期数据；不代表测试期结果）" in text
+    assert "候选 | 验证收益 | 最大回撤 | 交易数 | 选择分 | 状态" in text
+    assert "sma-3-10 | +8.9000% | 1.2000% | 2 | +8.2681 | 已选" in text
+    assert "sma-5-15 | +7.5000% | 0.6000% | 3 | +7.2000 | 达标" in text
+    assert "donchian-20-10 | +2.0000% | 3.0000% | 1 | +2.3000 | 证据不足" in text
+
+
+def test_malformed_candidate_selection_table_is_omitted() -> None:
+    from emergenzix_api.telegram_bot import format_backtest_record
+
+    record = _record()
+    candidates = record["report"]["strategy_selection"]["candidates"]
+    candidates[1]["candidate_id"] = "sma-3-10"
+
+    text = format_backtest_record(record)
+
+    assert "策略候选验证" not in text
+    assert "净收益率：+0.5074%" in text
 
 
 def test_malformed_cost_sensitivity_matrix_is_omitted() -> None:
