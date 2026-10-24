@@ -5,16 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import Field, model_validator
 
-from .date_range_backtest import (
-    DATE_RANGE_BACKTEST_PROTOCOL_VERSION,
-    create_date_range_backtest,
-)
+from .date_range_backtest import create_date_range_backtest
 from .database import Database
 from .historical_data import HistoricalArchiveUnavailable
 from .schemas import StrictModel
@@ -40,11 +37,7 @@ class DateRangeBacktestCreate(StrictModel):
     def validate_historical_period(self) -> "DateRangeBacktestCreate":
         end_at = datetime.combine(
             self.start_date, datetime.min.time(), tzinfo=timezone.utc
-        )
-        end_at = end_at.replace()  # keep the UTC-midnight boundary explicit
-        from datetime import timedelta
-
-        end_at += timedelta(days=self.duration_days)
+        ) + timedelta(days=self.duration_days)
         if end_at > datetime.now(timezone.utc):
             raise ValueError("the requested test period must end in the past")
         return self
@@ -73,10 +66,10 @@ def _record_to_dict(row: Any) -> dict[str, Any]:
             status_code=500,
             detail="Stored date-range backtest record failed its integrity check",
         )
-    if record.get("protocol_version") != DATE_RANGE_BACKTEST_PROTOCOL_VERSION:
+    if record.get("protocol_version") != row["protocol_version"]:
         raise HTTPException(
             status_code=409,
-            detail="Stored date-range backtest protocol version is unsupported",
+            detail="Stored date-range backtest record protocol metadata is inconsistent",
         )
     return {**record, "record_sha256": row["record_sha256"]}
 
