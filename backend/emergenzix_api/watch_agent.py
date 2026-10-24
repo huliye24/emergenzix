@@ -12,7 +12,11 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from .market_data import fetch_public_ohlcv
-from .operational_alerts import OperationalAlertMonitor, notification_health_conditions
+from .operational_alerts import (
+    OperationalAlertMonitor,
+    notification_health_conditions,
+    watch_cycle_failure_condition,
+)
 from .scenarios import analyze_scenarios
 from .schemas import Bar
 
@@ -293,12 +297,17 @@ def _monitor_operational_health(
     args: argparse.Namespace,
     *,
     backlog_threshold: int,
+    watch_cycle_error: str | None = None,
 ) -> None:
     """Convert outbox health transitions into durable, deduplicated Telegram events."""
     try:
         conditions = notification_health_conditions(
             outbox.summary(), backlog_threshold=backlog_threshold
         )
+        if watch_cycle_error is not None:
+            conditions["watch_cycle_failure"] = watch_cycle_failure_condition(
+                watch_cycle_error
+            )
 
         def emit_transition(transition: Any) -> None:
             event_type = (
@@ -446,6 +455,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ))
             return 2
     while True:
+        cycle_error: str | None = None
         try:
             run_once(
                 exchange=args.exchange, symbol=args.symbol, timeframe=args.timeframe,
@@ -453,23 +463,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 observer=lambda event, bars: _emit(event, notifier, bars, outbox),
             )
         except Exception as exc:  # process boundary: report and retry without trading
-            try:
-                _emit(
-                    WatchEvent(
-                        "risk_alert", "error", _utc_now().isoformat(),
-                        args.exchange, args.symbol, args.timeframe,
-                        "Watch cycle failed; no trading action was taken.",
-                        {"error_type": type(exc).__name__},
-                    ),
-                    notifier,
-                    outbox=outbox,
-                )
-            except NotificationQueuePersistenceError:
-                # The original failure is already logged; do not recurse if the
-                # queue itself is unavailable. Docker restart policy remains active.
-                pass
-            if args.once:
-                return 1
+            cycle_error = type(exc).__name__
+            print(
+                json.dumps(
+                    {
+                        "event_type": "watch_cycle_failed",
+                        "severity": "error",
+                        "error_type": cycle_error,
+                        "message": "Watch cycle failed; no trading action was taken.",
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+
         if notifier is not None and outbox is not None:
             _flush_outbox(outbox, notifier)
             _monitor_operational_health(
@@ -478,10 +485,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 notifier,
                 args,
                 backlog_threshold=backlog_threshold,
+                watch_cycle_error=cycle_error,
             )
             _flush_outbox(outbox, notifier)
         if args.once:
-            return 0
+            return 1 if cycle_error is not None else 0
         time.sleep(args.interval)
 
 
