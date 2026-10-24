@@ -75,6 +75,10 @@ def test_telegram_required_fails_closed_when_credentials_are_missing(
 
     monkeypatch.setattr(watch_agent, "_arguments", lambda _argv=None: _main_args(tmp_path))
     monkeypatch.setenv("EMERGENZIX_TELEGRAM_REQUIRED", "true")
+    monkeypatch.setenv(
+        "EMERGENZIX_NOTIFICATION_DB_PATH",
+        str(tmp_path / "notification-outbox.sqlite3"),
+    )
     monkeypatch.delenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("EMERGENZIX_TELEGRAM_CHAT_ID", raising=False)
     monkeypatch.setattr(watch_agent, "run_once", lambda **_kwargs: pytest.fail("watcher must not run"))
@@ -94,12 +98,16 @@ def test_telegram_startup_delivery_failure_blocks_watcher(
         def __init__(self, **_kwargs):
             pass
 
-        def send(self, _event):
+        def send(self, _event, image=None):
             raise notifications.NotificationError("Telegram delivery failed")
 
     monkeypatch.setattr(watch_agent, "_arguments", lambda _argv=None: _main_args(tmp_path))
     monkeypatch.setattr(notifications, "TelegramNotifier", FailingNotifier)
     monkeypatch.setenv("EMERGENZIX_TELEGRAM_REQUIRED", "true")
+    monkeypatch.setenv(
+        "EMERGENZIX_NOTIFICATION_DB_PATH",
+        str(tmp_path / "notification-outbox.sqlite3"),
+    )
     monkeypatch.setenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "secret-token")
     monkeypatch.setenv("EMERGENZIX_TELEGRAM_CHAT_ID", "12345")
     monkeypatch.setattr(watch_agent, "run_once", lambda **_kwargs: pytest.fail("watcher must not run"))
@@ -122,12 +130,16 @@ def test_telegram_startup_success_sends_paper_only_message(
         def __init__(self, **_kwargs):
             pass
 
-        def send(self, event):
+        def send(self, event, image=None):
             sent.append(event)
 
     monkeypatch.setattr(watch_agent, "_arguments", lambda _argv=None: _main_args(tmp_path))
     monkeypatch.setattr(notifications, "TelegramNotifier", SuccessfulNotifier)
     monkeypatch.setenv("EMERGENZIX_TELEGRAM_REQUIRED", "true")
+    monkeypatch.setenv(
+        "EMERGENZIX_NOTIFICATION_DB_PATH",
+        str(tmp_path / "notification-outbox.sqlite3"),
+    )
     monkeypatch.setenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "secret-token")
     monkeypatch.setenv("EMERGENZIX_TELEGRAM_CHAT_ID", "12345")
     monkeypatch.setattr(watch_agent, "run_once", lambda **_kwargs: [])
