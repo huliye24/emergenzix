@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .historical_replay import REPLAY_PROTOCOL_VERSION, run_historical_replay
 from .schemas import Bar, StrictModel
@@ -27,9 +27,20 @@ class HistoricalReplayCreate(StrictModel):
     dataset_id: str = Field(
         min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
     )
-    seed: int = Field(ge=0, le=2_147_483_647)
+    seed: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    anchor_at: datetime | None = None
     horizon_bars: int = Field(default=12, ge=1, le=500)
     lookback: int = Field(default=20, ge=10, le=200)
+
+    @model_validator(mode="after")
+    def validate_anchor_mode(self) -> "HistoricalReplayCreate":
+        if (self.seed is None) == (self.anchor_at is None):
+            raise ValueError("provide exactly one of seed or anchor_at")
+        if self.anchor_at is not None and (
+            self.anchor_at.tzinfo is None or self.anchor_at.utcoffset() is None
+        ):
+            raise ValueError("anchor_at must include a timezone offset")
+        return self
 
 
 def _canonical_json(payload: Any) -> str:
@@ -123,17 +134,24 @@ def create_historical_replay(
         experiment = run_historical_replay(
             bars,
             seed=payload.seed,
+            anchor_at=payload.anchor_at,
             horizon_bars=payload.horizon_bars,
             lookback=payload.lookback,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    anchor_at_utc = (
+        payload.anchor_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        if payload.anchor_at is not None
+        else None
+    )
     identity = {
         "dataset_id": dataset["id"],
         "dataset_sha256": dataset["content_sha256"],
         "protocol_version": REPLAY_PROTOCOL_VERSION,
         "seed": payload.seed,
+        "anchor_at": anchor_at_utc,
         "horizon_bars": payload.horizon_bars,
         "lookback": payload.lookback,
     }
@@ -157,6 +175,7 @@ def create_historical_replay(
         },
         "configuration": {
             "seed": payload.seed,
+            "anchor_at": anchor_at_utc,
             "horizon_bars": payload.horizon_bars,
             "lookback": payload.lookback,
         },
@@ -176,9 +195,9 @@ def create_historical_replay(
             """
             INSERT OR IGNORE INTO historical_replay_records
                 (id, dataset_id, dataset_sha256, symbol, timeframe,
-                 protocol_version, seed, horizon_bars, lookback, anchor_index,
-                 record_sha256, record_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 protocol_version, seed, anchor_at, horizon_bars, lookback,
+                 anchor_index, record_sha256, record_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
@@ -188,6 +207,7 @@ def create_historical_replay(
                 dataset["timeframe"],
                 REPLAY_PROTOCOL_VERSION,
                 payload.seed,
+                anchor_at_utc,
                 payload.horizon_bars,
                 payload.lookback,
                 experiment.anchor_index,
