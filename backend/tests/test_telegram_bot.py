@@ -348,6 +348,25 @@ def test_invalid_backtest_duration_does_not_call_research_api(tmp_path: Path) ->
     assert api_calls == []
 
 
+def test_backtest_date_overflow_returns_usage_without_research_api(
+    tmp_path: Path,
+) -> None:
+    sent = []
+    api_calls = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 15}})
+        api_calls.append(request.full_url)
+        raise AssertionError(f"unexpected URL: {request.full_url}")
+
+    bot = _bot(tmp_path, requester)
+    bot.handle_update(_update("/backtest 9999-12-31 30"))
+    assert "用法：" in sent[0]
+    assert api_calls == []
+
+
 def test_backtest_summary_includes_daily_pnl_table_from_equity_curve() -> None:
     record = _record()
     report = record["report"]

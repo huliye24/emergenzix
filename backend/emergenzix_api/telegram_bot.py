@@ -582,9 +582,12 @@ class TelegramCommandBot:
         if not 1 <= duration_days <= 30:
             return usage
 
-        end_at = datetime.combine(
-            start_date, datetime_time.min, tzinfo=timezone.utc
-        ) + timedelta(days=duration_days)
+        try:
+            end_at = datetime.combine(
+                start_date, datetime_time.min, tzinfo=timezone.utc
+            ) + timedelta(days=duration_days)
+        except OverflowError:
+            return usage
         if end_at > datetime.now(timezone.utc):
             return "回测区间必须全部位于过去。请检查日期和天数后重试。"
 
