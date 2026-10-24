@@ -465,6 +465,126 @@ def format_saved_comparison(comparison: object, record_ids: list[str]) -> str:
     return "\n".join(lines)
 
 
+_EVIDENCE_CHECK_LABELS = {
+    "pretest_trade_sample": "训练期候选交易样本（至少 2 笔）",
+    "holdout_trade_sample": "测试期交易样本（至少 2 笔）",
+    "positive_holdout_return": "测试期净收益为正",
+    "walk_forward_trade_coverage": "Walk-forward 至少 2 折有交易证据",
+    "walk_forward_positive_folds": "Walk-forward 至少 2 折正收益",
+    "walk_forward_candidate_consistency": "三折选出的候选与最终候选一致",
+    "cost_stress_positive_grid": "九种成本情景均为正且有最低交易样本",
+}
+
+
+def _strict_evidence_number(value: object) -> float | None:
+    """Avoid treating strings, booleans, and non-finite API data as real metrics."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = _finite_number(value)
+    return number
+
+
+def format_saved_evidence(assessment: object, record_id: str) -> str:
+    """Render only a complete, non-authorizing read-only evidence assessment."""
+    invalid = "证据评估响应格式异常，未显示不可信结果；没有运行策略或创建订单。"
+    if not _valid_record_id(record_id) or not isinstance(assessment, dict):
+        return invalid
+    if (
+        assessment.get("record_id") != record_id
+        or not _valid_record_id(assessment.get("record_sha256"))
+        or assessment.get("assessment_version") != "date-range-evidence-v1"
+        or assessment.get("protocol_version") != "btc-date-range-backtest-v4"
+        or assessment.get("automatic_strategy_promotion") is not False
+        or assessment.get("paper_order_permission") is not False
+        or assessment.get("testnet_order_permission") is not False
+        or assessment.get("live_order_permission") is not False
+    ):
+        return invalid
+
+    checks = assessment.get("screening_checks")
+    observations = assessment.get("observations")
+    if (
+        not isinstance(checks, dict)
+        or set(checks) != set(_EVIDENCE_CHECK_LABELS)
+        or any(type(value) is not bool for value in checks.values())
+        or not isinstance(observations, dict)
+    ):
+        return invalid
+
+    measured_counts = (
+        "validation_completed_trades",
+        "holdout_completed_trades",
+        "walk_forward_folds_with_trade_evidence",
+        "walk_forward_positive_folds",
+        "stress_scenarios_positive",
+        "stress_scenarios_total",
+    )
+    if any(
+        type(observations.get(name)) is not int or observations[name] < 0
+        for name in measured_counts
+    ):
+        return invalid
+    if (
+        observations["walk_forward_folds_with_trade_evidence"] > 3
+        or observations["walk_forward_positive_folds"] > 3
+        or observations["stress_scenarios_total"] != 9
+        or observations["stress_scenarios_positive"] > 9
+        or type(observations.get("walk_forward_same_selected_candidate")) is not bool
+    ):
+        return invalid
+
+    holdout_return = _strict_evidence_number(observations.get("holdout_net_return_pct"))
+    worst_stress = _strict_evidence_number(observations.get("worst_stress_net_return_pct"))
+    if holdout_return is None or worst_stress is None:
+        return invalid
+    if (
+        checks["pretest_trade_sample"] != (observations["validation_completed_trades"] >= 2)
+        or checks["holdout_trade_sample"] != (observations["holdout_completed_trades"] >= 2)
+        or checks["positive_holdout_return"] != (holdout_return > 0)
+        or checks["walk_forward_trade_coverage"]
+        != (observations["walk_forward_folds_with_trade_evidence"] >= 2)
+        or checks["walk_forward_positive_folds"]
+        != (observations["walk_forward_positive_folds"] >= 2)
+        or checks["walk_forward_candidate_consistency"]
+        != observations["walk_forward_same_selected_candidate"]
+        or (checks["cost_stress_positive_grid"]
+            and observations["stress_scenarios_positive"] != 9)
+    ):
+        return invalid
+
+    status = assessment.get("screening_status")
+    all_met = all(checks.values())
+    if status != ("checks_met" if all_met else "limited_evidence"):
+        return invalid
+
+    title = "筛查条件全部满足（不代表统计显著）" if all_met else "证据有限（不能判定策略可靠）"
+    lines = [
+        "Emergenzix · 历史策略证据评估",
+        f"记录：{record_id}",
+        f"评估：{title}",
+        f"测试期净收益率：{_percent(holdout_return, signed=True)}",
+        f"训练期/测试期已平仓交易数："
+        f"{observations['validation_completed_trades']}/"
+        f"{observations['holdout_completed_trades']}",
+        f"Walk-forward：{observations['walk_forward_folds_with_trade_evidence']}/3 折有最低交易证据；"
+        f"{observations['walk_forward_positive_folds']}/3 折正收益",
+        f"交易成本压力测试：{observations['stress_scenarios_positive']}/9 情景正收益；"
+        f"最差净收益率 {_percent(worst_stress, signed=True)}",
+        "",
+        "七项证据筛查（启发式，不是统计检验）：",
+    ]
+    lines.extend(
+        ("✓ " if checks[key] else "✗ ") + label
+        for key, label in _EVIDENCE_CHECK_LABELS.items()
+    )
+    lines.extend([
+        "",
+        "注意：最低 2 笔交易不足以证明统计显著性；历史正收益并不代表未来获利。",
+        "本评估不会晋级策略，也不授权 PAPER、TESTNET 或 LIVE 下单。",
+    ])
+    return "\n".join(lines)
+
+
 class TelegramCommandBot:
     """Poll Telegram updates and expose a small, allowlisted research command set."""
 
@@ -647,6 +767,7 @@ class TelegramCommandBot:
             "/history — 查看最近 5 条已保存回测及完整记录 ID\n"
             "/report RECORD_ID — 按完整记录 ID 查看历史报告\n"
             "/compare ID1 ID2 — 对比两条已保存的历史回测\n"
+            "/evidence RECORD_ID — 查看历史回测的七项证据筛查\n"
             "/backtest YYYY-MM-DD [days] — 回测历史区间，days 默认为 7，范围 1–30 天\n"
             "/help — 查看此说明\n\n"
             "回测固定使用 90 天训练窗口、10 bps 单边手续费和 5 bps 单边滑点。"
@@ -787,6 +908,23 @@ class TelegramCommandBot:
             return f"比较历史回测失败：{_one_line(exc)}\n没有运行策略或创建订单。"
         return format_saved_comparison(comparison, arguments)
 
+    def _evidence_text(self, arguments: list[str]) -> str:
+        usage = "用法：/evidence RECORD_ID（使用 /history 获取完整的 64 位记录 ID）"
+        if len(arguments) != 1 or not _valid_record_id(arguments[0]):
+            return usage
+        try:
+            assessment = self._api_request(
+                "GET",
+                f"/api/v1/research/date-range-backtests/{arguments[0]}/evidence",
+            )
+        except ApiRequestError:
+            # Avoid echoing API paths, untrusted error details, or credentials in chat.
+            return (
+                "证据评估查询失败：记录可能不存在、版本不受支持，或 API 不可用。"
+                "请检查 /history 和内部服务；没有执行任何交易。"
+            )
+        return format_saved_evidence(assessment, arguments[0])
+
     def _backtest_text(self, arguments: list[str], *, chat_id: str | None = None) -> str:
         usage = "用法：/backtest YYYY-MM-DD [days]（days 为 1–30，默认 7）"
         if len(arguments) not in {1, 2}:
@@ -894,6 +1032,8 @@ class TelegramCommandBot:
             reply = self._report_text(arguments)
         elif command == "/compare":
             reply = self._compare_text(arguments)
+        elif command == "/evidence":
+            reply = self._evidence_text(arguments)
         elif command == "/backtest":
             reply = self._backtest_text(arguments, chat_id=chat_id)
         else:

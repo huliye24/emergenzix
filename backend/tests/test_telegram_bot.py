@@ -242,6 +242,7 @@ def test_help_command_sends_usage_to_authorized_chat(tmp_path: Path) -> None:
     assert "/history" in sent[0]["text"]
     assert "/report RECORD_ID" in sent[0]["text"]
     assert "/compare ID1 ID2" in sent[0]["text"]
+    assert "/evidence RECORD_ID" in sent[0]["text"]
     assert "/backtest YYYY-MM-DD [days]" in sent[0]["text"]
     assert "不会创建订单" in sent[0]["text"]
 
@@ -754,6 +755,149 @@ def test_compare_unauthorized_chat_is_silent(tmp_path: Path) -> None:
     _bot(tmp_path, requester).handle_update(
         _update("/compare " + "a" * 64 + " " + "b" * 64, chat_id=99999)
     )
+
+
+def _evidence_fixture(record_id: str = "a" * 64, *, all_met: bool = False):
+    checks = {
+        "pretest_trade_sample": True,
+        "holdout_trade_sample": all_met,
+        "positive_holdout_return": True,
+        "walk_forward_trade_coverage": True,
+        "walk_forward_positive_folds": True,
+        "walk_forward_candidate_consistency": True,
+        "cost_stress_positive_grid": all_met,
+    }
+    return {
+        "record_id": record_id,
+        "record_sha256": "b" * 64,
+        "assessment_version": "date-range-evidence-v1",
+        "protocol_version": "btc-date-range-backtest-v4",
+        "screening_status": "checks_met" if all_met else "limited_evidence",
+        "screening_checks": checks,
+        "observations": {
+            "validation_completed_trades": 3,
+            "holdout_completed_trades": 3 if all_met else 1,
+            "holdout_net_return_pct": 0.5074,
+            "walk_forward_folds_with_trade_evidence": 2,
+            "walk_forward_positive_folds": 3,
+            "walk_forward_same_selected_candidate": True,
+            "stress_scenarios_positive": 9 if all_met else 7,
+            "stress_scenarios_total": 9,
+            "worst_stress_net_return_pct": 0.1 if all_met else -0.2,
+        },
+        "automatic_strategy_promotion": False,
+        "paper_order_permission": False,
+        "testnet_order_permission": False,
+        "live_order_permission": False,
+        "limitations": ["Sample size is only a screening heuristic."],
+    }
+
+
+@pytest.mark.parametrize("all_met", [False, True])
+def test_evidence_command_reads_only_saved_report_and_shows_seven_checks(
+    tmp_path: Path, all_met: bool
+) -> None:
+    sent, calls = [], []
+    record_id = "a" * 64
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith(
+            "/api/v1/research/date-range-backtests/" + record_id + "/evidence"
+        ):
+            calls.append(request.get_method())
+            return FakeResponse(_evidence_fixture(all_met=all_met))
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 51}})
+        raise AssertionError("Unexpected endpoint or prohibited write")
+
+    bot = _bot(tmp_path, requester)
+    before = dict(bot.state)
+    bot.handle_update(_update("/evidence " + record_id))
+    assert calls == ["GET"]
+    assert bot.state == before
+    assert len(sent) == 1
+    assert sent[0].count("✓ ") + sent[0].count("✗ ") == 7
+    assert "测试期净收益率：+0.5074%" in sent[0]
+    assert "不授权 PAPER、TESTNET 或 LIVE 下单" in sent[0]
+    if all_met:
+        assert "筛查条件全部满足" in sent[0]
+        assert "统计显著" in sent[0]
+    else:
+        assert "证据有限" in sent[0]
+        assert "✗ 测试期交易样本" in sent[0]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/evidence",
+        "/evidence a",
+        "/evidence " + "A" * 64,
+        "/evidence " + "a" * 63 + ".",
+        "/evidence " + "a" * 64 + " extra",
+    ],
+)
+def test_evidence_invalid_id_does_not_call_api(tmp_path: Path, command: str) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 52}})
+        raise AssertionError("Invalid command called research API")
+
+    _bot(tmp_path, requester).handle_update(_update(command))
+    assert len(sent) == 1
+    assert "用法：/evidence" in sent[0]
+
+
+@pytest.mark.parametrize("tamper", ["permissions", "identity", "status", "flags", "metrics"])
+def test_evidence_invalid_api_response_fails_closed(tmp_path: Path, tamper: str) -> None:
+    from emergenzix_api.telegram_bot import format_saved_evidence
+
+    response = _evidence_fixture()
+    if tamper == "permissions":
+        response["live_order_permission"] = True
+    elif tamper == "identity":
+        response["record_id"] = "c" * 64
+    elif tamper == "status":
+        response["screening_status"] = "checks_met"
+    elif tamper == "flags":
+        del response["screening_checks"]["pretest_trade_sample"]
+    else:
+        response["observations"]["holdout_net_return_pct"] = "N/A"
+
+    text = format_saved_evidence(response, "a" * 64)
+    assert "响应格式异常" in text
+    assert "测试期净收益率" not in text
+
+
+def test_evidence_api_error_redacted_and_no_retry(tmp_path: Path) -> None:
+    sent, attempts = [], []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 53}})
+        attempts.append(request.full_url)
+        raise urllib.error.URLError("secret 12345:secret-token internal-service")
+
+    _bot(tmp_path, requester).handle_update(_update("/evidence " + "a" * 64))
+    assert len(attempts) == 1
+    assert "证据评估查询失败" in sent[0]
+    assert "secret" not in sent[0]
+    assert "internal-service" not in sent[0]
+
+
+def test_evidence_command_rejects_unauthorized_chat_silently(tmp_path: Path) -> None:
+    def requester(request, *, timeout):
+        raise AssertionError("Unauthorized access generated network request")
+
+    _bot(tmp_path, requester).handle_update(
+        _update("/evidence " + "a" * 64, chat_id=99999)
+    )
+
 
 def test_poll_once_discards_stale_updates_then_persists_offset(tmp_path: Path) -> None:
     state_path = tmp_path / "telegram-state.json"
