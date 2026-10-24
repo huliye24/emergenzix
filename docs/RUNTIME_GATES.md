@@ -34,3 +34,12 @@ The Docker Compose watcher requires Telegram configuration by default. Set both 
 When Telegram is configured, the watcher sends a PAPER-only startup message before polling market data. If the configuration is incomplete or Telegram rejects/fails the startup delivery, the process emits a sanitized structured error to stdout and exits without starting the market watcher. Docker restart policy can retry the process; it will not bypass this check.
 
 This startup gate confirms one real message can be delivered at startup. It does not yet provide a durable notification outbox for transient failures after startup; delivery retries and recovery of missed event notifications remain a separate task.
+
+
+## Durable Telegram notification outbox
+
+The watcher writes each Telegram notification to a separate SQLite outbox on the persistent `/data` volume before attempting delivery. Queue records retain the structured event and optional chart image across process restarts. A stable event key deduplicates reprocessing of the same completed candle; event keys use the completed-candle timestamp when available.
+
+Successful sends are marked delivered. Failures remain pending and are retried with exponential backoff (30 seconds up to one hour); after eight failed attempts, a record is marked dead and retained for inspection rather than silently deleted. Error logs record exception types only and do not include the bot token or Telegram response body.
+
+The watcher enqueues emitted events before saving its updated watcher state, reducing the crash window in which an event could be skipped. This is a single-consumer, SQLite-backed first version; it does not yet provide an operator UI for dead-letter replay or a multi-worker claim lease.
