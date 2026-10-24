@@ -17,6 +17,8 @@ from .config import Settings
 from .dataset_quality import build_dataset_quality_report
 from .database import Database
 from .historical_replay_api import router as historical_replay_router
+from .historical_data_api import router as historical_data_router
+from .dataset_store import persist_dataset
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
 from .scenarios import analyze_scenarios
@@ -137,6 +139,7 @@ def create_app(
         version=__version__,
     )
     app.include_router(historical_replay_router)
+    app.include_router(historical_data_router)
     app.state.database = database
     app.state.market_data_cache = TTLCache(
         ttl_seconds=settings.market_data_cache_ttl_seconds,
@@ -205,70 +208,11 @@ def create_app(
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-        canonical_bars = [
-            {
-                "timestamp": bar.timestamp.astimezone(timezone.utc)
-                .isoformat(timespec="microseconds")
-                .replace("+00:00", "Z"),
-                "open": float(bar.open),
-                "high": float(bar.high),
-                "low": float(bar.low),
-                "close": float(bar.close),
-                "volume": float(bar.volume),
-            }
-            for bar in payload.bars
-        ]
-        canonical_payload = {
-            "source": payload.source,
-            "exchange": payload.exchange,
-            "symbol": dataset_symbol,
-            "timeframe": payload.timeframe,
-            "bars": canonical_bars,
-        }
-        canonical_json = json.dumps(
-            canonical_payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=True,
-            allow_nan=False,
+        row, inserted = persist_dataset(
+            db, payload, symbol=dataset_symbol
         )
-        dataset_id = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
-        bars_json = json.dumps(
-            canonical_bars,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=True,
-            allow_nan=False,
-        )
-        created_at = _now()
-
-        with db.connection() as connection:
-            inserted = connection.execute(
-                """
-                INSERT OR IGNORE INTO market_datasets
-                    (id, content_sha256, source, exchange, symbol, timeframe,
-                     start_at, end_at, bars_count, bars_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    dataset_id,
-                    dataset_id,
-                    payload.source,
-                    payload.exchange,
-                    dataset_symbol,
-                    payload.timeframe,
-                    canonical_bars[0]["timestamp"],
-                    canonical_bars[-1]["timestamp"],
-                    len(canonical_bars),
-                    bars_json,
-                    created_at,
-                ),
-            )
-            if inserted.rowcount == 0:
-                response.status_code = status.HTTP_200_OK
-            row = connection.execute(
-                "SELECT * FROM market_datasets WHERE id = ?", (dataset_id,)
-            ).fetchone()
+        if not inserted:
+            response.status_code = status.HTTP_200_OK
         return _dataset_to_dict(row)
 
     @app.get("/api/v1/datasets")
