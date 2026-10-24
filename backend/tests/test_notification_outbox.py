@@ -108,3 +108,37 @@ def test_delivered_notification_is_not_sent_twice(tmp_path: Path) -> None:
     assert first.status == "delivered"
     assert second.status == "delivered"
     assert len(notifier.events) == 1
+
+
+def test_summary_reports_retrying_due_dead_and_last_success(tmp_path: Path) -> None:
+    now = datetime(2026, 10, 24, 4, tzinfo=timezone.utc)
+    outbox = NotificationOutbox(
+        tmp_path / "outbox.sqlite3",
+        retry_base_seconds=30,
+        retry_max_seconds=60,
+        max_attempts=2,
+    )
+    failed_id = outbox.enqueue(_event())
+    failed = outbox.deliver_one(FailingNotifier(), failed_id, now=now, force=True)
+    assert failed.status == "pending"
+
+    distinct_event = replace(
+        _event(),
+        message="A second event was delivered.",
+        details={"scenario": "reversal_up", "bar_timestamp": "2026-10-24T04:00:00+00:00"},
+    )
+    delivered_id = outbox.enqueue(distinct_event)
+    delivered = outbox.deliver_one(
+        RecordingNotifier(), delivered_id, now=now, force=True
+    )
+    assert delivered.status == "delivered"
+
+    summary = outbox.summary(now=now + timedelta(seconds=31))
+    assert summary["total"] == 2
+    assert summary["pending"] == 1
+    assert summary["retrying"] == 1
+    assert summary["due"] == 1
+    assert summary["delivered"] == 1
+    assert summary["dead"] == 0
+    assert summary["last_successful_delivery_at"] == now.isoformat()
+    assert summary["last_error_type"] == "RuntimeError"
