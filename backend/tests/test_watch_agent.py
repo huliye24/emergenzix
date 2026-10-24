@@ -148,3 +148,32 @@ def test_telegram_startup_success_sends_paper_only_message(
     assert len(sent) == 1
     assert sent[0].event_type == "watcher_startup"
     assert sent[0].details["live_trading_enabled"] is False
+
+
+def test_run_once_does_not_advance_state_when_event_persistence_fails(
+    tmp_path: Path
+) -> None:
+    now = datetime(2026, 10, 24, 4, tzinfo=timezone.utc)
+    payload = _payload([100 + (i % 3) for i in range(31)], now)
+    state_path = tmp_path / "watch.json"
+
+    def fetcher(**_kwargs):
+        return payload
+
+    def failing_observer(_event, _bars):
+        raise RuntimeError("outbox unavailable")
+
+    with pytest.raises(RuntimeError, match="outbox unavailable"):
+        run_once(
+            exchange="binance",
+            symbol="BTCUSDT",
+            timeframe="4h",
+            limit=200,
+            lookback=20,
+            state_path=state_path,
+            fetcher=fetcher,
+            now=now,
+            observer=failing_observer,
+        )
+
+    assert not state_path.exists()
