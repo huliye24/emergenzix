@@ -271,6 +271,7 @@ def _candidate_selection_lines(selection: dict[str, Any]) -> list[str]:
         *rows,
     ]
 
+
 def format_backtest_record(record: object) -> str:
     """Render the useful summary from a persisted date-range backtest record."""
     if not isinstance(record, dict):
