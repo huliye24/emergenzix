@@ -70,6 +70,7 @@ def test_notification_status_reports_aggregate_outbox_metrics(client):
     assert response.json()["status"] == "ok"
     assert response.json()["metrics"]["total"] == 1
     assert response.json()["metrics"]["pending"] == 1
+    assert response.json()["metrics"]["failed_attempts"] == 0
     assert response.json()["metrics"]["delivered"] == 0
     assert response.json()["metrics"]["dead"] == 0
     assert "event_json" not in response.text
