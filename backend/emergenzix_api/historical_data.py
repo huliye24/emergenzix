@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import math
 import re
 import zipfile
 from datetime import date, datetime, timedelta, timezone
@@ -105,7 +106,7 @@ def _parse_kline_archive(
                         continue
 
                     values = (open_price, high, low, close, volume)
-                    if not all(__import__("math").isfinite(value) for value in values):
+                    if not all(math.isfinite(value) for value in values):
                         continue
                     if min(open_price, high, low, close) <= 0 or volume < 0:
                         continue
