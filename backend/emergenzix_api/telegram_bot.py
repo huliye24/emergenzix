@@ -48,6 +48,98 @@ def _percent(value: object, *, signed: bool = False) -> str:
     return f"{number:+.4f}%" if signed else f"{number:.4f}%"
 
 
+def _daily_pnl_lines(period: dict[str, Any], metrics: dict[str, Any]) -> list[str]:
+    """Build a UTC daily PnL table from a complete 4-hour holdout equity curve."""
+    start_text = period.get("test_start_at")
+    end_text = period.get("test_end_at_exclusive")
+    curve = metrics.get("equity_curve")
+    if not isinstance(start_text, str) or not isinstance(end_text, str):
+        return []
+    if not isinstance(curve, list):
+        return []
+
+    try:
+        start_at = datetime.fromisoformat(start_text.replace("Z", "+00:00"))
+        end_exclusive = datetime.fromisoformat(end_text.replace("Z", "+00:00"))
+        if start_at.tzinfo is None or end_exclusive.tzinfo is None:
+            return []
+        start_at = start_at.astimezone(timezone.utc)
+        end_exclusive = end_exclusive.astimezone(timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        return []
+
+    duration = (end_exclusive - start_at).total_seconds() / 86400
+    if (
+        start_at.hour != 0
+        or start_at.minute != 0
+        or start_at.second != 0
+        or duration != int(duration)
+        or not 1 <= int(duration) <= 30
+    ):
+        return []
+
+    points: list[tuple[datetime, float]] = []
+    for item in curve:
+        if not isinstance(item, dict):
+            return []
+        timestamp = item.get("timestamp")
+        equity = _finite_number(item.get("equity"))
+        if not isinstance(timestamp, str) or equity is None:
+            return []
+        try:
+            parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except (TypeError, ValueError, OverflowError):
+            return []
+        if parsed.tzinfo is None:
+            return []
+        points.append((parsed.astimezone(timezone.utc), equity))
+
+    points.sort(key=lambda item: item[0])
+    timestamps = [point[0] for point in points]
+    if not points or len(timestamps) != len(set(timestamps)):
+        return []
+
+    rows: list[str] = []
+    for day_index in range(int(duration)):
+        day_start = start_at + timedelta(days=day_index)
+        day_end = day_start + timedelta(days=1)
+        day_points = [
+            point for point in points if day_start <= point[0] < day_end
+        ]
+        prior_points = [point for point in points if point[0] < day_start]
+        # The engine records six 4-hour equity marks per test day plus the
+        # immediately preceding mark. Reject incomplete curves rather than
+        # presenting a misleading daily return.
+        if (
+            len(day_points) != 6
+            or not prior_points
+            or prior_points[-1][0] != day_start - timedelta(hours=4)
+            or day_points[-1][0] != day_start + timedelta(hours=20)
+        ):
+            return []
+        opening_equity = prior_points[-1][1]
+        closing_equity = day_points[-1][1]
+        daily_pnl = closing_equity - opening_equity
+        daily_return = (
+            daily_pnl / opening_equity * 100.0 if opening_equity > 0 else None
+        )
+        daily_return_text = (
+            "N/A" if daily_return is None else f"{daily_return:+.4f}%"
+        )
+        rows.append(
+            f"{day_start.date().isoformat()} | {_money(daily_pnl)} | "
+            f"{daily_return_text} | {closing_equity:,.2f} USDT"
+        )
+
+    if not rows:
+        return []
+    return [
+        "每日收益明细（UTC；由 4 小时权益曲线计算）",
+        "日期 | 净盈亏 | 日收益率 | 日终权益",
+        *rows,
+    ]
+
+
 def format_backtest_record(record: object) -> str:
     """Render the useful summary from a persisted date-range backtest record."""
     if not isinstance(record, dict):
@@ -99,9 +191,14 @@ def format_backtest_record(record: object) -> str:
         f"已平仓交易：{metrics.get('number_of_trades', 'N/A')}",
         f"胜率：{_percent(metrics.get('win_rate_pct'))}",
         f"策略选择证据：{selection_status}",
+    ]
+    daily_lines = _daily_pnl_lines(period, metrics)
+    if daily_lines:
+        lines.extend(["", *daily_lines])
+    lines.extend([
         f"记录 ID：{record_id[:16]}",
         "安全：仅历史 PAPER 模拟，没有创建任何订单；历史结果不代表未来收益。",
-    ]
+    ])
     return "\n".join(lines)
 
 

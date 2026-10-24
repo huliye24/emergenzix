@@ -231,6 +231,54 @@ def test_invalid_backtest_duration_does_not_call_research_api(tmp_path: Path) ->
     assert api_calls == []
 
 
+def test_backtest_summary_includes_daily_pnl_table_from_equity_curve() -> None:
+    record = _record()
+    report = record["report"]
+    report["period"]["test_start_at"] = "2025-10-21T00:00:00Z"
+    report["period"]["test_end_at_exclusive"] = "2025-10-23T00:00:00Z"
+    report["period"]["duration_days"] = 2
+    curve = [
+        {"timestamp": "2025-10-20T20:00:00Z", "equity": 10_000.0},
+        {"timestamp": "2025-10-21T00:00:00Z", "equity": 10_010.0},
+        {"timestamp": "2025-10-21T04:00:00Z", "equity": 10_020.0},
+        {"timestamp": "2025-10-21T08:00:00Z", "equity": 10_030.0},
+        {"timestamp": "2025-10-21T12:00:00Z", "equity": 10_040.0},
+        {"timestamp": "2025-10-21T16:00:00Z", "equity": 10_050.0},
+        {"timestamp": "2025-10-21T20:00:00Z", "equity": 10_100.0},
+        {"timestamp": "2025-10-22T00:00:00Z", "equity": 10_090.0},
+        {"timestamp": "2025-10-22T04:00:00Z", "equity": 10_080.0},
+        {"timestamp": "2025-10-22T08:00:00Z", "equity": 10_070.0},
+        {"timestamp": "2025-10-22T12:00:00Z", "equity": 10_060.0},
+        {"timestamp": "2025-10-22T16:00:00Z", "equity": 10_055.0},
+        {"timestamp": "2025-10-22T20:00:00Z", "equity": 10_050.0},
+    ]
+    report["test_result"]["equity_curve"] = curve
+
+    from emergenzix_api.telegram_bot import format_backtest_record
+
+    text = format_backtest_record(record)
+    assert "每日收益明细（UTC；由 4 小时权益曲线计算）" in text
+    assert "2025-10-21 | +100.00 USDT | +1.0000% | 10,100.00 USDT" in text
+    assert "2025-10-22 | -50.00 USDT | -0.4950% | 10,050.00 USDT" in text
+
+
+def test_incomplete_equity_curve_does_not_emit_daily_table() -> None:
+    record = _record()
+    report = record["report"]
+    report["period"]["test_start_at"] = "2025-10-21T00:00:00Z"
+    report["period"]["test_end_at_exclusive"] = "2025-10-22T00:00:00Z"
+    report["test_result"]["equity_curve"] = [
+        {"timestamp": "2025-10-20T20:00:00Z", "equity": 10_000.0},
+        {"timestamp": "2025-10-21T20:00:00Z", "equity": 10_100.0},
+    ]
+
+    from emergenzix_api.telegram_bot import format_backtest_record
+
+    text = format_backtest_record(record)
+    assert "每日收益明细" not in text
+    assert "净盈亏：+50.74 USDT" in text
+
+
 def test_latest_returns_most_recent_saved_record(tmp_path: Path) -> None:
     sent = []
 
