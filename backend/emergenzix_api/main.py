@@ -214,6 +214,7 @@ def create_app(
             "pending": 0,
             "retrying": 0,
             "due": 0,
+            "failed_attempts": 0,
             "delivered": 0,
             "dead": 0,
             "oldest_pending_at": None,
