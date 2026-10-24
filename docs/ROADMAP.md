@@ -19,6 +19,8 @@ This roadmap separates product readiness from research progress. Stages are gate
 
 **Goal:** establish a runnable, testable product core without live trading.
 
+- [x] Add a deterministic point-in-time historical replay primitive that hides all post-anchor candles during scenario analysis and reveals them only for outcome scoring.
+
 - [x] Add a FastAPI backend, SQLite development persistence, and environment configuration.
 - [x] Add health and overview endpoints.
 - [x] Add strategy creation/listing and a first deterministic backtest implementation.
