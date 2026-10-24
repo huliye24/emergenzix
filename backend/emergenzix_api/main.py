@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 from . import __version__
 from .backtesting import run_sma_crossover
 from .config import Settings
+from .dataset_quality import build_dataset_quality_report
 from .database import Database
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .schemas import Bar, BacktestCreate, DatasetCreate, PaperOrderCreate, StrategyCreate
@@ -225,6 +226,24 @@ def create_app(
         if row is None:
             raise HTTPException(status_code=404, detail="Dataset not found")
         return _dataset_to_dict(row, include_bars=True)
+
+    @app.get("/api/v1/datasets/{dataset_id}/quality")
+    def get_dataset_quality(dataset_id: str, request: Request) -> dict[str, Any]:
+        """Return read-only interval-gap, coverage, and freshness diagnostics."""
+        db: Database = request.app.state.database
+        with db.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM market_datasets WHERE id = ?", (dataset_id,)
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+        return build_dataset_quality_report(
+            dataset_id=row["id"],
+            sha256=row["content_sha256"],
+            symbol=row["symbol"],
+            timeframe=row["timeframe"],
+            bars_json=row["bars_json"],
+        )
 
     @app.get("/api/v1/overview")
     def overview(request: Request) -> dict[str, Any]:

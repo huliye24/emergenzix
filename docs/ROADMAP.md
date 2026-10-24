@@ -43,7 +43,8 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [x] Persist source, exchange, symbol, and timeframe metadata with backtest results.
 - [x] Add content-addressed immutable OHLCV dataset registration and retrieval with canonical SHA-256 identifiers.
 - [x] Allow backtests to consume a registered dataset ID and persist the exact dataset fingerprint and range in result provenance (implementation added; verification pending).
-- [ ] Add market-data caching, freshness/completeness checks, and gap detection.
+- [ ] Add market-data caching and broader completeness checks.
+- [ ] Add a dataset quality report for interval gaps, irregular timestamps, coverage, and freshness diagnostics (implementation in PR; verification pending).
 - [ ] Store versioned strategy parameters and input-data references.
 - [ ] Display assumptions, transaction costs, drawdown, and data coverage.
 - [ ] Separate training/in-sample and validation/out-of-sample results.
