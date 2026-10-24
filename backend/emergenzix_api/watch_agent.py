@@ -144,13 +144,55 @@ def run_once(
     return events
 
 
+class NotificationQueuePersistenceError(RuntimeError):
+    """Raised when a watch event cannot be durably recorded."""
+
+
+def _flush_outbox(outbox: Any, notifier: Any) -> None:
+    """Retry due messages on every watcher cycle, even when no new event occurs."""
+    try:
+        results = outbox.deliver_pending(notifier)
+    except Exception as exc:
+        print(
+            json.dumps(
+                {
+                    "event_type": "notification_queue_failed",
+                    "severity": "error",
+                    "channel": "telegram",
+                    "error_type": type(exc).__name__,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        return
+
+    for result in results:
+        if result.status in {"pending", "dead"} and result.error_type:
+            print(
+                json.dumps(
+                    {
+                        "event_type": "notification_delivery_failed",
+                        "severity": "error",
+                        "channel": "telegram",
+                        "notification_id": result.notification_id,
+                        "attempts": result.attempts,
+                        "status": result.status,
+                        "error_type": result.error_type,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+
+
 def _emit(
     event: WatchEvent,
     notifier: Any | None = None,
     bars: Sequence[Bar] = (),
     outbox: Any | None = None,
 ) -> None:
-    """Log an event and durably queue Telegram delivery before attempting it."""
+    """Log an event and durably queue Telegram delivery before advancing state."""
     print(json.dumps(asdict(event), sort_keys=True, ensure_ascii=False), flush=True)
     if notifier is None:
         return
@@ -195,26 +237,7 @@ def _emit(
 
     try:
         outbox.enqueue(event, image=image)
-        results = outbox.deliver_pending(notifier)
-        for result in results:
-            if result.status in {"pending", "dead"} and result.error_type:
-                print(
-                    json.dumps(
-                        {
-                            "event_type": "notification_delivery_failed",
-                            "severity": "error",
-                            "channel": "telegram",
-                            "notification_id": result.notification_id,
-                            "attempts": result.attempts,
-                            "status": result.status,
-                            "error_type": result.error_type,
-                        },
-                        sort_keys=True,
-                    ),
-                    flush=True,
-                )
     except Exception as exc:
-        # Never fall back to a direct send if persistence itself failed.
         print(
             json.dumps(
                 {
@@ -227,6 +250,11 @@ def _emit(
             ),
             flush=True,
         )
+        # run_once calls observers before saving state. Propagating here means the
+        # same candle is evaluated again after recovery instead of silently skipped.
+        raise NotificationQueuePersistenceError(
+            "notification event could not be persisted"
+        ) from exc
 
 
 def _arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -318,9 +346,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 observer=lambda event, bars: _emit(event, notifier, bars, outbox),
             )
         except Exception as exc:  # process boundary: report and retry without trading
-            _emit(WatchEvent("risk_alert", "error", _utc_now().isoformat(), args.exchange, args.symbol, args.timeframe, "Watch cycle failed; no trading action was taken.", {"error_type": type(exc).__name__, "error": str(exc)}), notifier, outbox=outbox)
+            try:
+                _emit(
+                    WatchEvent(
+                        "risk_alert", "error", _utc_now().isoformat(),
+                        args.exchange, args.symbol, args.timeframe,
+                        "Watch cycle failed; no trading action was taken.",
+                        {"error_type": type(exc).__name__},
+                    ),
+                    notifier,
+                    outbox=outbox,
+                )
+            except NotificationQueuePersistenceError:
+                # The original failure is already logged; do not recurse if the
+                # queue itself is unavailable. Docker restart policy remains active.
+                pass
             if args.once:
                 return 1
+        if notifier is not None and outbox is not None:
+            _flush_outbox(outbox, notifier)
         if args.once:
             return 0
         time.sleep(args.interval)
