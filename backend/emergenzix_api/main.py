@@ -20,6 +20,7 @@ from .date_range_backtest_api import router as date_range_backtest_router
 from .backtest_read_api import router as backtest_read_router
 from .dataset_api import router as dataset_router
 from .research_batch_plan_api import router as research_batch_plan_router
+from .date_range_comparison_api import router as date_range_comparison_router
 from .historical_replay_api import router as historical_replay_router
 from .historical_data_api import router as historical_data_router
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
@@ -77,6 +78,7 @@ def create_app(
     app.include_router(dataset_router)
     app.include_router(strategy_router)
     app.include_router(backtest_read_router)
+    app.include_router(date_range_comparison_router)
     app.state.database = database
     app.state.notification_outbox_path = str(
         notification_db_path

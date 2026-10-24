@@ -159,3 +159,113 @@ def test_compare_cli_prints_table_and_writes_csv_without_mutating_db(
     assert len(csv_text.splitlines()) == 3
     assert "dataset_sha256" in csv_text
     assert "btc-date-range-backtest-v4" in csv_text
+
+
+# API contract for saved research observations. These calls must never rerun the backtest.
+from fastapi.testclient import TestClient
+
+from emergenzix_api.main import create_app
+
+
+_COMPARISON_API = "/api/v1/research/date-range-comparisons"
+
+
+def _client_for_records(tmp_path: Path, *records: tuple[dict[str, object], str]) -> TestClient:
+    db_path = _database(tmp_path, *records)
+    return TestClient(
+        create_app(
+            db_path=db_path,
+            notification_db_path=tmp_path / "notification-outbox.sqlite3",
+        )
+    )
+
+
+def test_comparison_api_preserves_id_order_and_stays_read_only(tmp_path: Path) -> None:
+    first = _record("a" * 64)
+    second = _record("b" * 64, start_at="2025-11-01T00:00:00Z", fee_bps=20)
+    client = _client_for_records(tmp_path, first, second)
+    path = tmp_path / "comparison.db"
+    with sqlite3.connect(path) as connection:
+        before = connection.execute(
+            "SELECT id, record_json, record_sha256 FROM date_range_backtest_records ORDER BY id"
+        ).fetchall()
+
+    response = client.get(
+        _COMPARISON_API,
+        params=[("record_ids", "b" * 64), ("record_ids", "a" * 64)],
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert [item["record_id"] for item in result["observations"]] == [
+        "b" * 64,
+        "a" * 64,
+    ]
+    assert result["comparison_type"] == "independent_saved_observations"
+    assert result["controlled_head_to_head"] is False
+    assert result["automatic_winner_selection"] is False
+    assert result["different_test_periods"] is True
+    assert result["different_cost_assumptions"] is True
+    assert result["observations"][0]["dataset_sha256"] == "d" * 64
+    with sqlite3.connect(path) as connection:
+        after = connection.execute(
+            "SELECT id, record_json, record_sha256 FROM date_range_backtest_records ORDER BY id"
+        ).fetchall()
+    assert after == before
+    assert client.post(_COMPARISON_API, json={"record_ids": ["a" * 64, "b" * 64]}).status_code == 405
+
+
+@pytest.mark.parametrize(
+    "record_ids",
+    [
+        ["a" * 64],
+        ["a" * 64, "a" * 64],
+        ["a" * 64, "B" * 64],
+        ["a" * 64, "../etc/passwd"],
+        ["a" * 64, "b" * 64] * 6,
+    ],
+)
+def test_comparison_api_rejects_invalid_inputs_without_disclosing_records(
+    tmp_path: Path, record_ids: list[str]
+) -> None:
+    client = _client_for_records(tmp_path, _record("a" * 64), _record("b" * 64))
+    response = client.get(
+        _COMPARISON_API,
+        params=[("record_ids", record_id) for record_id in record_ids],
+    )
+    assert response.status_code == 422
+    assert "record_json" not in response.text
+
+
+def test_comparison_api_missing_id_returns_404(tmp_path: Path) -> None:
+    client = _client_for_records(tmp_path, _record("a" * 64))
+    response = client.get(
+        _COMPARISON_API,
+        params=[("record_ids", "a" * 64), ("record_ids", "f" * 64)],
+    )
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "One or more saved backtest records were not found"
+    }
+
+
+@pytest.mark.parametrize(
+    "damaged",
+    [
+        _record("b" * 64, corrupt=True),
+        _record("b" * 64, unsupported=True),
+    ],
+)
+def test_comparison_api_fails_closed_for_bad_records(
+    tmp_path: Path, damaged: tuple[dict[str, object], str]
+) -> None:
+    client = _client_for_records(tmp_path, _record("a" * 64), damaged)
+    response = client.get(
+        _COMPARISON_API,
+        params=[("record_ids", "a" * 64), ("record_ids", "b" * 64)],
+    )
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Saved backtest records failed integrity or protocol validation"
+    }
+    assert "record_json" not in response.text
