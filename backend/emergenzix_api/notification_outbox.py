@@ -37,9 +37,10 @@ class NotificationOutbox:
             raise ValueError("retry intervals must be positive and max >= base")
         if max_attempts < 1:
             raise ValueError("max_attempts must be at least 1")
-        self.path = str(path)
-        if self.path == ":memory:":
+        raw_path = str(path)
+        if raw_path == ":memory:":
             raise ValueError("notification outbox requires a persistent SQLite file path")
+        self.path = str(Path(raw_path).expanduser())
         self.retry_base_seconds = retry_base_seconds
         self.retry_max_seconds = retry_max_seconds
         self.max_attempts = max_attempts
