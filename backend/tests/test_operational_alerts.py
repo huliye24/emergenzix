@@ -8,6 +8,7 @@ import pytest
 from emergenzix_api.operational_alerts import (
     OperationalAlertMonitor,
     notification_health_conditions,
+    watch_cycle_failure_condition,
 )
 
 
@@ -91,3 +92,29 @@ def test_failed_enqueue_retries_same_transition_after_restart(tmp_path: Path) ->
         + ":active"
     )
     assert retried[0].occurred_at == first_time.isoformat()
+
+
+
+def test_watcher_cycle_failure_alert_is_deduplicated_and_recovers_after_restart(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "ops-state.json"
+    failure = {"watch_cycle_failure": watch_cycle_failure_condition("TimeoutError")}
+    emitted = []
+    now = datetime(2026, 10, 24, 4, tzinfo=timezone.utc)
+
+    OperationalAlertMonitor(path).reconcile(
+        failure, emit=emitted.append, now=now
+    )
+    OperationalAlertMonitor(path).reconcile(
+        failure, emit=emitted.append, now=now + timedelta(minutes=5)
+    )
+    assert [item.transition for item in emitted] == ["active"]
+    assert emitted[0].severity == "error"
+    assert emitted[0].details["error_type"] == "TimeoutError"
+
+    OperationalAlertMonitor(path).reconcile(
+        {}, emit=emitted.append, now=now + timedelta(minutes=10)
+    )
+    assert [item.transition for item in emitted] == ["active", "recovered"]
+    assert emitted[1].message == "行情监控周期已恢复，监控已重新运行。"
