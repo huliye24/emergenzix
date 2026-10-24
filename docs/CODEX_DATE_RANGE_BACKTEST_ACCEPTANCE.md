@@ -76,4 +76,4 @@ Acceptance criteria:
 
 ## Known scope limits
 
-Version 1 is BTC/USDT spot, 4-hour candles, long-only SMA crossover candidates. It does not model futures shorts, funding, leverage, liquidation, hedging, market impact beyond the configured slippage estimate, or guarantee profitability. A successful historical run is research evidence only and does not promote a strategy to paper execution or LIVE.
+The current protocol is BTC/USDT spot, 4-hour candles, long-only SMA crossover and Donchian breakout candidates. It does not model futures shorts, funding, leverage, liquidation, hedging, market impact beyond the configured slippage estimate, or guarantee profitability. A successful historical run is research evidence only and does not promote a strategy to paper execution or LIVE.

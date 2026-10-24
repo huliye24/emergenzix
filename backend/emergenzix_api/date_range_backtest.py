@@ -1,7 +1,7 @@
 """Date-driven BTC historical strategy selection and one-week backtesting.
 
-This first protocol deliberately supports verified Binance BTC/USDT spot 4-hour
-candles and long-only SMA-crossover candidates. It never submits exchange orders.
+This protocol supports verified Binance BTC/USDT spot 4-hour candles and a
+small, versioned set of long-only candidates. It never submits exchange orders.
 """
 
 from __future__ import annotations
@@ -14,14 +14,14 @@ from datetime import date, datetime, time, timedelta, timezone
 from statistics import median
 from typing import Any, Sequence
 
-from .backtesting import run_sma_crossover
+from .backtesting import run_donchian_breakout, run_sma_crossover
 from .database import Database
 from .dataset_store import persist_dataset
 from .historical_data import fetch_binance_btc_4h_archive
 from .schemas import Bar, DatasetCreate
 
 
-DATE_RANGE_BACKTEST_PROTOCOL_VERSION = "btc-date-range-backtest-v2"
+DATE_RANGE_BACKTEST_PROTOCOL_VERSION = "btc-date-range-backtest-v3"
 BAR_INTERVAL = timedelta(hours=4)
 BARS_PER_DAY = 6
 SELECTION_TRAIN_FRACTION = 0.70
@@ -38,6 +38,68 @@ SMA_CANDIDATES: tuple[tuple[int, int], ...] = (
     (10, 30),
     (15, 40),
 )
+DONCHIAN_CANDIDATES: tuple[tuple[int, int], ...] = ((20, 10),)
+
+
+def _candidate_specs() -> list[dict[str, Any]]:
+    """Return the complete, versioned candidate registry."""
+    specs = [
+        {
+            "candidate_id": f"sma-{fast_window}-{slow_window}",
+            "strategy_type": "sma_crossover",
+            "parameters": {
+                "fast_window": fast_window,
+                "slow_window": slow_window,
+            },
+        }
+        for fast_window, slow_window in SMA_CANDIDATES
+    ]
+    specs.extend(
+        {
+            "candidate_id": f"donchian-{entry_window}-{exit_window}",
+            "strategy_type": "donchian_breakout",
+            "parameters": {
+                "entry_window": entry_window,
+                "exit_window": exit_window,
+            },
+        }
+        for entry_window, exit_window in DONCHIAN_CANDIDATES
+    )
+    return specs
+
+
+def _run_candidate(
+    candidate: dict[str, Any],
+    bars: list[Bar],
+    *,
+    evaluation_start_index: int,
+    initial_cash: float,
+    fee_bps: float,
+    slippage_bps: float,
+) -> dict[str, Any]:
+    """Run one registered candidate with shared execution assumptions."""
+    parameters = candidate["parameters"]
+    common = {
+        "initial_cash": initial_cash,
+        "fee_bps": fee_bps,
+        "slippage_bps": slippage_bps,
+        "evaluation_start_index": evaluation_start_index,
+    }
+    if candidate["strategy_type"] == "sma_crossover":
+        return run_sma_crossover(
+            bars,
+            fast_window=int(parameters["fast_window"]),
+            slow_window=int(parameters["slow_window"]),
+            **common,
+        )
+    if candidate["strategy_type"] == "donchian_breakout":
+        return run_donchian_breakout(
+            bars,
+            entry_window=int(parameters["entry_window"]),
+            exit_window=int(parameters["exit_window"]),
+            **common,
+        )
+    raise ValueError(f"unsupported candidate type: {candidate['strategy_type']}")
 
 
 def _utc(value: datetime) -> datetime:
@@ -123,11 +185,10 @@ def _rank_candidates(
 ) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
     """Rank the fixed candidate grid without access to later candles."""
     candidate_results: list[dict[str, Any]] = []
-    for fast_window, slow_window in SMA_CANDIDATES:
-        validation_run = run_sma_crossover(
+    for candidate in _candidate_specs():
+        validation_run = _run_candidate(
+            candidate,
             bars,
-            fast_window=fast_window,
-            slow_window=slow_window,
             initial_cash=initial_cash,
             fee_bps=fee_bps,
             slippage_bps=slippage_bps,
@@ -137,12 +198,7 @@ def _rank_candidates(
         score = metrics["total_return_pct"] - 0.5 * metrics["max_drawdown_pct"]
         candidate_results.append(
             {
-                "candidate_id": f"sma-{fast_window}-{slow_window}",
-                "strategy_type": "sma_crossover",
-                "parameters": {
-                    "fast_window": fast_window,
-                    "slow_window": slow_window,
-                },
+                **candidate,
                 "eligible": metrics["number_of_trades"] >= MINIMUM_VALIDATION_TRADES,
                 "selection_score": round(score, 6),
                 **metrics,
@@ -157,8 +213,7 @@ def _rank_candidates(
             -float(item["selection_score"]),
             float(item["max_drawdown_pct"]),
             -int(item["number_of_trades"]),
-            int(item["parameters"]["fast_window"]),
-            int(item["parameters"]["slow_window"]),
+            str(item["candidate_id"]),
         ),
     )
     status = (
@@ -197,12 +252,9 @@ def _walk_forward_validation(
             fee_bps=fee_bps,
             slippage_bps=slippage_bps,
         )
-        fast_window = int(selected["parameters"]["fast_window"])
-        slow_window = int(selected["parameters"]["slow_window"])
-        fold_run = run_sma_crossover(
+        fold_run = _run_candidate(
+            selected,
             training_bars[:fold_end],
-            fast_window=fast_window,
-            slow_window=slow_window,
             initial_cash=initial_cash,
             fee_bps=fee_bps,
             slippage_bps=slippage_bps,
@@ -227,6 +279,7 @@ def _walk_forward_validation(
                 "selection_status": selection_status,
                 "selected_candidate": {
                     "candidate_id": selected["candidate_id"],
+                    "strategy_type": selected["strategy_type"],
                     "parameters": selected["parameters"],
                     "selection_score": selected["selection_score"],
                 },
@@ -285,7 +338,7 @@ def run_date_range_backtest(
     fee_bps: float = 10.0,
     slippage_bps: float = 5.0,
 ) -> dict[str, Any]:
-    """Select a fixed SMA candidate using only pre-test data, then score a holdout.
+    """Select a versioned candidate using only pre-test data, then score a holdout.
 
     The requested period is [start_at, start_at + duration_days), in UTC.
     Training and test bars must be a complete, gap-free 4-hour series.
@@ -357,14 +410,11 @@ def run_date_range_backtest(
         slippage_bps=slippage_bps,
     )
 
-    selected_fast = int(selected_candidate["parameters"]["fast_window"])
-    selected_slow = int(selected_candidate["parameters"]["slow_window"])
     # Only the chosen parameters are carried into the holdout run. The full series
     # provides indicator warm-up; execution and scored metrics begin at start_utc.
-    test_run = run_sma_crossover(
+    test_run = _run_candidate(
+        selected_candidate,
         selected_bars,
-        fast_window=selected_fast,
-        slow_window=selected_slow,
         initial_cash=initial_cash,
         fee_bps=fee_bps,
         slippage_bps=slippage_bps,
@@ -400,7 +450,7 @@ def run_date_range_backtest(
             "minimum_validation_trades": MINIMUM_VALIDATION_TRADES,
         },
         "strategy_selection": {
-            "method": "fixed_sma_candidate_grid_on_pre_test_validation_slice",
+            "method": "versioned_candidate_registry_on_pre_test_validation_slice",
             "selection_window_start_at": _utc_iso(
                 _utc(training_bars[selection_index].timestamp)
             ),
@@ -429,8 +479,7 @@ def run_date_range_backtest(
                     -int(bool(item["eligible"])),
                     -float(item["selection_score"]),
                     float(item["max_drawdown_pct"]),
-                    int(item["parameters"]["fast_window"]),
-                    int(item["parameters"]["slow_window"]),
+                    str(item["candidate_id"]),
                 ),
             ),
         },

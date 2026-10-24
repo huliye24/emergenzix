@@ -46,6 +46,7 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [x] Add content-addressed immutable OHLCV dataset registration and retrieval with canonical SHA-256 identifiers.
 - [x] Add a date-driven BTC weekly backtest: verified 4-hour archive coverage, pre-test-only candidate selection, immutable run records, and JSON/Markdown/CSV outputs (CI/runtime verification is tracked separately).
 - [x] Add deterministic three-fold walk-forward evidence for the fixed SMA grid, with fold-level leakage controls, evidence status, and aggregate stability metrics.
+- [x] Add one versioned Donchian breakout candidate with prior-candle channels and the same cost/execution assumptions as the SMA baseline.
 - [ ] Expand the fixed SMA parameter grid into a versioned multi-strategy candidate registry (trend, breakout, and mean-reversion) while preserving pre-test-only selection and comparable execution assumptions.
 - [ ] Add a separate BTC futures simulation model for long/short positions, including funding and liquidation assumptions, before claiming downside-profit or hedge capability; keep LIVE orders disabled.
 - [x] Allow backtests to consume a registered dataset ID and persist the exact dataset fingerprint and range in result provenance (implementation added; verification pending).
