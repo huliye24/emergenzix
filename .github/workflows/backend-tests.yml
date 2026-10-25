@@ -34,7 +34,12 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Compile Python modules
-        run: python -m compileall -q emergenzix_api tests
+        run: python -m compileall -q emergenzix_api emergenzix_gpu_lab tests
 
       - name: Run API tests
         run: pytest -q
+
+      - name: Validate optional GPU Compose profile without a GPU
+        working-directory: .
+        run: docker compose --profile gpu config --quiet
+

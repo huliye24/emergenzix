@@ -196,6 +196,11 @@ See [Weekly Research Batch Planning and Reports](docs/RESEARCH_BATCH_PLAN.md) fo
 For explicitly authorized cloud operations, `bash ops/research_batch_once.sh BATCH_SHA256` runs **one** historical worker job using the existing Docker Compose API image and shared SQLite volume; it does not install an automatic scheduler.
 See [Codex Acceptance Checklist](docs/CODEX_DATE_RANGE_BACKTEST_ACCEPTANCE.md) for the exact validation and real-data smoke-test steps to run when Codex is available.
 
+
+## GPU Alpha Lab — Experiment 001 (optional)
+
+A research-only, GPU-isolated PyTorch MLP/TCN experiment can train on an existing SHA-256-verified OHLCV dataset in the API's SQLite volume. It uses purged chronological splits, train-only normalization, a zero-return baseline, and writes hashed experiment artifacts. **No inference or trading signal is connected to the API, Telegram, PAPER orders, or LIVE orders.** The default Compose services do not start the GPU lab. See [GPU Alpha Lab setup and A10 instructions](docs/GPU_ALPHA_LAB.md) before powering on a GPU host. A green regular CI checks CPU/data behavior, not A10 hardware.
+
 ## Safety boundaries
 
 - The API only provides **PAPER** execution; the CCXT integration is read-only public market data, with no exchange order adapter or LIVE order endpoint.
