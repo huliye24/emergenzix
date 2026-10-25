@@ -58,7 +58,8 @@ def test_dataset_create_list_get_and_idempotent_content_sha(client) -> None:
     result = detail.json()
     assert {key: value for key, value in result.items() if key != "bars"} == created
     assert len(result["bars"]) == 6
-    assert result["bars"][0]["timestamp"] == payload["bars"][0]["timestamp"]
+    # Storage deliberately canonicalizes timestamps to microsecond UTC Z.
+    assert result["bars"][0]["timestamp"] == "2025-10-21T00:00:00.000000Z"
     assert result["bars"][-1]["close"] == payload["bars"][-1]["close"]
 
     quality = client.get("/api/v1/datasets/" + created["id"] + "/quality")
