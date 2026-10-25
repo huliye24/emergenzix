@@ -74,3 +74,46 @@ cd backend
 python -m pytest -q tests/test_research_batch_state.py
 python -m pytest -q
 \`\`\`
+
+## Explicit one-job historical research worker
+
+After registering an approved batch plan through the trusted local Python
+state API, an operator may execute at most **one** approved saved job:
+
+    cd backend
+    python -m emergenzix_api.research_batch_worker \
+      --batch-id BATCH_SHA256 \
+      --db-path ../data/emergenzix.db \
+      --execute-one
+
+Without the explicit --execute-one flag this CLI refuses execution. A single
+invocation does not loop through the batch. The internal worker is NOT a public
+HTTP endpoint or always-on scheduler.
+
+A background heartbeat periodically renews the job's SQLite lease while
+verified public historical archive data is fetched and the existing
+create_date_range_backtest method executes. On success the worker validates
+the saved record fingerprint, selected historical window, costs, training
+duration, dataset ID and archive provenance, and PAPER/no-order safety
+metadata before atomically marking the job completed. The saved record's
+immutable ID and SHA-256 then appear in the batch state. A lost lease cannot
+acknowledge an old result.
+
+If an interrupted attempt has already persisted the identical immutable
+record, the next claim can reuse that result; job attempts remain bounded
+at three. Raw exception text (possibly containing credentials or internal
+URLs) is not returned by the worker. Failed records cannot be marked complete.
+
+Prior CHECK-constrained batch ledgers are migrated to a completed-capable
+schema while preserving existing rows and retry counters. The historical
+backtest results remain immutable.
+
+This is single-host SQLite coordination, not a distributed exactly-once
+scheduler; operators must control cloud resource budget, job rate and
+concurrency. It never places PAPER, TESTNET or LIVE orders.
+
+Codex acceptance:
+    cd backend
+    python -m pytest -q tests/test_research_batch_worker.py
+    python -m pytest -q
+
