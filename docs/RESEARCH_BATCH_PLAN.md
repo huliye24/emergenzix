@@ -220,3 +220,57 @@ CI acceptance:
     python -m pytest -q tests/test_research_batch_cli.py
     python -m pytest -q
 
+
+## Run exactly one cloud research job with existing Docker Compose
+
+The cloud operator command deliberately reuses the current `api` service
+configuration and its **same** `emergenzix-data:/data` named volume. It is
+**not** a new service, public HTTP endpoint, Telegram execution command,
+worker daemon or systemd timer. There is no additional network port.
+
+After the API container and Telegram opt-in interface are configured and
+an approved batch ID has been registered, from the repository root:
+
+```bash
+docker compose build api
+bash ops/research_batch_once.sh YOUR_64_CHARACTER_BATCH_SHA256
+```
+
+The script validates that there is *exactly one*, lowercase 64-hex batch ID
+and invokes the existing `research_batch_worker` once via:
+
+```bash
+docker compose run --rm --no-deps -T api \
+  python -m emergenzix_api.research_batch_worker \
+  --batch-id BATCH_SHA256 --db-path /data/emergenzix.db --execute-one
+```
+
+The one-off Compose process inherits the API service's image, runtime
+environment, non-root user, volume and security options. It does **not**
+publish API ports or automatically start the web, watch or Telegram services.
+`--rm` removes only the transient container, **not the data volume**. The
+script never edits a trading account. Job leasing prevents a competing worker
+from concurrently executing another task in the *same* batch. After process
+termination, an interrupted lease is recoverable when its timeout expires;
+results previously persisted are reused only after immutable verification.
+
+Run again *manually* for the next week and query progress with:
+
+```text
+/batch status BATCH_SHA256
+/batch report BATCH_SHA256
+```
+
+If the API image is not built from the updated branch, the new CLI may not
+exist in the container. Build the API image from the intended Git SHA and
+record that SHA with acceptance evidence before running. Never use this
+script from a public API request. It has no schedule, loop, LIVE credentials
+or PAPER/TESTNET/LIVE order placement permission.
+
+Focused CI (no Docker daemon or exchange credentials required):
+
+```bash
+cd backend
+python -m pytest -q tests/test_research_batch_compose.py
+python -m pytest -q
+```
