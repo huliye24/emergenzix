@@ -132,6 +132,52 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+
+                -- Batch plan metadata is immutable. State belongs to child jobs.
+                CREATE TABLE IF NOT EXISTS research_batch_plans (
+                    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                    plan_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS research_batch_jobs (
+                    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                    batch_id TEXT NOT NULL REFERENCES research_batch_plans(id),
+                    position INTEGER NOT NULL CHECK (position BETWEEN 1 AND 12),
+                    request_json TEXT NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (state IN ('pending', 'leased', 'failed', 'cancelled')),
+                    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 3),
+                    lease_token TEXT,
+                    lease_expires_at TEXT,
+                    last_error_code TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE (batch_id, position),
+                    CHECK (
+                        (state = 'leased' AND lease_token IS NOT NULL
+                         AND lease_expires_at IS NOT NULL)
+                        OR
+                        (state != 'leased' AND lease_token IS NULL
+                         AND lease_expires_at IS NULL)
+                    )
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_research_batch_jobs_claim
+                    ON research_batch_jobs(batch_id, state, position);
+
+                CREATE TRIGGER IF NOT EXISTS research_batch_plans_no_update
+                BEFORE UPDATE ON research_batch_plans
+                BEGIN
+                    SELECT RAISE(ABORT, 'research batch plans are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS research_batch_plans_no_delete
+                BEFORE DELETE ON research_batch_plans
+                BEGIN
+                    SELECT RAISE(ABORT, 'research batch plans are immutable');
+                END;
+
                 CREATE TABLE IF NOT EXISTS strategy_comparisons (
                     id TEXT PRIMARY KEY,
                     strategy_id TEXT NOT NULL REFERENCES strategies(id),

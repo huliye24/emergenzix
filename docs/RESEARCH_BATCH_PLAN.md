@@ -34,3 +34,43 @@ Disjoint holdout weeks can still have overlapping training data or correlated co
 The product API remains unauthenticated; restrict access to the internal Compose network.
 
 Codex acceptance: from backend run python -m pytest -q tests/test_research_batch_plan.py and then python -m pytest -q.
+
+## Durable internal batch-task state (next micro-task)
+
+A separate internal SQLite ledger (no remote mutation routes) can register a validated
+plan from the dry-run endpoint using the Python service API:
+- \`register_research_batch(db, plan)\`: verify the deterministic v1 manifest,
+  persist one immutable plan and its pending job rows atomically. Duplicate
+  registration returns the existing state without resetting attempts.
+- \`get_research_batch(db, batch_id)\`: inspect states and sanitized error codes,
+  never exposing active lease tokens.
+- \`claim_next_research_job(db, batch_id, worker_id=...)\`: atomically lease only
+  one pending job within a batch. Claims carry a random, private lease token
+  and expire after 300 seconds by default.
+- \`renew_research_job_lease(db, job_id, token)\`: heartbeat for long-running
+  archive downloads; cannot extend an expired or superseded lease.
+- \`fail_research_job(db, job_id, token, error_code=...)\`: release the attempt
+  to the queue or mark it failed after a maximum of **three** attempts.
+  Error codes are allowlisted, not arbitrary exception text.
+- \`cancel_unclaimed_research_jobs(db, batch_id)\`: cancel only unclaimed jobs;
+  a running lease is **not** preempted.
+
+SQLite \`BEGIN IMMEDIATE\` serializes claims and enforces at most one active
+lease per batch. On the next claim, expired leases are reclaimed and their
+attempts are retained; an old token cannot acknowledge a new attempt.
+The plan is immutable and stored in the existing Emergenzix database.
+No executor or completion path exists in this micro-task; a follow-on worker
+will verify immutable result IDs before marking a job successful.
+All functions are for trusted local server code and are **not exposed
+through an unauthenticated HTTP or Telegram command**.
+
+On restart, reopen the same SQLite path and read/claim as before. The
+ledger is not a distributed job broker and does not guarantee exactly-once
+external work; future execution must preserve idempotency on saved backtests.
+
+Acceptance for Codex:
+\`\`\`bash
+cd backend
+python -m pytest -q tests/test_research_batch_state.py
+python -m pytest -q
+\`\`\`
