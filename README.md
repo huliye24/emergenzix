@@ -154,6 +154,7 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | GET | `/api/v1/research/date-range-backtests/{record_id}` | Retrieve and verify a saved date-range report |
 | GET | `/api/v1/research/date-range-comparisons?record_ids=...` | Compare 2–10 saved historical backtests via read-only, integrity-verified observations; no winner is selected |
 | GET | `/api/v1/research/date-range-backtests/{record_id}/evidence` | Read-only v4 research evidence diagnostics; never authorizes strategy promotion or orders |
+| GET | `/api/v1/research/date-range-statistics?limit=30` | Summarize latest verified saved experiments; distinguish record counts from independent trading weeks |
 | GET / POST | `/api/v1/strategies` | List or create strategies |
 | GET | `/api/v1/strategies/{id}` | Inspect a strategy and its current version |
 | GET / POST | `/api/v1/strategies/{id}/versions` | List immutable parameter snapshots or create a new version |

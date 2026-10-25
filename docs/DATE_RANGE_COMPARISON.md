@@ -30,6 +30,18 @@ Each observation includes:
 
 The command preserves the requested record order. Missing IDs, invalid fingerprints, inconsistent protocol metadata, malformed JSON, and unsupported record shapes fail the entire comparison rather than emitting a partial table.
 
+## Cross-period descriptive statistics (read-only API)
+
+`GET /api/v1/research/date-range-statistics?limit=30`
+
+The endpoint selects the latest `limit` saved date-range records **by creation timestamp**, not automatically the latest 30 distinct calendar weeks. Default 30, allowed 2–100; no market data is fetched and no experiment is rerun. Every selected record is SHA-256 fingerprint checked and must use protocol `btc-date-range-backtest-v4` with valid UTC day boundaries and finite metrics. A bad record aborts the entire response with `409`. The SQLite connection uses read-only `mode=ro`; database unavailable returns `503`.
+
+The response provides: number of selected saved observations, positive/negative/flat **record** counts, mean/median/min/max single-record returns, mean/median/min/max **individual-record** maximum drawdowns, and full verified observations. Zero or one record is labeled `insufficient_records`; no statistics are invented for an empty archive.
+
+Interpretation flags include repeated test periods, pairwise overlapping test intervals, different fee/slippage assumptions, different selected candidates, non-seven-day durations, and whether at least two complete non-overlapping seven-day windows are present. The API deliberately **does not** compound individual returns, report a portfolio-level drawdown, claim statistically independent experiments, rank strategies, or grant PAPER / TESTNET / LIVE trading authority. Even disjoint test windows can share correlated market conditions or substantial overlapping training history. Multiple saved results with identical dates are separate records, not separate weeks.
+
+This API is not authenticated in the current product; keep it private to the Compose network. Related PRs exposing per-record comparison and evidence screening are independent integrations.
+
 ## Interpretation and safety
 
 Rows are labeled as independent saved observations. Different test periods or transaction-cost assumptions are called out explicitly and are never presented as a controlled head-to-head experiment. The command does not rank candidates, choose a winner, promote a strategy, download market data, update the database, or create paper/live orders.
