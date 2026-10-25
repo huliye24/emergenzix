@@ -10,18 +10,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import FastAPI, HTTPException, Query, Request, status
 
 from . import __version__
 from .backtesting import run_sma_crossover
 from .config import Settings
-from .dataset_quality import build_dataset_quality_report
 from .database import Database
 from .date_range_backtest_api import router as date_range_backtest_router
+from .dataset_api import router as dataset_router
 from .research_batch_plan_api import router as research_batch_plan_router
 from .historical_replay_api import router as historical_replay_router
 from .historical_data_api import router as historical_data_router
-from .dataset_store import persist_dataset
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
 from .operational_status_api import router as operational_status_router
@@ -29,7 +28,6 @@ from .scenarios import analyze_scenarios
 from .schemas import (
     Bar,
     BacktestCreate,
-    DatasetCreate,
     PaperOrderCreate,
     ScenarioAnalyzeCreate,
     StrategyComparisonCreate,
@@ -92,25 +90,6 @@ def _strategy_with_current_version(connection: Any, strategy_id: str) -> Any:
     ).fetchone()
 
 
-def _dataset_to_dict(row: Any, *, include_bars: bool = False) -> dict[str, Any]:
-    """Serialize dataset metadata, optionally including the immutable OHLCV payload."""
-    result: dict[str, Any] = {
-        "id": row["id"],
-        "sha256": row["content_sha256"],
-        "source": row["source"],
-        "exchange": row["exchange"],
-        "symbol": row["symbol"],
-        "timeframe": row["timeframe"],
-        "start_at": row["start_at"],
-        "end_at": row["end_at"],
-        "bars_count": int(row["bars_count"]),
-        "created_at": row["created_at"],
-    }
-    if include_bars:
-        result["bars"] = json.loads(row["bars_json"])
-    return result
-
-
 def _symbol_key(symbol: str) -> str:
     """Normalize common separator differences for strategy/dataset compatibility."""
     return symbol.strip().upper().replace("/", "").replace("-", "").replace("_", "")
@@ -148,6 +127,7 @@ def create_app(
     app.include_router(date_range_backtest_router)
     app.include_router(research_batch_plan_router)
     app.include_router(operational_status_router)
+    app.include_router(dataset_router)
     app.state.database = database
     app.state.notification_outbox_path = str(
         notification_db_path
@@ -199,52 +179,6 @@ def create_app(
         except MarketDataUnavailable as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    @app.post("/api/v1/datasets", status_code=status.HTTP_201_CREATED)
-    def register_dataset(
-        payload: DatasetCreate, request: Request, response: Response
-    ) -> dict[str, Any]:
-        """Persist validated OHLCV bars under a deterministic SHA-256 dataset ID."""
-        db: Database = request.app.state.database
-        dataset_symbol = payload.symbol
-        if payload.source == "ccxt_public_ohlcv":
-            try:
-                dataset_symbol = normalize_symbol(payload.symbol)
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-        row, inserted = persist_dataset(
-            db, payload, symbol=dataset_symbol
-        )
-        if not inserted:
-            response.status_code = status.HTTP_200_OK
-        return _dataset_to_dict(row)
-
-    @app.get("/api/v1/datasets")
-    def list_datasets(
-        request: Request,
-        limit: int = Query(default=20, ge=1, le=100),
-    ) -> list[dict[str, Any]]:
-        """List dataset metadata without returning potentially large candle arrays."""
-        db: Database = request.app.state.database
-        with db.connection() as connection:
-            rows = connection.execute(
-                "SELECT * FROM market_datasets ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-        return [_dataset_to_dict(row) for row in rows]
-
-    @app.get("/api/v1/datasets/{dataset_id}")
-    def get_dataset(dataset_id: str, request: Request) -> dict[str, Any]:
-        """Retrieve the exact OHLCV bars associated with an immutable dataset ID."""
-        db: Database = request.app.state.database
-        with db.connection() as connection:
-            row = connection.execute(
-                "SELECT * FROM market_datasets WHERE id = ?", (dataset_id,)
-            ).fetchone()
-        if row is None:
-            raise HTTPException(status_code=404, detail="Dataset not found")
-        return _dataset_to_dict(row, include_bars=True)
-
     @app.post("/api/v1/scenarios/analyze")
     def analyze_market_scenarios(payload: ScenarioAnalyzeCreate) -> dict[str, object]:
         """Classify completed candles; this endpoint never creates an order."""
@@ -252,24 +186,6 @@ def create_app(
             return analyze_scenarios(payload.bars, lookback=payload.lookback).as_dict()
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    @app.get("/api/v1/datasets/{dataset_id}/quality")
-    def get_dataset_quality(dataset_id: str, request: Request) -> dict[str, Any]:
-        """Return read-only interval-gap, coverage, and freshness diagnostics."""
-        db: Database = request.app.state.database
-        with db.connection() as connection:
-            row = connection.execute(
-                "SELECT * FROM market_datasets WHERE id = ?", (dataset_id,)
-            ).fetchone()
-        if row is None:
-            raise HTTPException(status_code=404, detail="Dataset not found")
-        return build_dataset_quality_report(
-            dataset_id=row["id"],
-            sha256=row["content_sha256"],
-            symbol=row["symbol"],
-            timeframe=row["timeframe"],
-            bars_json=row["bars_json"],
-        )
 
     @app.get("/api/v1/overview")
     def overview(request: Request) -> dict[str, Any]:
