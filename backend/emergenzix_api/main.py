@@ -16,6 +16,7 @@ from .api_common import _now, _row_to_dict
 from .config import Settings
 from .database import Database
 from .date_range_backtest_api import router as date_range_backtest_router
+from .backtest_read_api import router as backtest_read_router
 from .dataset_api import router as dataset_router
 from .research_batch_plan_api import router as research_batch_plan_router
 from .historical_replay_api import router as historical_replay_router
@@ -74,6 +75,7 @@ def create_app(
     app.include_router(operational_status_router)
     app.include_router(dataset_router)
     app.include_router(strategy_router)
+    app.include_router(backtest_read_router)
     app.state.database = database
     app.state.notification_outbox_path = str(
         notification_db_path
@@ -679,31 +681,6 @@ def create_app(
             ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="Strategy validation not found")
-        return json.loads(row["result_json"])
-
-    @app.get("/api/v1/backtests")
-    def list_backtests(
-        request: Request,
-        limit: int = Query(default=20, ge=1, le=100),
-    ) -> list[dict[str, Any]]:
-        db: Database = request.app.state.database
-        with db.connection() as connection:
-            rows = connection.execute(
-                "SELECT result_json FROM backtests "
-                "ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
-        return [json.loads(row["result_json"]) for row in rows]
-
-    @app.get("/api/v1/backtests/{backtest_id}")
-    def get_backtest(backtest_id: str, request: Request) -> dict[str, Any]:
-        db: Database = request.app.state.database
-        with db.connection() as connection:
-            row = connection.execute(
-                "SELECT result_json FROM backtests WHERE id = ?", (backtest_id,)
-            ).fetchone()
-        if row is None:
-            raise HTTPException(status_code=404, detail="Backtest not found")
         return json.loads(row["result_json"])
 
     @app.get("/api/v1/paper/account")
