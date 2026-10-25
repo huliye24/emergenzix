@@ -173,3 +173,50 @@ create empty database files; generation of JSON/Markdown outputs remains an
 explicit `--output` action. The acceptance suite runs three historical weeks
 on synthetic offline candles, restarts the database process between jobs,
 confirms 100% completion, and checks that no paper orders were inserted.
+
+## Minimal batch operator CLI (plan / register / status)
+
+The internal operator entrypoint closes the gap between the dry-run HTTP
+planner and the existing one-job historical Worker. It deliberately exposes
+no strategy execution mode or public HTTP/Telegram write interface.
+
+From backend, preview a 3-week plan (no filesystem or database operations):
+
+    python -m emergenzix_api.research_batch_cli plan \
+      --start-date 2025-10-21 \
+      --start-date 2025-10-28 \
+      --start-date 2025-11-04
+
+Explicitly create the immutable manifest and pending jobs in SQLite:
+
+    python -m emergenzix_api.research_batch_cli register \
+      --start-date 2025-10-21 \
+      --start-date 2025-10-28 \
+      --start-date 2025-11-04 \
+      --training-days 90 --fee-bps 10 --slippage-bps 5 \
+      --db-path ../data/emergenzix.db
+
+Record the returned batch_id; the command is idempotent, so repeating it
+never resets an in-flight lease or completed result. To inspect jobs:
+
+    python -m emergenzix_api.research_batch_cli status \
+      --batch-id BATCH_SHA256 --db-path ../data/emergenzix.db
+
+The status command reuses the verified read-only report snapshot, opening
+only an **existing** database and validating completed record fingerprints.
+It never initializes SQLite, fetches candles, alters work state, or reveals
+private lease tokens.
+
+To **run** a historical task requires an entirely separate explicit
+one-task call to research_batch_worker with --execute-one (see above).
+For JSON and Markdown return distributions, use research_batch_report_cli.
+The CLI defaults to BTC/USDT spot 4h, 7-day tests, 90-day training and
+bounded 12-week plans. It accepts only disjoint completed historical weeks.
+No PAPER/TESTNET/LIVE exchange orders are authorized.
+
+CI acceptance:
+
+    cd backend
+    python -m pytest -q tests/test_research_batch_cli.py
+    python -m pytest -q
+
