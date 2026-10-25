@@ -152,6 +152,7 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | POST | `/api/v1/research/date-range-backtests` | Select a versioned BTC SMA or Donchian candidate using only pre-test data, simulate a requested historical date range, and persist an immutable report |
 | GET | `/api/v1/research/date-range-backtests` | List saved date-range backtest reports |
 | GET | `/api/v1/research/date-range-backtests/{record_id}` | Retrieve and verify a saved date-range report |
+| GET | `/api/v1/research/date-range-comparisons?record_ids=...` | Compare 2–10 saved historical backtests via read-only, integrity-verified observations; no winner is selected |
 | GET / POST | `/api/v1/strategies` | List or create strategies |
 | GET | `/api/v1/strategies/{id}` | Inspect a strategy and its current version |
 | GET / POST | `/api/v1/strategies/{id}/versions` | List immutable parameter snapshots or create a new version |
