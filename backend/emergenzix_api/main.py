@@ -24,7 +24,7 @@ from .historical_data_api import router as historical_data_router
 from .dataset_store import persist_dataset
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
-from .notification_outbox import NotificationOutbox
+from .operational_status_api import router as operational_status_router
 from .scenarios import analyze_scenarios
 from .schemas import (
     Bar,
@@ -147,6 +147,7 @@ def create_app(
     app.include_router(historical_data_router)
     app.include_router(date_range_backtest_router)
     app.include_router(research_batch_plan_router)
+    app.include_router(operational_status_router)
     app.state.database = database
     app.state.notification_outbox_path = str(
         notification_db_path
@@ -166,88 +167,6 @@ def create_app(
     app.state.paper_fee_bps = (
         paper_fee_bps if paper_fee_bps is not None else settings.paper_fee_bps
     )
-
-    @app.get("/health")
-    def health() -> dict[str, Any]:
-        return {
-            "status": "ok",
-            "service": "emergenzix-api",
-            "version": __version__,
-            "mode": "PAPER",
-            "live_trading_enabled": False,
-        }
-
-    @app.get("/ready")
-    def readiness(request: Request) -> dict[str, Any]:
-        """Report readiness only when the database and paper account are usable."""
-        db: Database = request.app.state.database
-        try:
-            with db.connection() as connection:
-                connection.execute("SELECT 1").fetchone()
-                paper_account = connection.execute(
-                    "SELECT id FROM paper_account WHERE id = 1"
-                ).fetchone()
-        except sqlite3.Error as exc:
-            raise HTTPException(
-                status_code=503, detail="database is unavailable"
-            ) from exc
-
-        if paper_account is None:
-            raise HTTPException(
-                status_code=503, detail="paper account is not initialized"
-            )
-
-        return {
-            "status": "ready",
-            "service": "emergenzix-api",
-            "version": __version__,
-            "mode": "PAPER",
-            "live_trading_enabled": False,
-            "checks": {
-                "database": "ok",
-                "paper_account": "ok",
-            },
-        }
-
-    @app.get("/api/v1/notifications/status")
-    def notification_status(request: Request) -> dict[str, Any]:
-        """Expose aggregate outbox health without event bodies or Telegram credentials."""
-        path = Path(request.app.state.notification_outbox_path)
-        empty_metrics = {
-            "total": 0,
-            "pending": 0,
-            "retrying": 0,
-            "due": 0,
-            "failed_attempts": 0,
-            "delivered": 0,
-            "dead": 0,
-            "oldest_pending_at": None,
-            "last_successful_delivery_at": None,
-            "last_error_type": None,
-        }
-        if not path.exists():
-            return {
-                "status": "not_initialized",
-                "service": "emergenzix-notification-outbox",
-                "mode": "PAPER",
-                "live_trading_enabled": False,
-                "metrics": empty_metrics,
-            }
-
-        try:
-            metrics = NotificationOutbox(path).summary()
-        except (OSError, sqlite3.Error, ValueError) as exc:
-            raise HTTPException(
-                status_code=503, detail="notification outbox is unavailable"
-            ) from exc
-
-        return {
-            "status": "attention_required" if metrics["dead"] else "ok",
-            "service": "emergenzix-notification-outbox",
-            "mode": "PAPER",
-            "live_trading_enabled": False,
-            "metrics": metrics,
-        }
 
     @app.get("/api/v1/market-data/ohlcv")
     def market_data_ohlcv(
