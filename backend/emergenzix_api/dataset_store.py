@@ -85,3 +85,49 @@ def persist_dataset(
     if row is None:
         raise RuntimeError("Dataset insert completed without a retrievable row")
     return row, inserted.rowcount > 0
+
+
+class DatasetIntegrityError(ValueError):
+    """Stored content-addressed dataset metadata or bars were modified."""
+
+
+def verify_stored_dataset(row: Any) -> list[dict[str, Any]]:
+    """Verify the original content hash and bar-range metadata before research.
+
+    Accept harmless JSON whitespace/key ordering differences, but reject
+    changes to candle values, symbol, source, timeframe, counts or time bounds.
+    Never trust an advertised sha256 without recomputing it from the row.
+    """
+    try:
+        bars = json.loads(row["bars_json"])
+        if not isinstance(bars, list) or not bars or not all(
+            isinstance(item, dict) for item in bars
+        ):
+            raise DatasetIntegrityError("invalid stored bars")
+
+        canonical_payload = {
+            "source": row["source"],
+            "exchange": row["exchange"],
+            "symbol": row["symbol"],
+            "timeframe": row["timeframe"],
+            "bars": bars,
+        }
+        canonical_json = json.dumps(
+            canonical_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+        digest = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+        if (
+            digest != row["id"]
+            or digest != row["content_sha256"]
+            or row["bars_count"] != len(bars)
+            or row["start_at"] != bars[0].get("timestamp")
+            or row["end_at"] != bars[-1].get("timestamp")
+        ):
+            raise DatasetIntegrityError("stored dataset fingerprint mismatch")
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise DatasetIntegrityError("stored dataset failed integrity check") from exc
+    return bars
