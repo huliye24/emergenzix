@@ -1,0 +1,24 @@
+# On-demand GPU research image, isolated from the production API image.
+# Requires NVIDIA driver compatible with CUDA 12.4 on the A10/A10G host.
+FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    CUBLAS_WORKSPACE_CONFIG=:4096:8 \
+    PYTHONPATH=/opt/emergenzix \
+    HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/.cache
+WORKDIR /opt/emergenzix
+
+# The production dataset verifier uses Pydantic / FastAPI schemas.
+RUN python -m pip install --no-cache-dir 'fastapi>=0.115,<1.0'
+
+COPY emergenzix_api ./emergenzix_api
+COPY emergenzix_gpu_lab ./emergenzix_gpu_lab
+
+RUN useradd --system --uid 10001 --no-create-home researcher \
+    && mkdir -p /outputs \
+    && chown researcher:researcher /outputs
+USER 10001
+
+ENTRYPOINT ["python", "-m", "emergenzix_gpu_lab.train"]

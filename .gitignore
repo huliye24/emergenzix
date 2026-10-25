@@ -29,3 +29,9 @@ node_modules/
 .next/
 out/
 coverage/
+
+# Research artifacts and model weights (never commit experiment outputs)
+research-output/
+gpu-runs/
+*.pt
+*.pth

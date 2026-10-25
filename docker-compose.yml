@@ -104,6 +104,32 @@ services:
     security_opt:
       - no-new-privileges:true
 
+
+  # Opt-in one-shot A10/A10G research process; NO API, network or orders.
+  gpu-research:
+    profiles: ["gpu"]
+    image: emergenzix-gpu-lab:local
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.gpu
+    restart: "no"
+    network_mode: "none"
+    gpus: all
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=1073741824
+    environment:
+      CUBLAS_WORKSPACE_CONFIG: ":4096:8"
+    volumes:
+      - emergenzix-data:/data:ro
+      - emergenzix-gpu-output:/outputs
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
 volumes:
   emergenzix-data:
     name: emergenzix-data
+  emergenzix-gpu-output:
+    name: emergenzix-gpu-output
