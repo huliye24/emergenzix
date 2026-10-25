@@ -84,6 +84,39 @@ def load_registered_dataset(db_path: str | Path, dataset_id: str) -> ResearchDat
     )
 
 
+def causal_ohlcv_features(dataset: ResearchDataset) -> np.ndarray:
+    """Four E001 features at candle t use no bars later than t.
+
+    The first candle's close/volume changes are zero, matching the
+    existing E001 feature convention. This pure function does not fit
+    a normalizer, train a model, or open the dataset database.
+    """
+    n = len(dataset.close)
+    if n < 2 or any(len(getattr(dataset, key)) != n
+                    for key in ("open", "high", "low", "volume")):
+        raise ValueError("inconsistent OHLCV array lengths")
+    if any(not np.isfinite(getattr(dataset, key)).all()
+           for key in ("open", "high", "low", "close", "volume")):
+        raise ValueError("non-finite OHLCV value")
+    if any(np.any(getattr(dataset, key) <= 0)
+           for key in ("open", "high", "low", "close")):
+        raise ValueError("OHLC prices must be positive")
+    if np.any(dataset.volume < 0):
+        raise ValueError("volume cannot be negative")
+    close = dataset.close
+    previous_close = np.r_[close[0], close[:-1]]
+    previous_volume = np.r_[dataset.volume[0], dataset.volume[:-1]]
+    features = np.column_stack((
+        np.log(close / previous_close),
+        np.log(dataset.high / dataset.low),
+        np.log(close / dataset.open),
+        np.log1p(dataset.volume) - np.log1p(previous_volume),
+    ))
+    if not np.isfinite(features).all():
+        raise ValueError("non-finite derived financial features")
+    return features
+
+
 def make_samples(
     dataset: ResearchDataset, *, lookback: int = 32, horizon: int = 1
 ) -> Samples:
@@ -103,16 +136,7 @@ def make_samples(
         raise ValueError("insufficient history for purged train/val/test splits")
 
     close = dataset.close
-    previous_close = np.r_[close[0], close[:-1]]
-    previous_volume = np.r_[dataset.volume[0], dataset.volume[:-1]]
-    features = np.column_stack((
-        np.log(close / previous_close),
-        np.log(dataset.high / dataset.low),
-        np.log(close / dataset.open),
-        np.log1p(dataset.volume) - np.log1p(previous_volume),
-    ))
-    if not np.isfinite(features).all():
-        raise ValueError("non-finite derived financial features")
+    features = causal_ohlcv_features(dataset)
     last_train_anchor = train_cut - horizon - 1
     mean = features[:last_train_anchor + 1].mean(axis=0)
     std = np.maximum(features[:last_train_anchor + 1].std(axis=0), 1e-8)
