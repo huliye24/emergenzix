@@ -10,9 +10,11 @@ from emergenzix_api import operational_status_api
 
 
 def test_operational_paths_registered_once_and_preserve_contract(client) -> None:
-    paths = [route.path for route in client.app.routes if hasattr(route, "path")]
+    # Assert the public URL/method contract, not FastAPI's private router
+    # wrapper layout (which changed between framework versions).
+    paths = client.get("/openapi.json").json()["paths"]
     for path in ("/health", "/ready", "/api/v1/notifications/status"):
-        assert paths.count(path) == 1
+        assert set(paths[path]) == {"get"}
 
     health = client.get("/health")
     assert health.status_code == 200
