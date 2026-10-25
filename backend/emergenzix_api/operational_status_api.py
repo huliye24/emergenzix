@@ -18,6 +18,8 @@ from .notification_outbox import NotificationOutbox
 
 router = APIRouter()
 
+
+
 @router.get("/health")
 def health() -> dict[str, Any]:
     return {
@@ -27,6 +29,7 @@ def health() -> dict[str, Any]:
         "mode": "PAPER",
         "live_trading_enabled": False,
     }
+
 
 @router.get("/ready")
 def readiness(request: Request) -> dict[str, Any]:
@@ -59,6 +62,7 @@ def readiness(request: Request) -> dict[str, Any]:
             "paper_account": "ok",
         },
     }
+
 
 @router.get("/api/v1/notifications/status")
 def notification_status(request: Request) -> dict[str, Any]:
