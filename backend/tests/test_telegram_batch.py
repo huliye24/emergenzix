@@ -57,7 +57,7 @@ def _bot(tmp_path, requester, *, enabled: bool, db: Path | None):
     )
 
 
-def _sent(requests, text):
+def _sent(requests):
     def fake_request(request, *, timeout):
         assert request.full_url.endswith("/sendMessage")
         data = json.loads(request.data.decode("utf-8"))
@@ -70,7 +70,7 @@ def _sent(requests, text):
 def test_default_disabled_batch_does_not_open_or_create_database(tmp_path) -> None:
     sent = []
     db = tmp_path / "absent.db"
-    bot = _bot(tmp_path, _sent(sent, ""), enabled=False, db=db)
+    bot = _bot(tmp_path, _sent(sent), enabled=False, db=db)
     bot.handle_update(_update("/batch register 2025-10-21"))
     assert len(sent) == 1
     assert "尚未启用" in sent[0]
@@ -86,7 +86,7 @@ def test_telegram_private_allowlist_blocks_unauthorized_mutations(tmp_path) -> N
     db = tmp_path / "shared.db"
     Database(str(db))
     sent = []
-    bot = _bot(tmp_path, _sent(sent, ""), enabled=True, db=db)
+    bot = _bot(tmp_path, _sent(sent), enabled=True, db=db)
     bot.handle_update(_update("/batch register 2025-10-21", chat=9988))
     bot.handle_update(_update("/batch register 2025-10-21", kind="group"))
     assert sent == []
@@ -98,7 +98,7 @@ def test_telegram_batch_plan_register_status_round_trip(tmp_path) -> None:
     db_path = tmp_path / "emergenzix.db"
     Database(str(db_path))
     sent = []
-    bot = _bot(tmp_path, _sent(sent, ""), enabled=True, db=db_path)
+    bot = _bot(tmp_path, _sent(sent), enabled=True, db=db_path)
     bot.handle_update(_update("/batch plan 2025-10-28 2025-10-21"))
     assert "尚未登记" in sent[-1]
     batch_id = _plan(*DATES)["batch_id"]
@@ -109,7 +109,6 @@ def test_telegram_batch_plan_register_status_round_trip(tmp_path) -> None:
     bot.handle_update(_update("/batch register 2025-10-28 2025-10-21"))
     assert "登记成功" in sent[-1]
     assert batch_id in sent[-1]
-    assert "不会" not in sent[-1] or "任务" in sent[-1]
     snapshot = get_research_batch(Database(str(db_path)), batch_id)
     assert [j["state"] for j in snapshot["jobs"]] == ["pending", "pending"]
 
@@ -176,12 +175,8 @@ def test_status_requires_canonical_batch_id_and_is_readonly(tmp_path, monkeypatc
     path = tmp_path / "db.sqlite"
     Database(str(path))
     text = handle_batch_message(["status", "../../etc/passwd"], db_path=path)
-    assert "用法" not in text or "BATCH_ID" in text
     assert "批次研究命令" in text
-    with pytest.raises(ValueError, match="no init"):
-        def fail(*args, **kwargs):
-            raise ValueError("no init")
-        fail()
+    assert "BATCH_ID" in text
     monkeypatch.setattr(Database, "initialize", lambda *_: (_ for _ in ()).throw(AssertionError("No DB init")))
     msg = handle_batch_message(["status", "a" * 64], db_path=path)
     assert "不可用" in msg
