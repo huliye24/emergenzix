@@ -214,16 +214,10 @@ def test_detects_checkpoint_change_without_loading_it(tmp_path):
     ("test_predictions.json",
      lambda x: x[0].update(actual_log_return=3.0),
      "holdout label disagrees"),
-    ("test_predictions.json",
-     lambda x: x[0].update(predicted_log_return=float("inf")),
-     "Out of range"),  # overridden below with a finite forgery
 ])
 def test_rehash_cannot_hide_forged_source_evidence(
     tmp_path, filename, edit, reason
 ):
-    # JSON doesn't encode infinity; test real finite forgery below instead.
-    if reason == "Out of range":
-        pytest.skip("nonfinite JSON covered by separate test")
     db, run = _fixture(tmp_path)
     _change_and_reseal(run, filename, edit)
     with pytest.raises(ValueError, match=reason):
