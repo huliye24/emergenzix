@@ -31,8 +31,8 @@ modifies experiment outputs or the registered source database.
 
 ## Verification contract
 
-1. Reject missing, symlinked, oversized or malformed expected artifacts;
-   reject a missing completion marker and any changed SHA-256 digest.
+1. Reject missing or symlinked expected artifacts, oversized JSON files,
+   malformed JSON, a missing completion marker and any SHA-256 mismatch.
 2. Require the exact supported fold/plan protocols, the fixed E001 feature
    schema, and research-only / no-orders / no-promotion safety fields.
 3. Reopen the content-addressed source dataset and verify its OHLCV hash,
