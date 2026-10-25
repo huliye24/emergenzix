@@ -53,9 +53,13 @@ def _integer(value: Any, field: str, minimum: int = 0) -> int:
 
 
 def _finite(value: Any, field: str) -> float:
-    _require(type(value) in (int, float) and math.isfinite(float(value)),
-             f"{field} must be a finite number")
-    return float(value)
+    _require(type(value) in (int, float), f"{field} must be a finite number")
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise FoldVerificationError(f"{field} must be a finite number") from exc
+    _require(math.isfinite(number), f"{field} must be a finite number")
+    return number
 
 
 def _sha(value: Any, field: str) -> str:
@@ -223,7 +227,8 @@ def verify_fold_run(
 
     _require(manifest.get("model") in ("mlp", "tcn"), "unknown model")
     _require(manifest.get("device") in ("cpu", "cuda"), "unknown device")
-    _integer(manifest.get("seed"), "seed")
+    _require(_integer(manifest.get("seed"), "seed") < 2**32,
+             "seed exceeds training protocol")
     epochs = _integer(manifest.get("epochs"), "epochs", 1)
     _require(epochs <= 500, "epochs exceeds training protocol")
     _require(1 <= _integer(manifest.get("batch_size"), "batch_size", 1) <= 8192,
