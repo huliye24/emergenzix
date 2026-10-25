@@ -93,26 +93,26 @@ checkpoints; if loading trusted local weights, use \`weights_only=True\`.
 
 After a completed E001 run, inspect the outputs **before** comparing models.
 The verifier uses the Python standard library: it does **not** require CUDA,
-PyTorch or NumPy, and does not load the \`model_weights.pt\` checkpoint.
+PyTorch or NumPy, and does not load the `model_weights.pt` checkpoint.
 It never writes to the run directory or touches the registered dataset DB.
 
 From a local machine that can read the experiment output directory:
 
-\`\`\`bash
+```bash
 cd backend
 python -m emergenzix_gpu_lab.verify --run-dir /path/to/e001-mlp-s42
-\`\`\`
+```
 
 When running inside the isolated Docker volume on the GPU host:
 
-\`\`\`bash
+```bash
 docker compose --profile gpu run --rm --no-deps \
   --entrypoint python gpu-research \
   -m emergenzix_gpu_lab.verify --run-dir /outputs/e001-mlp-s42
-\`\`\`
+```
 
-Expected result is JSON with \`"status": "verified_self_consistent"\` and a
-zero exit status; malformed/missing artifacts return \`"status": "rejected"\`
+Expected result is JSON with `"status": "verified_self_consistent"` and a
+zero exit status; malformed/missing artifacts return `"status": "rejected"`
 and exit nonzero. This gate checks all four saved SHA-256 digests, the
 research-only flags and protocol, held-out prediction time order / horizon,
 purged split timestamp ordering, and recomputed holdout / zero-return baseline
