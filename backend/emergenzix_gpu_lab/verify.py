@@ -107,7 +107,9 @@ def _read_json(path: Path) -> Any:
             parse_constant=lambda value: (_reject_constant(value)),
             object_pairs_hook=_no_duplicate_keys,
         )
-    except (UnicodeError, json.JSONDecodeError) as exc:
+    except ArtifactVerificationError:
+        raise
+    except (UnicodeError, json.JSONDecodeError, ValueError) as exc:
         raise ArtifactVerificationError(f"invalid JSON in {path.name}") from exc
 
 
@@ -183,7 +185,8 @@ def verify_run(run_dir: str | Path) -> dict[str, Any]:
     _require(isinstance(manifest.get("symbol"), str) and bool(manifest["symbol"]),
              "symbol is missing")
     timeframe = manifest.get("timeframe")
-    _require(timeframe in _TIMEFRAME_SECONDS, "unsupported timeframe")
+    _require(isinstance(timeframe, str) and timeframe in _TIMEFRAME_SECONDS,
+             "unsupported timeframe")
     model = manifest.get("model")
     _require(model in ("mlp", "tcn"), "unsupported model")
     horizon = _integer(manifest.get("horizon"), "horizon")
