@@ -79,7 +79,7 @@ def test_default_disabled_batch_does_not_open_or_create_database(tmp_path) -> No
 
 def test_batch_feature_requires_explicit_db_path(tmp_path) -> None:
     with pytest.raises(ValueError, match="explicit shared SQLite"):
-        _bot(tmp_path, _sent([], ""), enabled=True, db=None)
+        _bot(tmp_path, _sent([]), enabled=True, db=None)
 
 
 def test_telegram_private_allowlist_blocks_unauthorized_mutations(tmp_path) -> None:
