@@ -53,3 +53,52 @@ The backtest command uses the existing date-range research API with a fixed 90-d
 - A long historical-data download can take time. After validating the date range and cooldown, the bot sends an acceptance message before calling the research API, then sends the final report when the run completes. The polling loop remains occupied while the backtest runs, so other commands are processed afterward; the cooldown is persisted across restarts.
 - Telegram and API errors are sanitized; diagnostic logs record error classes rather than tokens or raw response bodies.
 - No real Telegram call, cloud deployment, or profitability claim is part of this code change. Run the documented tests and operational acceptance steps before enabling the Compose profile.
+
+## Optional private weekly batch research commands
+
+Weekly batch commands are **disabled by default**. To enable them, keep
+the API private and the Telegram Bot on the same Compose SQLite volume.
+Add the following to the local (untracked) .env file:
+
+    EMERGENZIX_TELEGRAM_BATCH_ENABLED=true
+
+The Telegram service explicitly uses EMERGENZIX_DB_PATH=/data/emergenzix.db,
+matching the API container's shared SQLite volume. Enabling batch commands
+without an explicit shared DB path fails closed. The existing exact private
+chat allowlist applies to every /batch subcommand; groups are still ignored.
+
+Commands:
+
+    /batch plan 2025-10-21 2025-10-28
+    /batch register 2025-10-21 2025-10-28
+    /batch status BATCH_SHA256
+    /batch report BATCH_SHA256
+
+- plan is pure, never accesses SQLite or fetches candles.
+- register saves a canonical plan and pending jobs; it requires an already
+  created database and will not silently create a second empty SQLite file.
+  Registering the same plan twice cannot reset attempts or an active lease.
+- status and report are verified, strictly read-only SQLite snapshots. They
+  do not reveal lease tokens and exclude incomplete/failed weeks from returns.
+- No execution, retry, cancellation, strategy promotion, PAPER order or LIVE
+  trading subcommand is exposed. Registering tasks does **not** start a worker.
+  The private one-job historical worker remains a separate operator action.
+
+All batch research uses BTC/USDT spot 4h with 90 days of training and 7-day
+nonoverlapping historical holdouts, up to 12 weeks. Costs are fixed at
+10 bps fees + 5 bps slippage per side and 10,000 USDT simulation capital.
+Independent weekly returns must NOT be compounded into a live portfolio ROI.
+The bot does not grant any exchange-order authorization.
+
+The backend API remains unauthenticated and MUST stay behind private access.
+Enabling Telegram commands is not a substitute for API auth.
+Existing /backtest and /status commands are unchanged. Use the existing
+Docker Compose opt-in Telegram profile and restart only that bot container
+after changing its env flag.
+
+Acceptance:
+
+    cd backend
+    python -m pytest -q tests/test_telegram_batch.py
+    python -m pytest -q
+
