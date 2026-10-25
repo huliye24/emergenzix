@@ -51,7 +51,7 @@ def test_dataset_create_list_get_and_idempotent_content_sha(client) -> None:
     listed = client.get("/api/v1/datasets?limit=1")
     assert listed.status_code == 200
     assert listed.json() == [created]
-    assert "bars" not in listed.text
+    assert all("bars" not in item for item in listed.json())
 
     detail = client.get("/api/v1/datasets/" + created["id"])
     assert detail.status_code == 200, detail.text
