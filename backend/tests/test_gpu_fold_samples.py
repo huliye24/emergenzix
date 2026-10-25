@@ -107,16 +107,16 @@ def test_future_validation_test_mutations_never_alter_fold_training():
     data = _history()
     fold = plan_walk_forward(len(data.times))[0]
     original = make_fold_samples(data, fold)
-    future_close = data.close.copy()
+    start = fold.validation.bar_start
+    scale = 1.4 + 0.03 * np.sin(np.arange(len(data.close) - start) / 3.0)
+    modified_prices = {}
+    for field in ("open", "high", "low", "close"):
+        values = getattr(data, field).copy()
+        values[start:] *= scale
+        modified_prices[field] = values
     future_volume = data.volume.copy()
-    future_count = len(future_close) - fold.validation.bar_start
-    future_close[fold.validation.bar_start:] *= (
-        1.4 + 0.03 * np.sin(np.arange(future_count) / 3.0)
-    )
-    future_volume[fold.validation.bar_start:] *= 2.0
-    changed_data = replace(
-        data, close=future_close, volume=future_volume,
-    )
+    future_volume[start:] *= 2.0
+    changed_data = replace(data, volume=future_volume, **modified_prices)
     after = make_fold_samples(changed_data, fold)
     np.testing.assert_array_equal(original.feature_mean, after.feature_mean)
     np.testing.assert_array_equal(original.feature_std, after.feature_std)
@@ -131,11 +131,16 @@ def test_test_only_changes_do_not_touch_validation_or_first_test_anchor():
     data = _history()
     fold = plan_walk_forward(len(data.times), horizon=2)[0]
     before = make_fold_samples(data, fold, horizon=2)
-    new_close = data.close.copy()
-    # Change after first test anchor (the first test target will change).
-    new_close[fold.test.anchor_start + 1:] *= 3
+    # Change after first test anchor (the first test target will change),
+    # scaling OHLC together to keep synthetic candles internally consistent.
+    start = fold.test.anchor_start + 1
+    modified_prices = {}
+    for field in ("open", "high", "low", "close"):
+        values = getattr(data, field).copy()
+        values[start:] *= 3
+        modified_prices[field] = values
     after = make_fold_samples(
-        replace(data, close=new_close), fold, horizon=2,
+        replace(data, **modified_prices), fold, horizon=2,
     )
     np.testing.assert_array_equal(before.feature_mean, after.feature_mean)
     np.testing.assert_array_equal(before.train_x, after.train_x)
@@ -151,9 +156,12 @@ def test_per_fold_scaler_expands_only_when_earlier_test_becomes_history():
     before1 = make_fold_samples(data, f1)
     before2 = make_fold_samples(data, f2)
     before3 = make_fold_samples(data, f3)
-    changed_close = data.close.copy()
-    changed_close[f1.test.bar_start:f1.test.bar_stop] *= 1.7
-    modified = replace(data, close=changed_close)
+    modified_prices = {}
+    for field in ("open", "high", "low", "close"):
+        values = getattr(data, field).copy()
+        values[f1.test.bar_start:f1.test.bar_stop] *= 1.7
+        modified_prices[field] = values
+    modified = replace(data, **modified_prices)
     after1 = make_fold_samples(modified, f1)
     after2 = make_fold_samples(modified, f2)
     after3 = make_fold_samples(modified, f3)
