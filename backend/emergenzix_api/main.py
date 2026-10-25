@@ -15,6 +15,7 @@ from .backtesting import run_sma_crossover
 from .api_common import _now, _row_to_dict
 from .config import Settings
 from .database import Database
+from .dataset_store import DatasetIntegrityError, verify_stored_dataset
 from .date_range_backtest_api import router as date_range_backtest_router
 from .backtest_read_api import router as backtest_read_router
 from .dataset_api import router as dataset_router
@@ -215,15 +216,19 @@ def create_app(
         if payload.dataset_id is not None:
             if dataset is None:
                 raise HTTPException(status_code=404, detail="Dataset not found")
+            try:
+                verified_bars = verify_stored_dataset(dataset)
+            except DatasetIntegrityError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Stored dataset failed integrity check",
+                ) from exc
             if _symbol_key(dataset["symbol"]) != _symbol_key(strategy["symbol"]):
                 raise HTTPException(
                     status_code=422,
                     detail="Dataset symbol does not match strategy symbol",
                 )
-            bars = [
-                Bar.model_validate(item)
-                for item in json.loads(dataset["bars_json"])
-            ]
+            bars = [Bar.model_validate(item) for item in verified_bars]
             data_provenance = {
                 "source": dataset["source"],
                 "exchange": dataset["exchange"],
