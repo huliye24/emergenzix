@@ -27,7 +27,7 @@ def _validate_fold(
         raise ValueError("fold contains an invalid stage")
     if train.anchor_start != lookback - 1:
         raise ValueError("lookback does not match the frozen fold plan")
-    if any(s.anchor_stop != s.bar_stop - horizon for s in (train, val, test)):
+    if all(s.anchor_stop != s.bar_stop - horizon for s in (train, val, test)):
         raise ValueError("horizon does not match the frozen fold plan")
     if not (
         train.bar_start == 0
