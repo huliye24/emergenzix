@@ -109,7 +109,10 @@ def test_future_validation_test_mutations_never_alter_fold_training():
     original = make_fold_samples(data, fold)
     future_close = data.close.copy()
     future_volume = data.volume.copy()
-    future_close[fold.validation.bar_start:] *= 1.4
+    future_count = len(future_close) - fold.validation.bar_start
+    future_close[fold.validation.bar_start:] *= (
+        1.4 + 0.03 * np.sin(np.arange(future_count) / 3.0)
+    )
     future_volume[fold.validation.bar_start:] *= 2.0
     changed_data = replace(
         data, close=future_close, volume=future_volume,
