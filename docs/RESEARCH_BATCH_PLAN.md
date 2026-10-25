@@ -117,3 +117,59 @@ Codex acceptance:
     python -m pytest -q tests/test_research_batch_worker.py
     python -m pytest -q
 
+## Read-only verified Research Batch Report
+
+A separate read-only snapshot report summarizes persisted batch progress and
+verifies every completed job against the immutable historical record stored
+in SQLite. No backtests are executed by the report command.
+
+Usage from the backend directory:
+
+    python -m emergenzix_api.research_batch_report_cli \
+      --batch-id BATCH_SHA256 \
+      --db-path ../data/emergenzix.db \
+      --output ../data/reports/research-batch.json
+
+Omit --output to print JSON to stdout. With --output, export both JSON and
+Markdown at the specified .json base path. This is an internal local CLI;
+there is no public, unauthenticated batch-report HTTP mutation endpoint.
+
+The report includes: planned job count, pending/leased/completed/failed/
+cancelled state counts, percentage completed, per-job attempts and
+allowlisted failure codes, selected candidates, independent completed
+record IDs and SHA-256 digests, single-run return and max drawdown
+distributions, and a stable snapshot hash.
+
+The snapshot reads within one SQLite transaction with query_only enabled.
+For every completed row, it independently checks the immutable result
+fingerprint, actual stored dataset provenance, original strategy protocol,
+costs and test dates. A missing or corrupted completed record fails the
+ENTIRE report rather than showing partial/misleading financial statistics.
+Unfinished, failed and cancelled jobs are not treated as zero-return
+simulated weeks. An expired lease is flagged without causing a background
+retry or mutating the ledger.
+
+A snapshot SHA-256 is deterministic for identical persisted job state
+(except expired-at-snapshot flags); a subsequent completed job changes
+the snapshot. JSON/Markdown files are exported only on explicit request.
+
+IMPORTANT: Individual weekly returns are NOT multiplied into a portfolio
+return, and per-record maximum drawdown is NOT a live portfolio drawdown.
+Different candidate selections are explicitly flagged. A report never
+promotes strategies, creates trading orders or grants PAPER/TESTNET/LIVE
+permissions. The return distribution is descriptive and may reflect
+selection bias or correlated training periods.
+
+Acceptance tests:
+
+    cd backend
+    python -m pytest -q tests/test_research_batch_report.py
+    python -m pytest -q
+
+Read-only CLI hardening: the report command opens an existing SQLite file via
+`mode=ro` and explicitly enables `PRAGMA query_only`. It does **not** call the
+normal mutable `Database.initialize()` constructor. Missing paths cannot
+create empty database files; generation of JSON/Markdown outputs remains an
+explicit `--output` action. The acceptance suite runs three historical weeks
+on synthetic offline candles, restarts the database process between jobs,
+confirms 100% completion, and checks that no paper orders were inserted.
