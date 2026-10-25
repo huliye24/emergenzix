@@ -17,7 +17,7 @@ from .dataset_store import persist_dataset
 from .market_data import normalize_symbol
 from .schemas import DatasetCreate
 
-router = APIRouter(tags=["datasets"])
+router = APIRouter()
 
 
 def _dataset_to_dict(row: Any, *, include_bars: bool = False) -> dict[str, Any]:
