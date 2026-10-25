@@ -15,6 +15,48 @@ from pathlib import Path
 from typing import Any, Callable
 
 
+# Telegram limits text messages to 4,096 UTF-16 code units. Leave headroom
+# for part headers and a safety note, including astral-plane emoji.
+_TELEGRAM_SINGLE_MESSAGE_UNITS = 3900
+_TELEGRAM_PART_BODY_UNITS = 3300
+_TELEGRAM_MAX_PARTS = 12
+
+
+def _utf16_units(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
+def _split_telegram_text(text: str) -> list[str] | None:
+    """Return lossless, ordered text parts; None means the message is too large."""
+    if _utf16_units(text) <= _TELEGRAM_SINGLE_MESSAGE_UNITS:
+        return [text]
+
+    parts: list[str] = []
+    start = 0
+    while start < len(text):
+        if len(parts) >= _TELEGRAM_MAX_PARTS:
+            return None
+        units = 0
+        end = start
+        while end < len(text):
+            units_for_char = 2 if ord(text[end]) > 0xFFFF else 1
+            if units + units_for_char > _TELEGRAM_PART_BODY_UNITS:
+                break
+            units += units_for_char
+            end += 1
+        if end == start:
+            return None
+
+        if end < len(text):
+            newline = text.rfind("\n", start + 1, end + 1)
+            # Prefer a whole line, but do not create tiny parts on unusual input.
+            if newline >= start + min(100, (end - start) // 3):
+                end = newline + 1
+        parts.append(text[start:end])
+        start = end
+    return parts
+
+
 class TelegramBotError(RuntimeError):
     """A sanitized Telegram transport or protocol failure."""
 
@@ -24,7 +66,432 @@ class ApiRequestError(RuntimeError):
 
 
 # Retain the original import path for callers and existing Telegram tests.
-from .telegram_backtest_format import _one_line, format_backtest_record
+from .telegram_backtest_format import (
+    _finite_number,
+    _one_line,
+    _percent,
+    format_backtest_record,
+)
+
+
+def _valid_record_id(value: object) -> bool:
+    """Accept only canonical SHA-256 record IDs, never path-like user input."""
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def format_saved_comparison(comparison: object, record_ids: list[str]) -> str:
+    """Present two independent saved observations without ranking strategies."""
+    invalid = "历史比较响应格式异常，请检查 API；未运行策略或创建订单。"
+    if not isinstance(comparison, dict) or len(record_ids) != 2:
+        return invalid
+    if (
+        comparison.get("comparison_type") != "independent_saved_observations"
+        or comparison.get("controlled_head_to_head") is not False
+        or comparison.get("automatic_winner_selection") is not False
+        or not isinstance(comparison.get("different_test_periods"), bool)
+        or not isinstance(comparison.get("different_cost_assumptions"), bool)
+    ):
+        return invalid
+    observations = comparison.get("observations")
+    if not isinstance(observations, list) or len(observations) != 2:
+        return invalid
+
+    lines = ["Emergenzix · 已保存回测比较（独立样本）"]
+    dataset_ids: list[str] = []
+    for index, (record, expected_id) in enumerate(zip(observations, record_ids), start=1):
+        if not isinstance(record, dict) or record.get("record_id") != expected_id:
+            return invalid
+        selected = record.get("selected_candidate")
+        strategy = record.get("strategy_type")
+        start = record.get("test_start_at")
+        end = record.get("test_end_at_exclusive")
+        dataset_id = record.get("dataset_sha256")
+        trades = record.get("number_of_trades")
+        if (
+            not all(isinstance(value, str) and value.strip()
+                    for value in (selected, strategy, start, end))
+            or not _valid_record_id(dataset_id)
+            or isinstance(trades, bool)
+            or not isinstance(trades, int)
+            or trades < 0
+        ):
+            return invalid
+        numeric_keys = (
+            "net_return_pct",
+            "benchmark_return_pct",
+            "max_drawdown_pct",
+            "win_rate_pct",
+            "total_fees",
+            "fee_bps_per_side",
+            "slippage_bps_per_side",
+        )
+        numbers = {key: _finite_number(record.get(key)) for key in numeric_keys}
+        if any(value is None for value in numbers.values()):
+            return invalid
+        dataset_ids.append(dataset_id)
+        lines.extend([
+            "",
+            f"【{index}】{_one_line(selected, 50)} · {_one_line(strategy, 40)}",
+            f"测试期（UTC）：{_one_line(start, 35)} 至 {_one_line(end, 35)}（不含结束）",
+            f"净收益：{_percent(numbers['net_return_pct'], signed=True)}；"
+            f"基准：{_percent(numbers['benchmark_return_pct'], signed=True)}",
+            f"最大回撤：{_percent(numbers['max_drawdown_pct'])}；"
+            f"交易次数：{trades}；胜率：{_percent(numbers['win_rate_pct'])}",
+            f"单边手续费/滑点：{numbers['fee_bps_per_side']:g}/"
+            f"{numbers['slippage_bps_per_side']:g} bps；总手续费：{numbers['total_fees']:,.2f}",
+            f"记录：{expected_id[:16]}…",
+        ])
+
+    lines.append("")
+    if comparison["different_test_periods"]:
+        lines.append("⚠ 测试区间不同，收益率不能直接比较优劣。")
+    if comparison["different_cost_assumptions"]:
+        lines.append("⚠ 手续费或滑点假设不同，结果不具有可比性。")
+    if len(set(dataset_ids)) > 1:
+        lines.append("⚠ 数据集不同，不属于同一数据条件下的对照。")
+    lines.append("仅为两次独立历史研究观察，不是受控策略对照；不自动选优或创建订单。")
+    return "\n".join(lines)
+
+
+_EVIDENCE_CHECK_LABELS = {
+    "pretest_trade_sample": "训练期候选交易样本（至少 2 笔）",
+    "holdout_trade_sample": "测试期交易样本（至少 2 笔）",
+    "positive_holdout_return": "测试期净收益为正",
+    "walk_forward_trade_coverage": "Walk-forward 至少 2 折有交易证据",
+    "walk_forward_positive_folds": "Walk-forward 至少 2 折正收益",
+    "walk_forward_candidate_consistency": "三折选出的候选与最终候选一致",
+    "cost_stress_positive_grid": "九种成本情景均为正且有最低交易样本",
+}
+
+
+def _strict_evidence_number(value: object) -> float | None:
+    """Avoid treating strings, booleans, and non-finite API data as real metrics."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = _finite_number(value)
+    return number
+
+
+def format_saved_evidence(assessment: object, record_id: str) -> str:
+    """Render only a complete, non-authorizing read-only evidence assessment."""
+    invalid = "证据评估响应格式异常，未显示不可信结果；没有运行策略或创建订单。"
+    if not _valid_record_id(record_id) or not isinstance(assessment, dict):
+        return invalid
+    if (
+        assessment.get("record_id") != record_id
+        or not _valid_record_id(assessment.get("record_sha256"))
+        or assessment.get("assessment_version") != "date-range-evidence-v1"
+        or assessment.get("protocol_version") != "btc-date-range-backtest-v4"
+        or assessment.get("automatic_strategy_promotion") is not False
+        or assessment.get("paper_order_permission") is not False
+        or assessment.get("testnet_order_permission") is not False
+        or assessment.get("live_order_permission") is not False
+    ):
+        return invalid
+
+    checks = assessment.get("screening_checks")
+    observations = assessment.get("observations")
+    if (
+        not isinstance(checks, dict)
+        or set(checks) != set(_EVIDENCE_CHECK_LABELS)
+        or any(type(value) is not bool for value in checks.values())
+        or not isinstance(observations, dict)
+    ):
+        return invalid
+
+    measured_counts = (
+        "validation_completed_trades",
+        "holdout_completed_trades",
+        "walk_forward_folds_with_trade_evidence",
+        "walk_forward_positive_folds",
+        "stress_scenarios_positive",
+        "stress_scenarios_total",
+    )
+    if any(
+        type(observations.get(name)) is not int or observations[name] < 0
+        for name in measured_counts
+    ):
+        return invalid
+    if (
+        observations["walk_forward_folds_with_trade_evidence"] > 3
+        or observations["walk_forward_positive_folds"] > 3
+        or observations["stress_scenarios_total"] != 9
+        or observations["stress_scenarios_positive"] > 9
+        or type(observations.get("walk_forward_same_selected_candidate")) is not bool
+    ):
+        return invalid
+
+    holdout_return = _strict_evidence_number(observations.get("holdout_net_return_pct"))
+    worst_stress = _strict_evidence_number(observations.get("worst_stress_net_return_pct"))
+    if holdout_return is None or worst_stress is None:
+        return invalid
+    if (
+        checks["pretest_trade_sample"] != (observations["validation_completed_trades"] >= 2)
+        or checks["holdout_trade_sample"] != (observations["holdout_completed_trades"] >= 2)
+        or checks["positive_holdout_return"] != (holdout_return > 0)
+        or checks["walk_forward_trade_coverage"]
+        != (observations["walk_forward_folds_with_trade_evidence"] >= 2)
+        or checks["walk_forward_positive_folds"]
+        != (observations["walk_forward_positive_folds"] >= 2)
+        or checks["walk_forward_candidate_consistency"]
+        != observations["walk_forward_same_selected_candidate"]
+        or (checks["cost_stress_positive_grid"]
+            and observations["stress_scenarios_positive"] != 9)
+    ):
+        return invalid
+
+    status = assessment.get("screening_status")
+    all_met = all(checks.values())
+    if status != ("checks_met" if all_met else "limited_evidence"):
+        return invalid
+
+    title = "筛查条件全部满足（不代表统计显著）" if all_met else "证据有限（不能判定策略可靠）"
+    lines = [
+        "Emergenzix · 历史策略证据评估",
+        f"记录：{record_id}",
+        f"评估：{title}",
+        f"测试期净收益率：{_percent(holdout_return, signed=True)}",
+        f"训练期/测试期已平仓交易数："
+        f"{observations['validation_completed_trades']}/"
+        f"{observations['holdout_completed_trades']}",
+        f"Walk-forward：{observations['walk_forward_folds_with_trade_evidence']}/3 折有最低交易证据；"
+        f"{observations['walk_forward_positive_folds']}/3 折正收益",
+        f"交易成本压力测试：{observations['stress_scenarios_positive']}/9 情景正收益；"
+        f"最差净收益率 {_percent(worst_stress, signed=True)}",
+        "",
+        "七项证据筛查（启发式，不是统计检验）：",
+    ]
+    lines.extend(
+        ("✓ " if checks[key] else "✗ ") + label
+        for key, label in _EVIDENCE_CHECK_LABELS.items()
+    )
+    lines.extend([
+        "",
+        "注意：最低 2 笔交易不足以证明统计显著性；历史正收益并不代表未来获利。",
+        "本评估不会晋级策略，也不授权 PAPER、TESTNET 或 LIVE 下单。",
+    ])
+    return "\n".join(lines)
+
+
+
+def _stats_distribution(value: object, measurements: list[float]) -> dict[str, float] | None:
+    """Validate all reported distribution values against source observations."""
+    if not measurements:
+        if value is not None:
+            raise ValueError("unexpected empty-sample distribution")
+        return None
+    if not isinstance(value, dict) or set(value) != {"mean", "median", "minimum", "maximum"}:
+        raise ValueError("invalid statistics distribution")
+    from statistics import fmean, median
+
+    expected = {
+        "mean": round(fmean(measurements), 8),
+        "median": round(median(measurements), 8),
+        "minimum": round(min(measurements), 8),
+        "maximum": round(max(measurements), 8),
+    }
+    for name, expected_value in expected.items():
+        result = _strict_evidence_number(value.get(name))
+        if result is None or abs(result - expected_value) > 0.000001:
+            raise ValueError("inconsistent statistics distribution")
+    return expected
+
+
+def _stats_day(value: object) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise ValueError("invalid test window timestamp")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as exc:
+        raise ValueError("invalid test window timestamp") from exc
+    if (
+        parsed.utcoffset() != timedelta(0)
+        or parsed.time() != datetime_time(0, 0)
+    ):
+        raise ValueError("invalid test window alignment")
+    return parsed
+
+
+def format_saved_period_statistics(statistics: object, requested_limit: int) -> str:
+    """Fail closed on broken/misleading sample metadata; show no portfolio PnL."""
+    invalid = "历史统计响应格式异常，未展示不可信的汇总数据；没有执行交易。"
+    if not isinstance(statistics, dict) or type(requested_limit) is not int:
+        return invalid
+    if not 2 <= requested_limit <= 100:
+        return invalid
+    if (
+        statistics.get("statistics_version") != "date-range-statistics-v1"
+        or statistics.get("protocol_version") != "btc-date-range-backtest-v4"
+        or statistics.get("aggregation_type") != "descriptive_saved_observations"
+        or any(
+            statistics.get(key) is not False
+            for key in (
+                "automatic_winner_selection", "strategy_promotion_allowed",
+                "paper_order_permission", "testnet_order_permission",
+                "live_order_permission",
+            )
+        )
+    ):
+        return invalid
+
+    selection = statistics.get("selection")
+    records = statistics.get("observations")
+    sample = statistics.get("sample_size")
+    ids = selection.get("record_ids") if isinstance(selection, dict) else None
+    if (
+        not isinstance(selection, dict)
+        or selection.get("method") != "latest_by_created_at"
+        or type(selection.get("limit")) is not int
+        or selection["limit"] != requested_limit
+        or type(sample) is not int
+        or not 0 <= sample <= requested_limit
+        or not isinstance(records, list)
+        or not isinstance(ids, list)
+        or len(records) != sample
+        or len(ids) != sample
+        or any(not isinstance(item, str) for item in ids)
+        or len(set(ids)) != sample
+    ):
+        return invalid
+
+    flags = (
+        "different_cost_assumptions", "different_selected_candidates",
+        "all_test_windows_seven_days", "nonoverlapping_seven_day_windows",
+    )
+    if any(type(statistics.get(key)) is not bool for key in flags):
+        return invalid
+    integers = (
+        "profitable_observation_count", "losing_observation_count",
+        "flat_observation_count", "distinct_test_windows",
+        "overlapping_test_window_pairs", "repeated_test_window_count",
+    )
+    if any(
+        type(statistics.get(key)) is not int or statistics[key] < 0
+        for key in integers
+    ):
+        return invalid
+    if statistics.get("status") != (
+        "descriptive_only" if sample >= 2 else "insufficient_records"
+    ):
+        return invalid
+
+    returns: list[float] = []
+    drawdowns: list[float] = []
+    windows: list[tuple[datetime, datetime]] = []
+    costs: set[tuple[float, float]] = set()
+    candidates: set[str] = set()
+    try:
+        for index, row in enumerate(records):
+            if (
+                not isinstance(row, dict)
+                or not _valid_record_id(ids[index])
+                or row.get("record_id") != ids[index]
+                or row.get("protocol_version") != "btc-date-range-backtest-v4"
+                or not _valid_record_id(row.get("dataset_sha256"))
+                or not isinstance(row.get("selected_candidate"), str)
+                or not row["selected_candidate"]
+            ):
+                raise ValueError("invalid source observation")
+            ret = _strict_evidence_number(row.get("net_return_pct"))
+            dd = _strict_evidence_number(row.get("max_drawdown_pct"))
+            fee = _strict_evidence_number(row.get("fee_bps_per_side"))
+            slip = _strict_evidence_number(row.get("slippage_bps_per_side"))
+            if (
+                ret is None or ret < -100 or dd is None or not 0 <= dd <= 100
+                or fee is None or fee < 0 or slip is None or slip < 0
+            ):
+                raise ValueError("invalid source metrics")
+            start = _stats_day(row.get("test_start_at"))
+            end = _stats_day(row.get("test_end_at_exclusive"))
+            duration = end - start
+            if not timedelta(days=1) <= duration <= timedelta(days=30):
+                raise ValueError("invalid research period")
+            returns.append(ret)
+            drawdowns.append(dd)
+            windows.append((start, end))
+            costs.add((fee, slip))
+            candidates.add(row["selected_candidate"])
+
+        _stats_distribution(statistics.get("return_distribution_pct"), returns)
+        _stats_distribution(
+            statistics.get("individual_max_drawdown_distribution_pct"), drawdowns
+        )
+    except (ValueError, OverflowError, TypeError):
+        return invalid
+
+    overlap_pairs = sum(
+        start_a < end_b and start_b < end_a
+        for i, (start_a, end_a) in enumerate(windows)
+        for start_b, end_b in windows[i + 1:]
+    )
+    distinct_windows = len(set(windows))
+    seven_day = all(end - start == timedelta(days=7) for start, end in windows)
+    disjoint_seven_day = sample >= 2 and seven_day and overlap_pairs == 0
+    if (
+        statistics["profitable_observation_count"] != sum(value > 0 for value in returns)
+        or statistics["losing_observation_count"] != sum(value < 0 for value in returns)
+        or statistics["flat_observation_count"] != sum(value == 0 for value in returns)
+        or statistics["distinct_test_windows"] != distinct_windows
+        or statistics["overlapping_test_window_pairs"] != overlap_pairs
+        or statistics["repeated_test_window_count"] != sample - distinct_windows
+        or statistics["different_cost_assumptions"] != (len(costs) > 1)
+        or statistics["different_selected_candidates"] != (len(candidates) > 1)
+        or statistics["all_test_windows_seven_days"] != seven_day
+        or statistics["nonoverlapping_seven_day_windows"] != disjoint_seven_day
+    ):
+        return invalid
+
+    lines = [
+        "Emergenzix · 已保存历史回测跨周期统计",
+        f"统计范围：最近 {requested_limit} 条；实际 {sample} 条已保存记录",
+    ]
+    if not sample:
+        lines.append("暂无已保存的回测记录，无法计算收益或回撤分布。")
+    else:
+        ret_dist = _stats_distribution(statistics["return_distribution_pct"], returns)
+        dd_dist = _stats_distribution(
+            statistics["individual_max_drawdown_distribution_pct"], drawdowns
+        )
+        lines.extend([
+            f"正收益 / 负收益 / 持平记录："
+            f"{statistics['profitable_observation_count']} / "
+            f"{statistics['losing_observation_count']} / "
+            f"{statistics['flat_observation_count']}",
+            f"单次回测净收益：均值 {_percent(ret_dist['mean'], signed=True)}；"
+            f"中位数 {_percent(ret_dist['median'], signed=True)}",
+            f"收益区间：{_percent(ret_dist['minimum'], signed=True)} ~ "
+            f"{_percent(ret_dist['maximum'], signed=True)}",
+            f"单次最大回撤：均值 {_percent(dd_dist['mean'])}；"
+            f"中位数 {_percent(dd_dist['median'])}；"
+            f"区间 {_percent(dd_dist['minimum'])} ~ {_percent(dd_dist['maximum'])}",
+        ])
+
+    if sample < 2:
+        lines.append("⚠ 保存记录不足两条，无法讨论跨周期稳定性。")
+    if statistics["repeated_test_window_count"]:
+        lines.append(f"⚠ 相同测试区间重复：{statistics['repeated_test_window_count']} 条额外记录。")
+    if overlap_pairs:
+        lines.append(f"⚠ 存在 {overlap_pairs} 对重叠测试区间；不能当作独立交易周。")
+    if statistics["different_cost_assumptions"]:
+        lines.append("⚠ 手续费或滑点设定不一致。")
+    if statistics["different_selected_candidates"]:
+        lines.append("⚠ 不同日期选择了不同候选策略，并非固定策略的业绩记录。")
+    if not seven_day and sample:
+        lines.append("⚠ 并非所有记录都覆盖七天，盈利记录数不等于盈利周数。")
+    if disjoint_seven_day:
+        lines.append("测试区间：每条均为七天，且互不重叠；训练数据和市场环境仍可能相关。")
+
+    lines.extend([
+        "",
+        "提示：以上仅为已保存实验的描述性统计，不是实盘资金曲线；"
+        "不能复利相乘，也不能推断投资组合回撤或未来收益。",
+        "没有自动选优、晋级策略或授权 PAPER / TESTNET / LIVE 下单。",
+    ])
+    return "\n".join(lines)
 
 
 class TelegramCommandBot:
@@ -183,16 +650,30 @@ class TelegramCommandBot:
             raise ApiRequestError("API 返回了无法识别的响应。") from exc
 
     def _send_message(self, chat_id: str, text: str) -> None:
-        safe_text = text if len(text) <= 3900 else text[:3890] + "\n…（内容已截断）"
-        self._telegram_call(
-            "sendMessage",
-            {
-                "chat_id": chat_id,
-                "text": safe_text,
-                "disable_web_page_preview": True,
-            },
-            timeout=15,
-        )
+        """Deliver complete bounded reports without silently dropping trailing warnings."""
+        parts = _split_telegram_text(text)
+        if parts is None:
+            parts = [
+                "报告超出 Telegram 安全分段发送上限，未发送不完整的结果。"
+                "请通过私有 API 或只读 CLI 查看完整记录；仅 PAPER 研究，不创建订单。"
+            ]
+        elif len(parts) > 1:
+            total = len(parts)
+            parts = [
+                f"【报告 {index}/{total}】\n{part}\n"
+                "【仅历史 PAPER 研究，不创建交易订单】"
+                for index, part in enumerate(parts, start=1)
+            ]
+        for part in parts:
+            self._telegram_call(
+                "sendMessage",
+                {
+                    "chat_id": chat_id,
+                    "text": part,
+                    "disable_web_page_preview": True,
+                },
+                timeout=15,
+            )
 
     @staticmethod
     def _help_text() -> str:
@@ -200,6 +681,11 @@ class TelegramCommandBot:
             "Emergenzix · Telegram 命令\n"
             "/status — 查看 API、PAPER 模式与通知队列\n"
             "/latest — 查看最近一次日期区间回测\n"
+            "/history — 查看最近 5 条已保存回测及完整记录 ID\n"
+            "/report RECORD_ID — 按完整记录 ID 查看历史报告\n"
+            "/compare ID1 ID2 — 对比两条已保存的历史回测\n"
+            "/evidence RECORD_ID — 查看历史回测的七项证据筛查\n"
+            "/stats [limit] — 汇总最近 2–100 条已保存回测（默认 30）\n"
             "/backtest YYYY-MM-DD [days] — 回测历史区间，days 默认为 7，范围 1–30 天\n"
             "/batch — 批次研究计划/登记/进度/报告（需服务器显式启用）\n"
             "/help — 查看此说明\n\n"
@@ -263,6 +749,128 @@ class TelegramCommandBot:
         if not records:
             return "尚无已保存的日期区间回测。发送 /help 查看如何启动一次历史回测。"
         return format_backtest_record(records[0])
+
+    def _history_text(self) -> str:
+        """List saved observations without running a strategy or placing orders."""
+        try:
+            records = self._api_request(
+                "GET", "/api/v1/research/date-range-backtests?limit=5"
+            )
+        except ApiRequestError as exc:
+            return f"查询历史回测失败：{_one_line(exc)}"
+        if not isinstance(records, list) or len(records) > 5:
+            return "回测历史响应格式异常，请检查 API。"
+        if not records:
+            return "尚无已保存的日期区间回测。发送 /help 查看回测命令。"
+
+        lines = ["Emergenzix · 最近 5 条历史回测（新到旧）"]
+        for record in records:
+            if not isinstance(record, dict) or not _valid_record_id(record.get("id")):
+                return "回测历史响应格式异常，请检查 API。"
+            report = record.get("report")
+            if not isinstance(report, dict):
+                return "回测历史响应格式异常，请检查 API。"
+            period = report.get("period")
+            selection = report.get("strategy_selection")
+            metrics = report.get("test_result")
+            if not all(isinstance(value, dict) for value in (period, selection, metrics)):
+                return "回测历史响应格式异常，请检查 API。"
+            selected = selection.get("selected_candidate")
+            start_at = period.get("test_start_at")
+            candidate_id = selected.get("candidate_id") if isinstance(selected, dict) else None
+            net_return = _finite_number(metrics.get("total_return_pct"))
+            if (
+                not isinstance(start_at, str)
+                or len(start_at) < 10
+                or not isinstance(candidate_id, str)
+                or not candidate_id.strip()
+                or net_return is None
+            ):
+                return "回测历史响应格式异常，请检查 API。"
+            lines.append(
+                f"{_one_line(start_at[:10])} | {_one_line(candidate_id, 48)} | "
+                f"{_percent(net_return, signed=True)}"
+            )
+            lines.append(f"/report {record['id']}")
+
+        lines.append("以上为独立历史研究记录，不代表未来收益；没有创建任何订单。")
+        return "\n".join(lines)
+
+    def _report_text(self, arguments: list[str]) -> str:
+        usage = "用法：/report RECORD_ID（使用 /history 获取完整的 64 位记录 ID）"
+        if len(arguments) != 1 or not _valid_record_id(arguments[0]):
+            return usage
+        try:
+            record = self._api_request(
+                "GET", f"/api/v1/research/date-range-backtests/{arguments[0]}"
+            )
+        except ApiRequestError as exc:
+            return f"查询历史报告失败：{_one_line(exc)}"
+        return format_backtest_record(record)
+
+    def _compare_text(self, arguments: list[str]) -> str:
+        usage = "用法：/compare ID1 ID2（使用 /history 获取两个完整的 64 位记录 ID）"
+        if (
+            len(arguments) != 2
+            or arguments[0] == arguments[1]
+            or any(not _valid_record_id(record_id) for record_id in arguments)
+        ):
+            return usage
+        query = urllib.parse.urlencode(
+            [("record_ids", record_id) for record_id in arguments]
+        )
+        try:
+            comparison = self._api_request(
+                "GET", f"/api/v1/research/date-range-comparisons?{query}"
+            )
+        except ApiRequestError as exc:
+            return f"比较历史回测失败：{_one_line(exc)}\n没有运行策略或创建订单。"
+        return format_saved_comparison(comparison, arguments)
+
+    def _stats_text(self, arguments: list[str]) -> str:
+        usage = "用法：/stats [limit]（默认 30，范围 2–100；只统计已保存回测）"
+        if len(arguments) > 1:
+            return usage
+        if not arguments:
+            limit = 30
+        elif (
+            not arguments[0].isascii()
+            or not arguments[0].isdecimal()
+            or len(arguments[0]) > 3
+        ):
+            return usage
+        else:
+            limit = int(arguments[0])
+            if not 2 <= limit <= 100:
+                return usage
+
+        try:
+            result = self._api_request(
+                "GET", f"/api/v1/research/date-range-statistics?limit={limit}"
+            )
+        except ApiRequestError:
+            return (
+                "历史统计查询失败：请检查内部只读统计 API 与已保存记录；"
+                "没有运行策略或创建订单。"
+            )
+        return format_saved_period_statistics(result, limit)
+
+    def _evidence_text(self, arguments: list[str]) -> str:
+        usage = "用法：/evidence RECORD_ID（使用 /history 获取完整的 64 位记录 ID）"
+        if len(arguments) != 1 or not _valid_record_id(arguments[0]):
+            return usage
+        try:
+            assessment = self._api_request(
+                "GET",
+                f"/api/v1/research/date-range-backtests/{arguments[0]}/evidence",
+            )
+        except ApiRequestError:
+            # Avoid echoing API paths, untrusted error details, or credentials in chat.
+            return (
+                "证据评估查询失败：记录可能不存在、版本不受支持，或 API 不可用。"
+                "请检查 /history 和内部服务；没有执行任何交易。"
+            )
+        return format_saved_evidence(assessment, arguments[0])
 
     def _backtest_text(self, arguments: list[str], *, chat_id: str | None = None) -> str:
         usage = "用法：/backtest YYYY-MM-DD [days]（days 为 1–30，默认 7）"
@@ -372,6 +980,16 @@ class TelegramCommandBot:
             reply = self._status_text()
         elif command == "/latest":
             reply = self._latest_text()
+        elif command == "/history":
+            reply = self._history_text() if not arguments else "用法：/history（不需要参数）"
+        elif command == "/report":
+            reply = self._report_text(arguments)
+        elif command == "/compare":
+            reply = self._compare_text(arguments)
+        elif command == "/evidence":
+            reply = self._evidence_text(arguments)
+        elif command == "/stats":
+            reply = self._stats_text(arguments)
         elif command == "/backtest":
             reply = self._backtest_text(arguments, chat_id=chat_id)
         elif command == "/batch":

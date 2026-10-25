@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 from pathlib import Path
 
 import pytest
@@ -238,6 +239,11 @@ def test_help_command_sends_usage_to_authorized_chat(tmp_path: Path) -> None:
     assert len(sent) == 1
     assert sent[0]["chat_id"] == "12345"
     assert "/status" in sent[0]["text"]
+    assert "/history" in sent[0]["text"]
+    assert "/report RECORD_ID" in sent[0]["text"]
+    assert "/compare ID1 ID2" in sent[0]["text"]
+    assert "/evidence RECORD_ID" in sent[0]["text"]
+    assert "/stats [limit]" in sent[0]["text"]
     assert "/backtest YYYY-MM-DD [days]" in sent[0]["text"]
     assert "不会创建订单" in sent[0]["text"]
 
@@ -483,6 +489,645 @@ def test_latest_returns_most_recent_saved_record(tmp_path: Path) -> None:
     assert "sma-3-10" in sent[0]
 
 
+
+def test_history_lists_five_max_and_full_ids_in_order(tmp_path: Path) -> None:
+    sent = []
+    api_requests = []
+    recent = _record()
+    older = _record()
+    older["id"] = "b" * 64
+    older["report"]["period"]["test_start_at"] = "2025-09-01T00:00:00Z"
+
+    def requester(request, *, timeout):
+        url = request.full_url
+        if url.endswith("/api/v1/research/date-range-backtests?limit=5"):
+            api_requests.append((request.get_method(), url))
+            return FakeResponse([recent, older])
+        if url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 20}})
+        raise AssertionError(f"unexpected URL: {url}")
+
+    bot = _bot(tmp_path, requester)
+    bot.handle_update(_update("/history"))
+    assert len(api_requests) == 1
+    assert api_requests[0][0] == "GET"
+    assert len(sent) == 1
+    assert sent[0].index("/report " + "a" * 64) < sent[0].index("/report " + "b" * 64)
+    assert "sma-3-10" in sent[0]
+    assert "+0.5074%" in sent[0]
+    assert "\n/report " + "a" * 64 in sent[0]
+    assert "没有创建任何订单" in sent[0]
+
+
+def test_report_fetches_one_saved_record_without_rerun(tmp_path: Path) -> None:
+    sent = []
+    fetched = []
+    record_id = "a" * 64
+
+    def requester(request, *, timeout):
+        url = request.full_url
+        if url.endswith("/api/v1/research/date-range-backtests/" + record_id):
+            fetched.append(request.get_method())
+            return FakeResponse(_record())
+        if url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 21}})
+        raise AssertionError(f"unexpected URL: {url}")
+
+    bot = _bot(tmp_path, requester)
+    bot.handle_update(_update("/report " + record_id))
+    assert fetched == ["GET"]
+    assert "历史回测完成" in sent[0]
+    assert "净收益率：+0.5074%" in sent[0]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/report",
+        "/report abc",
+        "/report " + "A" * 64,
+        "/report " + "a" * 63 + "/",
+        "/report " + "a" * 64 + " extra",
+        "/history extra",
+    ],
+)
+def test_invalid_archive_commands_never_call_api(tmp_path: Path, command: str) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 22}})
+        raise AssertionError(f"invalid command called API: {request.full_url}")
+
+    _bot(tmp_path, requester).handle_update(_update(command))
+    assert len(sent) == 1
+    assert "用法：" in sent[0]
+
+
+def test_history_empty_and_malformed_responses_fail_closed(tmp_path: Path) -> None:
+    sent = []
+    payloads = [[], [{"id": "invalid"}]]
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/api/v1/research/date-range-backtests?limit=5"):
+            return FakeResponse(payloads.pop(0))
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 23}})
+        raise AssertionError(f"unexpected URL: {request.full_url}")
+
+    bot = _bot(tmp_path, requester)
+    bot.handle_update(_update("/history"))
+    bot.handle_update(_update("/history", update_id=2))
+    assert "尚无已保存" in sent[0]
+    assert "响应格式异常" in sent[1]
+    assert "/report " not in sent[1]
+
+
+def test_report_api_error_is_sanitized(tmp_path: Path) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 24}})
+        raise urllib.error.URLError("do not leak internal address")
+
+    _bot(tmp_path, requester).handle_update(_update("/report " + "a" * 64))
+    assert "查询历史报告失败" in sent[0]
+    assert "do not leak" not in sent[0]
+
+
+def test_unauthorized_history_is_ignored(tmp_path: Path) -> None:
+    def requester(request, *, timeout):
+        raise AssertionError(f"unauthorized query: {request.full_url}")
+
+    _bot(tmp_path, requester).handle_update(_update("/history", chat_id=99999))
+
+
+def _comparison_fixture(
+    first_id: str = "a" * 64,
+    second_id: str = "b" * 64,
+    *,
+    different_periods: bool = False,
+    different_costs: bool = False,
+) -> dict[str, object]:
+    def row(record_id: str) -> dict[str, object]:
+        return {
+            "record_id": record_id,
+            "selected_candidate": "sma-3-10",
+            "strategy_type": "sma_crossover",
+            "test_start_at": "2025-10-21T00:00:00Z",
+            "test_end_at_exclusive": "2025-10-28T00:00:00Z",
+            "dataset_sha256": "d" * 64,
+            "net_return_pct": 0.5074,
+            "benchmark_return_pct": 3.2,
+            "max_drawdown_pct": 1.2,
+            "number_of_trades": 2,
+            "win_rate_pct": 50.0,
+            "total_fees": 39.3,
+            "fee_bps_per_side": 10.0,
+            "slippage_bps_per_side": 5.0,
+        }
+
+    first, second = row(first_id), row(second_id)
+    if different_periods:
+        second["test_start_at"] = "2025-11-01T00:00:00Z"
+        second["test_end_at_exclusive"] = "2025-11-08T00:00:00Z"
+    if different_costs:
+        second["fee_bps_per_side"] = 20.0
+    return {
+        "comparison_type": "independent_saved_observations",
+        "controlled_head_to_head": False,
+        "automatic_winner_selection": False,
+        "different_test_periods": different_periods,
+        "different_cost_assumptions": different_costs,
+        "observations": [first, second],
+    }
+
+
+def test_compare_command_gets_two_saved_records_without_rerun(tmp_path: Path) -> None:
+    sent, api_requests = [], []
+
+    def requester(request, *, timeout):
+        url = request.full_url
+        if "/api/v1/research/date-range-comparisons?" in url:
+            api_requests.append(request)
+            return FakeResponse(_comparison_fixture())
+        if url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 31}})
+        raise AssertionError(f"unexpected URL: {url}")
+
+    _bot(tmp_path, requester).handle_update(
+        _update("/compare " + "a" * 64 + " " + "b" * 64)
+    )
+    assert len(api_requests) == 1
+    assert api_requests[0].get_method() == "GET"
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(api_requests[0].full_url).query)
+    assert query["record_ids"] == ["a" * 64, "b" * 64]
+    assert len(sent) == 1
+    assert "净收益：+0.5074%" in sent[0]
+    assert "最大回撤：1.2000%" in sent[0]
+    assert "不自动选优或创建订单" in sent[0]
+
+
+def test_compare_command_displays_cost_and_period_warnings(tmp_path: Path) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if "/date-range-comparisons?" in request.full_url:
+            return FakeResponse(
+                _comparison_fixture(different_periods=True, different_costs=True)
+            )
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 32}})
+        raise AssertionError(f"unexpected URL: {request.full_url}")
+
+    _bot(tmp_path, requester).handle_update(
+        _update("/compare " + "a" * 64 + " " + "b" * 64)
+    )
+    assert "测试区间不同" in sent[0]
+    assert "手续费或滑点假设不同" in sent[0]
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        "/compare",
+        "/compare " + "a" * 64,
+        "/compare " + "a" * 64 + " " + "a" * 64,
+        "/compare " + "a" * 64 + " " + "B" * 64,
+        "/compare " + "a" * 64 + " " + "../etc/passwd",
+        "/compare " + "a" * 64 + " " + "b" * 64 + " extra",
+    ],
+)
+def test_compare_rejects_invalid_requests_without_api_call(tmp_path: Path, argument: str) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 33}})
+        raise AssertionError(f"should not call API: {request.full_url}")
+
+    _bot(tmp_path, requester).handle_update(_update(argument))
+    assert len(sent) == 1
+    assert "用法：/compare" in sent[0]
+
+
+def test_compare_fails_closed_if_api_response_is_not_independent(tmp_path: Path) -> None:
+    sent = []
+    bad = _comparison_fixture()
+    bad["automatic_winner_selection"] = True
+
+    def requester(request, *, timeout):
+        if "/date-range-comparisons?" in request.full_url:
+            return FakeResponse(bad)
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 34}})
+        raise AssertionError(f"unexpected URL: {request.full_url}")
+
+    _bot(tmp_path, requester).handle_update(
+        _update("/compare " + "a" * 64 + " " + "b" * 64)
+    )
+    assert "响应格式异常" in sent[0]
+    assert "净收益：" not in sent[0]
+
+
+def test_compare_mismatched_record_id_rejects_result(tmp_path: Path) -> None:
+    from emergenzix_api.telegram_bot import format_saved_comparison
+
+    comparison = _comparison_fixture()
+    assert "响应格式异常" in format_saved_comparison(
+        comparison, ["c" * 64, "b" * 64]
+    )
+
+
+def test_compare_unauthorized_chat_is_silent(tmp_path: Path) -> None:
+    def requester(request, *, timeout):
+        raise AssertionError(f"unauthorized call: {request.full_url}")
+
+    _bot(tmp_path, requester).handle_update(
+        _update("/compare " + "a" * 64 + " " + "b" * 64, chat_id=99999)
+    )
+
+
+def _evidence_fixture(record_id: str = "a" * 64, *, all_met: bool = False):
+    checks = {
+        "pretest_trade_sample": True,
+        "holdout_trade_sample": all_met,
+        "positive_holdout_return": True,
+        "walk_forward_trade_coverage": True,
+        "walk_forward_positive_folds": True,
+        "walk_forward_candidate_consistency": True,
+        "cost_stress_positive_grid": all_met,
+    }
+    return {
+        "record_id": record_id,
+        "record_sha256": "b" * 64,
+        "assessment_version": "date-range-evidence-v1",
+        "protocol_version": "btc-date-range-backtest-v4",
+        "screening_status": "checks_met" if all_met else "limited_evidence",
+        "screening_checks": checks,
+        "observations": {
+            "validation_completed_trades": 3,
+            "holdout_completed_trades": 3 if all_met else 1,
+            "holdout_net_return_pct": 0.5074,
+            "walk_forward_folds_with_trade_evidence": 2,
+            "walk_forward_positive_folds": 3,
+            "walk_forward_same_selected_candidate": True,
+            "stress_scenarios_positive": 9 if all_met else 7,
+            "stress_scenarios_total": 9,
+            "worst_stress_net_return_pct": 0.1 if all_met else -0.2,
+        },
+        "automatic_strategy_promotion": False,
+        "paper_order_permission": False,
+        "testnet_order_permission": False,
+        "live_order_permission": False,
+        "limitations": ["Sample size is only a screening heuristic."],
+    }
+
+
+@pytest.mark.parametrize("all_met", [False, True])
+def test_evidence_command_reads_only_saved_report_and_shows_seven_checks(
+    tmp_path: Path, all_met: bool
+) -> None:
+    sent, calls = [], []
+    record_id = "a" * 64
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith(
+            "/api/v1/research/date-range-backtests/" + record_id + "/evidence"
+        ):
+            calls.append(request.get_method())
+            return FakeResponse(_evidence_fixture(all_met=all_met))
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 51}})
+        raise AssertionError("Unexpected endpoint or prohibited write")
+
+    bot = _bot(tmp_path, requester)
+    before = dict(bot.state)
+    bot.handle_update(_update("/evidence " + record_id))
+    assert calls == ["GET"]
+    assert bot.state == before
+    assert len(sent) == 1
+    assert sent[0].count("✓ ") + sent[0].count("✗ ") == 7
+    assert "测试期净收益率：+0.5074%" in sent[0]
+    assert "不授权 PAPER、TESTNET 或 LIVE 下单" in sent[0]
+    if all_met:
+        assert "筛查条件全部满足" in sent[0]
+        assert "统计显著" in sent[0]
+    else:
+        assert "证据有限" in sent[0]
+        assert "✗ 测试期交易样本" in sent[0]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/evidence",
+        "/evidence a",
+        "/evidence " + "A" * 64,
+        "/evidence " + "a" * 63 + ".",
+        "/evidence " + "a" * 64 + " extra",
+    ],
+)
+def test_evidence_invalid_id_does_not_call_api(tmp_path: Path, command: str) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 52}})
+        raise AssertionError("Invalid command called research API")
+
+    _bot(tmp_path, requester).handle_update(_update(command))
+    assert len(sent) == 1
+    assert "用法：/evidence" in sent[0]
+
+
+@pytest.mark.parametrize("tamper", ["permissions", "identity", "status", "flags", "metrics"])
+def test_evidence_invalid_api_response_fails_closed(tmp_path: Path, tamper: str) -> None:
+    from emergenzix_api.telegram_bot import format_saved_evidence
+
+    response = _evidence_fixture()
+    if tamper == "permissions":
+        response["live_order_permission"] = True
+    elif tamper == "identity":
+        response["record_id"] = "c" * 64
+    elif tamper == "status":
+        response["screening_status"] = "checks_met"
+    elif tamper == "flags":
+        del response["screening_checks"]["pretest_trade_sample"]
+    else:
+        response["observations"]["holdout_net_return_pct"] = "N/A"
+
+    text = format_saved_evidence(response, "a" * 64)
+    assert "响应格式异常" in text
+    assert "测试期净收益率" not in text
+
+
+def test_evidence_api_error_redacted_and_no_retry(tmp_path: Path) -> None:
+    sent, attempts = [], []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 53}})
+        attempts.append(request.full_url)
+        raise urllib.error.URLError("secret 12345:secret-token internal-service")
+
+    _bot(tmp_path, requester).handle_update(_update("/evidence " + "a" * 64))
+    assert len(attempts) == 1
+    assert "证据评估查询失败" in sent[0]
+    assert "secret" not in sent[0]
+    assert "internal-service" not in sent[0]
+
+
+def test_evidence_command_rejects_unauthorized_chat_silently(tmp_path: Path) -> None:
+    def requester(request, *, timeout):
+        raise AssertionError("Unauthorized access generated network request")
+
+    _bot(tmp_path, requester).handle_update(
+        _update("/evidence " + "a" * 64, chat_id=99999)
+    )
+
+
+
+def _stats_fixture(
+    *, overlapping: bool = False, mixed_costs: bool = False,
+    mixed_candidates: bool = False,
+) -> dict[str, object]:
+    records = [
+        {
+            "record_id": "a" * 64,
+            "protocol_version": "btc-date-range-backtest-v4",
+            "dataset_sha256": "d" * 64,
+            "test_start_at": "2025-10-07T00:00:00Z",
+            "test_end_at_exclusive": "2025-10-14T00:00:00Z",
+            "selected_candidate": "sma-3-10",
+            "net_return_pct": 3.0,
+            "max_drawdown_pct": 2.0,
+            "fee_bps_per_side": 10.0,
+            "slippage_bps_per_side": 5.0,
+        },
+        {
+            "record_id": "b" * 64,
+            "protocol_version": "btc-date-range-backtest-v4",
+            "dataset_sha256": "d" * 64,
+            "test_start_at": "2025-10-14T00:00:00Z",
+            "test_end_at_exclusive": "2025-10-21T00:00:00Z",
+            "selected_candidate": "sma-3-10",
+            "net_return_pct": -1.0,
+            "max_drawdown_pct": 4.0,
+            "fee_bps_per_side": 10.0,
+            "slippage_bps_per_side": 5.0,
+        },
+    ]
+    if overlapping:
+        records[1]["test_start_at"] = "2025-10-10T00:00:00Z"
+        records[1]["test_end_at_exclusive"] = "2025-10-17T00:00:00Z"
+    if mixed_costs:
+        records[1]["fee_bps_per_side"] = 20.0
+    if mixed_candidates:
+        records[1]["selected_candidate"] = "donchian-20-10"
+    return {
+        "statistics_version": "date-range-statistics-v1",
+        "protocol_version": "btc-date-range-backtest-v4",
+        "aggregation_type": "descriptive_saved_observations",
+        "selection": {
+            "method": "latest_by_created_at",
+            "limit": 30,
+            "record_ids": ["a" * 64, "b" * 64],
+        },
+        "sample_size": 2,
+        "status": "descriptive_only",
+        "profitable_observation_count": 1,
+        "losing_observation_count": 1,
+        "flat_observation_count": 0,
+        "return_distribution_pct": {
+            "mean": 1.0, "median": 1.0, "minimum": -1.0, "maximum": 3.0,
+        },
+        "individual_max_drawdown_distribution_pct": {
+            "mean": 3.0, "median": 3.0, "minimum": 2.0, "maximum": 4.0,
+        },
+        "distinct_test_windows": 2,
+        "overlapping_test_window_pairs": 1 if overlapping else 0,
+        "repeated_test_window_count": 0,
+        "different_cost_assumptions": mixed_costs,
+        "different_selected_candidates": mixed_candidates,
+        "all_test_windows_seven_days": True,
+        "nonoverlapping_seven_day_windows": not overlapping,
+        "observations": records,
+        "automatic_winner_selection": False,
+        "strategy_promotion_allowed": False,
+        "paper_order_permission": False,
+        "testnet_order_permission": False,
+        "live_order_permission": False,
+    }
+
+
+@pytest.mark.parametrize("arguments", ["/stats", "/stats 30"])
+def test_stats_reads_only_historical_statistics_and_preserves_cooldown(
+    tmp_path: Path, arguments: str
+) -> None:
+    calls, sent = [], []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/api/v1/research/date-range-statistics?limit=30"):
+            calls.append(request.get_method())
+            return FakeResponse(_stats_fixture())
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 60}})
+        raise AssertionError("Unexpected endpoint or prohibited write")
+
+    bot = _bot(tmp_path, requester)
+    before = dict(bot.state)
+    bot.handle_update(_update(arguments))
+    assert calls == ["GET"]
+    assert bot.state == before
+    assert len(sent) == 1
+    assert "最近 30 条；实际 2 条" in sent[0]
+    assert "正收益 / 负收益 / 持平记录：1 / 1 / 0" in sent[0]
+    assert "净收益：均值 +1.0000%" in sent[0]
+    assert "不能复利相乘" in sent[0]
+    assert "没有自动选优" in sent[0]
+
+
+def test_stats_warns_about_overlapping_and_mixed_experiments(tmp_path: Path) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/api/v1/research/date-range-statistics?limit=30"):
+            return FakeResponse(_stats_fixture(
+                overlapping=True, mixed_costs=True, mixed_candidates=True,
+            ))
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 61}})
+        raise AssertionError("Unexpected endpoint or prohibited write")
+
+    _bot(tmp_path, requester).handle_update(_update("/stats"))
+    assert len(sent) == 1
+    assert "重叠测试区间" in sent[0]
+    assert "手续费或滑点" in sent[0]
+    assert "不同候选策略" in sent[0]
+    assert "固定策略" in sent[0]
+
+
+@pytest.mark.parametrize("text", [
+    "/stats extra arguments", "/stats 1", "/stats 101", "/stats -1",
+    "/stats 20.0", "/stats abc", "/stats １２", "/stats +30",
+])
+def test_stats_rejects_bad_limit_before_api_request(tmp_path: Path, text: str) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 62}})
+        raise AssertionError("Invalid stats called API")
+
+    _bot(tmp_path, requester).handle_update(_update(text))
+    assert len(sent) == 1
+    assert "用法：/stats" in sent[0]
+
+
+@pytest.mark.parametrize("corruption", [
+    "win_count", "distribution", "authorization", "overlap",
+    "sample_size", "source_id", "nan", "cost_flag", "version",
+])
+def test_stats_bad_api_response_fails_closed(corruption: str) -> None:
+    from emergenzix_api.telegram_bot import format_saved_period_statistics
+
+    result = _stats_fixture()
+    if corruption == "win_count":
+        result["profitable_observation_count"] = 2
+    elif corruption == "distribution":
+        result["return_distribution_pct"]["mean"] = 45
+    elif corruption == "authorization":
+        result["live_order_permission"] = True
+    elif corruption == "overlap":
+        result["overlapping_test_window_pairs"] = 1
+    elif corruption == "sample_size":
+        result["sample_size"] = 3
+    elif corruption == "source_id":
+        result["observations"][0]["record_id"] = "c" * 64
+    elif corruption == "nan":
+        result["observations"][0]["net_return_pct"] = float("nan")
+    elif corruption == "cost_flag":
+        result["different_cost_assumptions"] = True
+    elif corruption == "version":
+        result["statistics_version"] = "v999"
+    output = format_saved_period_statistics(result, 30)
+    assert "响应格式异常" in output
+    assert "净收益：均值" not in output
+
+
+@pytest.mark.parametrize("count", [0, 1])
+def test_stats_empty_and_single_record_are_not_misrepresented(count: int) -> None:
+    from emergenzix_api.telegram_bot import format_saved_period_statistics
+
+    data = _stats_fixture()
+    data["selection"]["record_ids"] = data["selection"]["record_ids"][:count]
+    data["observations"] = data["observations"][:count]
+    data["sample_size"] = count
+    data["status"] = "insufficient_records"
+    data["profitable_observation_count"] = count
+    data["losing_observation_count"] = 0
+    data["flat_observation_count"] = 0
+    data["distinct_test_windows"] = count
+    data["all_test_windows_seven_days"] = True
+    data["nonoverlapping_seven_day_windows"] = False
+    if count == 0:
+        data["return_distribution_pct"] = None
+        data["individual_max_drawdown_distribution_pct"] = None
+    else:
+        data["return_distribution_pct"] = {
+            "mean": 3, "median": 3, "minimum": 3, "maximum": 3,
+        }
+        data["individual_max_drawdown_distribution_pct"] = {
+            "mean": 2, "median": 2, "minimum": 2, "maximum": 2,
+        }
+    response = format_saved_period_statistics(data, 30)
+    assert "响应格式异常" not in response
+    assert "记录不足两条" in response if count else "暂无已保存" in response
+
+
+def test_stats_api_failure_is_sanitized_and_unauthorized_chat_is_ignored(
+    tmp_path: Path,
+) -> None:
+    sent, calls = [], []
+
+    def requester(request, *, timeout):
+        if request.full_url.endswith("/sendMessage"):
+            sent.append(json.loads(request.data.decode("utf-8"))["text"])
+            return FakeResponse({"ok": True, "result": {"message_id": 63}})
+        calls.append(request.full_url)
+        raise urllib.error.URLError("private-host 12345:bot-secret")
+
+    bot = _bot(tmp_path, requester)
+    bot.handle_update(_update("/stats"))
+    assert len(calls) == 1
+    assert len(sent) == 1
+    assert "统计查询失败" in sent[0]
+    assert "bot-secret" not in sent[0]
+    assert "private-host" not in sent[0]
+
+    sent.clear()
+    calls.clear()
+    bot.handle_update(_update("/stats", chat_id=99999))
+    assert not calls and not sent
+
+
 def test_poll_once_discards_stale_updates_then_persists_offset(tmp_path: Path) -> None:
     state_path = tmp_path / "telegram-state.json"
     sent = []
@@ -518,6 +1163,84 @@ def test_poll_once_discards_stale_updates_then_persists_offset(tmp_path: Path) -
     assert saved["last_update_id"] == 42
     assert len(sent) == 1
     assert "/status" in sent[0]
+
+
+
+def test_telegram_message_split_is_lossless_and_unicode_safe() -> None:
+    from emergenzix_api.telegram_bot import (
+        _split_telegram_text,
+        _utf16_units,
+    )
+
+    message = ("2025-10-21 | 盈亏 +12.00 | 🚀🚀\n" * 300) + "最终风险声明"
+    parts = _split_telegram_text(message)
+    assert parts is not None
+    assert len(parts) > 1
+    assert "".join(parts) == message
+    assert all(_utf16_units(part) <= 3300 for part in parts)
+
+
+def test_long_telegram_report_is_sent_in_order_without_truncation(tmp_path: Path) -> None:
+    from emergenzix_api.telegram_bot import _utf16_units
+
+    sent = []
+
+    def requester(request, *, timeout):
+        assert request.full_url.endswith("/sendMessage")
+        sent.append(json.loads(request.data.decode("utf-8"))["text"])
+        return FakeResponse({"ok": True, "result": {"message_id": len(sent)}})
+
+    body = ("2025-10-21 | +1.00 USDT | +0.01% | 🚀\n" * 240) + "最终声明：没有创建任何订单。"
+    _bot(tmp_path, requester)._send_message("12345", body)
+
+    assert len(sent) > 1
+    assert all(_utf16_units(part) <= 3900 for part in sent)
+    assert all("仅历史 PAPER 研究，不创建交易订单" in part for part in sent)
+    assert sent[0].startswith(f"【报告 1/{len(sent)}】")
+    assert sent[-1].startswith(f"【报告 {len(sent)}/{len(sent)}】")
+    assert "最终声明：没有创建任何订单。" in sent[-1]
+    assert all("内容已截断" not in part for part in sent)
+
+
+def test_oversized_telegram_report_refuses_partial_delivery(tmp_path: Path) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        sent.append(json.loads(request.data.decode("utf-8"))["text"])
+        return FakeResponse({"ok": True, "result": {"message_id": 42}})
+
+    _bot(tmp_path, requester)._send_message("12345", "RESEARCH_PAYLOAD_" * 4000)
+    assert len(sent) == 1
+    assert "安全分段发送上限" in sent[0]
+    assert "RESEARCH_PAYLOAD_" not in sent[0]
+    assert "不创建订单" in sent[0]
+
+
+def test_short_telegram_message_remains_single_unchanged_send(tmp_path: Path) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        sent.append(json.loads(request.data.decode("utf-8"))["text"])
+        return FakeResponse({"ok": True, "result": {"message_id": 43}})
+
+    _bot(tmp_path, requester)._send_message("12345", "简短的状态消息")
+    assert sent == ["简短的状态消息"]
+
+
+def test_multipart_send_error_is_sanitized_and_stops_delivery(tmp_path: Path) -> None:
+    sent = []
+
+    def requester(request, *, timeout):
+        sent.append(request.full_url)
+        if len(sent) == 2:
+            raise urllib.error.URLError("12345:secret-token")
+        return FakeResponse({"ok": True, "result": {"message_id": 44}})
+
+    bot = _bot(tmp_path, requester)
+    with pytest.raises(TelegramBotError) as error:
+        bot._send_message("12345", "已保存实验说明\n" * 1400)
+    assert len(sent) == 2
+    assert "secret-token" not in str(error.value)
 
 
 def test_telegram_transport_error_does_not_expose_bot_token(tmp_path: Path) -> None:
