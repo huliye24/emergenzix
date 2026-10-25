@@ -27,7 +27,7 @@ def _seal(run):
 
 def _synthetic_run(tmp_path):
     run = tmp_path / "e001"
-    run.mkdir()
+    run.mkdir(parents=True)
     first = datetime(2024, 1, 5, tzinfo=timezone.utc)
     actual = [-0.02, 0.01, 0.005, -0.003, 0.001]
     forecast = [-0.01, 0.002, 0.004, 0.001, -0.002]
