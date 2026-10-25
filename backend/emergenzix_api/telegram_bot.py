@@ -352,6 +352,8 @@ class TelegramCommandBot:
         state_path: str | Path = "data/telegram-bot-state.json",
         poll_timeout_seconds: int = 25,
         backtest_cooldown_seconds: int = 60,
+        batch_commands_enabled: bool = False,
+        batch_db_path: str | Path | None = None,
         requester: Callable[..., Any] = urllib.request.urlopen,
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -366,6 +368,10 @@ class TelegramCommandBot:
             raise ValueError("Telegram poll timeout must be between 1 and 50 seconds")
         if backtest_cooldown_seconds < 0:
             raise ValueError("backtest cooldown must not be negative")
+        if not isinstance(batch_commands_enabled, bool):
+            raise ValueError("batch enable flag must be boolean")
+        if batch_commands_enabled and (batch_db_path is None or not str(batch_db_path).strip()):
+            raise ValueError("batch commands require an explicit shared SQLite path")
 
         self.bot_token = bot_token.strip()
         self.allowed_chat_id = allowed_chat_id.strip()
@@ -373,6 +379,8 @@ class TelegramCommandBot:
         self.state_path = Path(state_path).expanduser()
         self.poll_timeout_seconds = poll_timeout_seconds
         self.backtest_cooldown_seconds = backtest_cooldown_seconds
+        self.batch_commands_enabled = batch_commands_enabled
+        self.batch_db_path = Path(batch_db_path).expanduser() if batch_db_path is not None else None
         self.requester = requester
         self.clock = clock
         self.state = self._load_state()
@@ -506,6 +514,7 @@ class TelegramCommandBot:
             "/status — 查看 API、PAPER 模式与通知队列\n"
             "/latest — 查看最近一次日期区间回测\n"
             "/backtest YYYY-MM-DD [days] — 回测历史区间，days 默认为 7，范围 1–30 天\n"
+            "/batch — 批次研究计划/登记/进度/报告（需服务器显式启用）\n"
             "/help — 查看此说明\n\n"
             "回测固定使用 90 天训练窗口、10 bps 单边手续费和 5 bps 单边滑点。"
             "仅运行历史 PAPER 模拟，不会创建订单。"
@@ -637,6 +646,13 @@ class TelegramCommandBot:
             return f"历史回测失败：{_one_line(exc)}\n没有创建任何订单。"
         return format_backtest_record(record)
 
+    def _batch_text(self, arguments: list[str]) -> str:
+        if not self.batch_commands_enabled or self.batch_db_path is None:
+            return "批次研究命令尚未启用；请先由服务器管理员显式启用。"
+        from .telegram_batch import handle_batch_message
+
+        return handle_batch_message(arguments, db_path=self.batch_db_path)
+
     def handle_update(self, update: object) -> None:
         if not isinstance(update, dict):
             return
@@ -671,6 +687,8 @@ class TelegramCommandBot:
             reply = self._latest_text()
         elif command == "/backtest":
             reply = self._backtest_text(arguments, chat_id=chat_id)
+        elif command == "/batch":
+            reply = self._batch_text(arguments)
         else:
             reply = "未知命令。发送 /help 查看可用命令。"
         self._send_message(chat_id, reply)
@@ -771,6 +789,13 @@ class TelegramCommandBot:
                 time.sleep(5)
 
 
+def _telegram_batch_enabled() -> bool:
+    value = os.getenv("EMERGENZIX_TELEGRAM_BATCH_ENABLED", "false").strip().lower()
+    if value not in {"true", "false"}:
+        raise ValueError("EMERGENZIX_TELEGRAM_BATCH_ENABLED must be true or false")
+    return value == "true"
+
+
 def main() -> int:
     token = os.getenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "").strip()
     allowed_chat_id = os.getenv("EMERGENZIX_TELEGRAM_ALLOWED_CHAT_ID", "").strip()
@@ -805,6 +830,8 @@ def main() -> int:
             backtest_cooldown_seconds=int(
                 os.getenv("EMERGENZIX_TELEGRAM_BACKTEST_COOLDOWN_SECONDS", "60")
             ),
+            batch_commands_enabled=_telegram_batch_enabled(),
+            batch_db_path=os.getenv("EMERGENZIX_DB_PATH"),
         )
     except (OSError, ValueError) as exc:
         print(
