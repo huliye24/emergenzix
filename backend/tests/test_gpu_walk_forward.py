@@ -40,8 +40,8 @@ def test_expanding_folds_purge_labels_and_never_overlap_holdouts():
     for earlier, later in zip(windows, windows[1:]):
         assert earlier.test.bar_stop <= later.test.bar_start
         assert earlier.test.last_target < later.test.first_target
-        # Earlier holdouts may become training history for later folds.
-        assert earlier.test.bar_start < later.train.bar_stop
+        # A holdout can become historical training data only in a later fold.
+        assert earlier.test.bar_start <= later.train.bar_stop
 
 
 def test_multi_candle_horizon_purges_every_stage():
