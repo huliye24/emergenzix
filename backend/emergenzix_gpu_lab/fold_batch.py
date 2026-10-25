@@ -64,10 +64,11 @@ def _write_completion_marker(path: Path, value: object) -> None:
     """Atomically publish the marker, never overwrite a previous completion."""
     temporary = path.with_name(".batch-complete.tmp")
     _write_new_json(temporary, value)
-    # The parent was just created exclusively by this invocation.
-    _require(not path.exists() and not path.is_symlink(),
-             "batch completion marker unexpectedly exists")
-    os.replace(temporary, path)
+    # Same-filesystem hard link publishes complete bytes atomically without
+    # ever replacing a preexisting success marker. An unsupported filesystem
+    # fails closed rather than risking a partially written marker.
+    os.link(temporary, path)
+    temporary.unlink()
 
 
 def run_walk_forward_batch(
