@@ -10,7 +10,7 @@ from emergenzix_api import operational_status_api
 
 
 def test_operational_paths_registered_once_and_preserve_contract(client) -> None:
-    paths = [route.path for route in client.app.routes]
+    paths = [route.path for route in client.app.routes if hasattr(route, "path")]
     for path in ("/health", "/ready", "/api/v1/notifications/status"):
         assert paths.count(path) == 1
 
