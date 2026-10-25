@@ -89,6 +89,43 @@ code deliberately cannot write to the production SQLite database; the API
 container never depends on the GPU image. Don't load untrusted PyTorch pickle
 checkpoints; if loading trusted local weights, use \`weights_only=True\`.
 
+## Independent read-only artifact verification (E001)
+
+After a completed E001 run, inspect the outputs **before** comparing models.
+The verifier uses the Python standard library: it does **not** require CUDA,
+PyTorch or NumPy, and does not load the \`model_weights.pt\` checkpoint.
+It never writes to the run directory or touches the registered dataset DB.
+
+From a local machine that can read the experiment output directory:
+
+\`\`\`bash
+cd backend
+python -m emergenzix_gpu_lab.verify --run-dir /path/to/e001-mlp-s42
+\`\`\`
+
+When running inside the isolated Docker volume on the GPU host:
+
+\`\`\`bash
+docker compose --profile gpu run --rm --no-deps \
+  --entrypoint python gpu-research \
+  -m emergenzix_gpu_lab.verify --run-dir /outputs/e001-mlp-s42
+\`\`\`
+
+Expected result is JSON with \`"status": "verified_self_consistent"\` and a
+zero exit status; malformed/missing artifacts return \`"status": "rejected"\`
+and exit nonzero. This gate checks all four saved SHA-256 digests, the
+research-only flags and protocol, held-out prediction time order / horizon,
+purged split timestamp ordering, and recomputed holdout / zero-return baseline
+metrics. It also rejects symlinked expected artifacts.
+
+**Limitations:** The saved SHA-256 list is not a signed attestation; someone
+who can rewrite all the files can forge mutually consistent results. This
+tool does not re-open the original dataset, reconstruct the original training
+splits, validate the model weights, independently recompute predictions, or
+prove real-world trading performance. Those checks remain in the human/Codex
+A10 acceptance issue #56. Never use a positive result as permission to
+promote a model to PAPER, TESTNET or LIVE execution.
+
 ## Local CPU checks — no A10 cost
 
 Within \`backend/\` on a development machine with \`numpy\` and the
