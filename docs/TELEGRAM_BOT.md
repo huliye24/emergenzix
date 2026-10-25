@@ -102,3 +102,21 @@ Acceptance:
     python -m pytest -q tests/test_telegram_batch.py
     python -m pytest -q
 
+
+## Explicit cloud Worker invocation after Telegram registration
+
+Telegram's `/batch register` command saves the plan but **does not run**
+historical calculations. An authorized operator with access to the private
+Docker Compose host can start exactly one saved job using:
+
+```bash
+bash ops/research_batch_once.sh YOUR_64_CHARACTER_BATCH_SHA256
+```
+
+This runs one transient process using the existing API image and the same
+`emergenzix-data:/data` SQLite storage, without publishing a new port or
+introducing an always-on scheduler. To run further weeks, invoke the command
+again manually. Use Telegram `/batch status BATCH_SHA256` and
+`/batch report BATCH_SHA256` to view only verified saved results.
+Do not expose the Docker host or unauthenticated API to the public internet.
+
