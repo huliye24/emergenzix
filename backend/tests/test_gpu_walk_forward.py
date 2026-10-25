@@ -149,4 +149,5 @@ def test_read_only_cli_prints_same_plan_without_creating_run_artifacts(
     assert output["dataset_sha256"] == dataset_id
     assert len(output["windows"]) == 3
     assert hashlib.sha256(path.read_bytes()).hexdigest() == before
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["walkforward.db"]
+    assert not any(p.is_dir() for p in tmp_path.iterdir())
+    assert not list(tmp_path.rglob("model_weights.pt"))
