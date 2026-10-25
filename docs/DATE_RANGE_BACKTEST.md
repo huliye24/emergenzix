@@ -95,6 +95,20 @@ Protocol version 4 freezes the selected strategy before rerunning the same test 
 
 The matrix is exported to `*.cost-sensitivity.csv` and summarized in Markdown. It is a stress test for cost fragility, not a profitability guarantee.
 
+## Read-only evidence screening
+
+A stored, SHA-256-verified version-4 record can be inspected without re-running the strategy:
+
+`GET /api/v1/research/date-range-backtests/{record_id}/evidence`
+
+The response is a derived (non-persisted) **date-range-evidence-v1** diagnostic containing seven explicitly named screening checks: selection-period trade sample, holdout-period trade sample, positive holdout return, walk-forward trade coverage, positive pre-test folds, chosen-candidate consistency, and positivity across the fixed nine-scenario cost matrix with minimum trade counts. It also reports the actual trade counts, positive fold/scenario counts, and worst stressed return.
+
+A `checks_met` result means **only** that these intentionally conservative descriptive rules all evaluate true for this single experiment. It is not a statistical-significance claim, a profitable-strategy recommendation, or an authorization to promote or execute a strategy. Two completed trades is the protocol's minimal heuristic and is not a statistically meaningful sample size. Otherwise the result is `limited_evidence`; individual failed checks remain visible even if the test-week return is positive.
+
+Unsupported or malformed v4 records, incomplete stress grids, inconsistent walk-forward evidence, unverified coverage, and protocol safety flags fail closed (`409`). Unknown record IDs return `404`. The underlying record's fingerprint is verified before screening, and its stored bytes are never updated. There are no API routes that use the evidence status to place orders.
+
+To check this micro-task: `cd backend && python -m pytest -q tests/test_date_range_backtest.py`.
+
 ## Data and limitations
 
 - Data source: Binance public historical archive; archive checksums are verified by the existing ingestion module.

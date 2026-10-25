@@ -14,6 +14,7 @@ from pydantic import Field, model_validator
 from .date_range_backtest import create_date_range_backtest
 from .database import Database
 from .historical_data import HistoricalArchiveUnavailable
+from .research_evidence import EvidenceAssessmentError, assess_saved_backtest_evidence
 from .schemas import StrictModel
 
 
@@ -137,3 +138,17 @@ def get_date_range_backtest(record_id: str, request: Request) -> dict[str, Any]:
     if row is None:
         raise HTTPException(status_code=404, detail="Date-range backtest record not found")
     return _record_to_dict(row)
+
+@router.get("/{record_id}/evidence")
+def get_date_range_backtest_evidence(
+    record_id: str, request: Request
+) -> dict[str, Any]:
+    """Inspect verified immutable research results without rerunning the backtest."""
+    verified_record = get_date_range_backtest(record_id, request)
+    try:
+        return assess_saved_backtest_evidence(verified_record)
+    except EvidenceAssessmentError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Saved record is incompatible with research evidence screening",
+        ) from exc

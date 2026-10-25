@@ -320,6 +320,20 @@ def test_date_range_backtest_api_persists_idempotent_report(client, monkeypatch)
     assert detail.status_code == 200
     assert detail.json() == first
 
+    evidence_response = client.get(
+        f"/api/v1/research/date-range-backtests/{first['id']}/evidence"
+    )
+    assert evidence_response.status_code == 200, evidence_response.text
+    screening = evidence_response.json()
+    assert screening["record_id"] == first["id"]
+    assert screening["record_sha256"] == first["record_sha256"]
+    assert screening["automatic_strategy_promotion"] is False
+    assert screening["live_order_permission"] is False
+    assert len(screening["screening_checks"]) == 7
+    assert client.get(
+        "/api/v1/research/date-range-backtests/invalid/evidence"
+    ).status_code == 404
+
     with pytest.raises(sqlite3.IntegrityError, match="immutable"):
         with client.app.state.database.connection() as connection:
             connection.execute(
@@ -415,3 +429,73 @@ def test_date_range_backtest_api_rejects_invalid_period(client) -> None:
         json={"start_date": "2025-10-21", "duration_days": 0},
     )
     assert response.status_code == 422
+
+def test_evidence_screening_reports_weak_holdout_and_never_authorizes_execution() -> None:
+    from emergenzix_api.date_range_backtest import DATE_RANGE_BACKTEST_PROTOCOL_VERSION
+    from emergenzix_api.research_evidence import assess_saved_backtest_evidence
+
+    report = _run(_series())
+    record = {
+        "id": "a" * 64,
+        "record_type": "btc_date_range_backtest",
+        "protocol_version": DATE_RANGE_BACKTEST_PROTOCOL_VERSION,
+        "record_sha256": "b" * 64,
+        "report": report,
+    }
+    evidence = assess_saved_backtest_evidence(record)
+    assert evidence["record_id"] == record["id"]
+    assert evidence["record_sha256"] == record["record_sha256"]
+    assert evidence["screening_status"] in {"checks_met", "limited_evidence"}
+    assert evidence["automatic_strategy_promotion"] is False
+    assert evidence["paper_order_permission"] is False
+    assert evidence["testnet_order_permission"] is False
+    assert evidence["live_order_permission"] is False
+    assert len(evidence["screening_checks"]) == 7
+    assert evidence["observations"]["stress_scenarios_total"] == 9
+    assert evidence["observations"]["holdout_completed_trades"] == report["test_result"]["number_of_trades"]
+    assert evidence["observations"]["walk_forward_folds_with_trade_evidence"] == report[
+        "walk_forward_validation"
+    ]["aggregate"]["folds_with_minimum_trade_evidence"]
+
+
+def test_evidence_positive_return_without_trades_is_limited() -> None:
+    from emergenzix_api.date_range_backtest import DATE_RANGE_BACKTEST_PROTOCOL_VERSION
+    from emergenzix_api.research_evidence import assess_saved_backtest_evidence
+
+    report = _run(_series())
+    report["test_result"]["number_of_trades"] = 0
+    report["test_result"]["total_return_pct"] = 15.0
+    record = {
+        "id": "a" * 64,
+        "record_type": "btc_date_range_backtest",
+        "protocol_version": DATE_RANGE_BACKTEST_PROTOCOL_VERSION,
+        "report": report,
+    }
+    result = assess_saved_backtest_evidence(record)
+    assert result["screening_checks"]["positive_holdout_return"] is True
+    assert result["screening_checks"]["holdout_trade_sample"] is False
+    assert result["screening_status"] == "limited_evidence"
+
+
+def test_evidence_rejects_missing_cost_grid_and_forward_leakage_flag() -> None:
+    from emergenzix_api.date_range_backtest import DATE_RANGE_BACKTEST_PROTOCOL_VERSION
+    from emergenzix_api.research_evidence import (
+        EvidenceAssessmentError,
+        assess_saved_backtest_evidence,
+    )
+
+    report = _run(_series())
+    record = {
+        "id": "a" * 64,
+        "record_type": "btc_date_range_backtest",
+        "protocol_version": DATE_RANGE_BACKTEST_PROTOCOL_VERSION,
+        "report": report,
+    }
+    cost_row = report["cost_sensitivity"]["scenarios"].pop()
+    with pytest.raises(EvidenceAssessmentError, match="incomplete cost"):
+        assess_saved_backtest_evidence(record)
+    report["cost_sensitivity"]["scenarios"].append(cost_row)
+    report["safety"]["future_visible_during_selection"] = True
+    with pytest.raises(EvidenceAssessmentError, match="unsafe"):
+        assess_saved_backtest_evidence(record)
+
