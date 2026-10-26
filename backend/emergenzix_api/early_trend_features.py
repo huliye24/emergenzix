@@ -59,10 +59,10 @@ def extract_early_trend_features(
         if prev is not None and ts <= prev:
             raise ValueError("bars must be strictly increasing and unique")
         prev = ts
-        if not (isfinite(bar.open) and isfinite(bar.high) and isfinite(bar.low)
-                and isfinite(bar.close)):
-            return EarlyTrendFeatures(cutoff.isoformat(), "UNAVAILABLE", "invalid_prices")
         if ts + STEP <= cutoff:
+            if not (isfinite(bar.open) and isfinite(bar.high) and isfinite(bar.low)
+                    and isfinite(bar.close)):
+                return EarlyTrendFeatures(cutoff.isoformat(), "UNAVAILABLE", "invalid_prices")
             visible.append(bar)
             if directional_states is not None:
                 visible_states.append(directional_states[i])
