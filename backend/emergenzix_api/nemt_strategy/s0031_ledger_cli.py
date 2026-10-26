@@ -72,6 +72,7 @@ def run_plan(
     slippage_rate: float = SLIPPAGE_RATE,
     risk_fraction: float = RISK_FRACTION_OF_EQUITY,
     max_leverage: float = MAXIMUM_LEVERAGE,
+    stop_multiple: float = STOP_MULTIPLE,
 ) -> dict:
     """Run one S-003.1 configuration and reconcile its ledger."""
     closes = [bar.close for bar in bars]
@@ -203,7 +204,7 @@ def run_plan(
             side = pending_entry["direction"]
             entry = bar.open * (1 + side * slippage_rate)
             n_value = pending_entry["n_value"]
-            distance = max(STOP_MULTIPLE * n_value, entry * 0.01)
+            distance = max(stop_multiple * n_value, entry * 0.01)
             equity_ref = cash if plan["sizing"] == "rolling" else capital
             budget = equity_ref * risk_fraction
             quantity = (slices[0] * budget) / distance
@@ -406,6 +407,7 @@ def main() -> None:
     parser.add_argument("--symbol", default="BTCUSDT")
     parser.add_argument("--risk-pct", type=float, default=1.0)
     parser.add_argument("--max-leverage", type=float, default=float(MAXIMUM_LEVERAGE))
+    parser.add_argument("--stop-mult", type=float, default=float(STOP_MULTIPLE))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -432,6 +434,7 @@ def main() -> None:
         "capital": args.capital,
         "risk_pct": args.risk_pct,
         "max_leverage": args.max_leverage,
+        "stop_multiple": args.stop_mult,
         "symbol": args.symbol.strip().upper(),
         "data_fingerprint": data_fingerprint([bar.model_dump() for bar in bars]),
         "synthetic_cashflow_tests": synthetic,
@@ -457,7 +460,8 @@ def main() -> None:
         cells[key] = run_plan(bars=bars, zone=zone, start=start, end=end, plan=plan,
                               capital=args.capital,
                               risk_fraction=args.risk_pct / 100.0,
-                              max_leverage=args.max_leverage)
+                              max_leverage=args.max_leverage,
+                              stop_multiple=args.stop_mult)
     report["cells"] = cells
 
     reconciliation = {key: cell["ledger_checks"] for key, cell in cells.items()}
