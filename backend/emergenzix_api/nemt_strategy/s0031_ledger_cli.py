@@ -64,6 +64,15 @@ PLANS: dict[str, dict] = {
     "P1": {"label": "entry240_exit60_pyramid_25_35_40_stop4N", "sizing": "rolling",
            "slices": (0.25, 0.35, 0.40), "entry_bars": 240, "exit_bars": 60,
            "stop_multiple": 4.0},
+    # Long-only arms: the short leg measured zero edge, so cutting it is tested
+    # as a pure return decision.
+    "L1": {"label": "longonly_entry120_single", "sizing": "rolling",
+           "slices": (1.0,), "long_only": True},
+    "L2": {"label": "longonly_entry480_single", "sizing": "rolling",
+           "slices": (1.0,), "entry_bars": 480, "exit_bars": 120, "long_only": True},
+    "L3": {"label": "longonly_entry240_pyramid_25_35_40_stop4N", "sizing": "rolling",
+           "slices": (0.25, 0.35, 0.40), "entry_bars": 240, "exit_bars": 60,
+           "stop_multiple": 4.0, "long_only": True},
 }
 
 
@@ -261,7 +270,10 @@ def run_plan(
             next_slice = len(position["tranches"])
             if favourable >= next_slice * position["d1"]:
                 pending_add = next_slice
-        if position is None and nemt and brk == nemt:
+        long_only_blocked = plan.get("long_only") and nemt == -1
+        if long_only_blocked:
+            counters_upup_blocked += 0
+        if position is None and nemt and brk == nemt and not long_only_blocked:
             allowed = True
             if plan.get("weekly_up_up_gate") and nemt == 1:
                 allowed = up_up_entry_allowed(
