@@ -2,13 +2,18 @@
 
 **An open-source, risk-controlled quantitative trading product.**
 
+NEMT theory, mathematical hypotheses, strategy specifications, and research
+conclusions live in the separate
+[Non-Equilibrium Market Theory repository](https://github.com/huliye24/Non-Equilibrium-Market-Theory).
+This repository contains the software implementation and operational product.
+
 Emergenzix is the product layer emerging from the NEMT research program. It is designed to turn market data and reviewed research into reproducible strategy evaluation and auditable trading workflows.
 
 > **Development status:** `main` contains the initial backend, responsive dashboard, a CCXT-based public OHLCV endpoint, and a pinned Freqtrade upstream submodule. This is the v0.1.0 development target. Docker Compose packaging and GitHub container-release automation are being added; do not treat the version as released until Codex/AWS verification is complete.
 
 ## NEMT and Emergenzix
 
-- **NEMT — research and experiments:** economic hypotheses, quantitative theory, research datasets, MATLAB/GPU experiments, and reproducible research.
+- **NEMT — theory and strategy research:** economic hypotheses, quantitative theory, strategy specifications, experiments, and reproducible conclusions. The public theory source is maintained in the separate NEMT theory repository.
 - **Emergenzix — product and operations:** strategy management, backtesting, paper trading, product APIs, risk controls, and the user-facing responsive interface.
 
 A research result must carry provenance and pass review before it informs a product strategy. Research code and experiment artifacts are not copied into the product runtime by default.
