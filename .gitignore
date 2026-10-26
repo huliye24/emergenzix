@@ -35,3 +35,6 @@ research-output/
 gpu-runs/
 *.pt
 *.pth
+
+# Isolated Freqtrade runtime: market data, reports, local state / secrets
+ops/freqtrade/user_data/

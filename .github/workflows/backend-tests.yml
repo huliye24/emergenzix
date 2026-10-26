@@ -43,3 +43,9 @@ jobs:
         working-directory: .
         run: docker compose --profile gpu config --quiet
 
+      - name: Validate Freqtrade research and public-data profiles (no containers started)
+        working-directory: .
+        run: |
+          docker compose -f ops/freqtrade/docker-compose.research.yml \
+            --profile freqtrade-research --profile freqtrade-download config --quiet
+

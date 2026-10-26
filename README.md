@@ -222,6 +222,21 @@ See [Codex Acceptance Checklist](docs/CODEX_DATE_RANGE_BACKTEST_ACCEPTANCE.md) f
 
 A research-only, GPU-isolated PyTorch MLP/TCN experiment can train on an existing SHA-256-verified OHLCV dataset in the API's SQLite volume. It uses purged chronological splits, train-only normalization, a zero-return baseline, and writes hashed experiment artifacts. **No inference or trading signal is connected to the API, Telegram, PAPER orders, or LIVE orders.** The default Compose services do not start the GPU lab. See [GPU Alpha Lab setup and A10 instructions](docs/GPU_ALPHA_LAB.md) before powering on a GPU host. A green regular CI checks CPU/data behavior, not A10 hardware.
 
+## Reuse the pinned Freqtrade engine (isolated research pilot)
+
+Instead of implementing another broker, position accounting engine or backtesting framework, the first upstream-engine experiment runs the already vendored [Freqtrade](https://github.com/freqtrade/freqtrade) source in its own Docker environment.
+
+```bash
+git submodule update --init --recursive vendor/freqtrade
+docker compose -f ops/freqtrade/docker-compose.research.yml \
+  --profile freqtrade-research --profile freqtrade-download pull
+# See ops/freqtrade/README.md for explicit, public-data-only download.
+cd backend
+python -m emergenzix_api.freqtrade_research_cli --capital 100 --period 1w --start 2025-10-21
+```
+
+The backtest runs **without network access, exchange credentials, API ports or live trading**. The separate historical-data download requires an explicit action. The upstream sample strategy is a demonstration and has NOT been compared with NEMT or the S-003 staged-entry proposal. [Full isolated setup and limitations](ops/freqtrade/README.md).
+
 ## Safety boundaries
 
 - The API only provides **PAPER** execution; the CCXT integration is read-only public market data, with no exchange order adapter or LIVE order endpoint.
