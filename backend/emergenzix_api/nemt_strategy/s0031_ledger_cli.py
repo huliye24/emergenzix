@@ -31,6 +31,7 @@ from emergenzix_api.schemas import Bar
 
 from .nemt_momentum_v2 import compute_momentum_state
 from .registry import data_fingerprint
+from ..weekly_regime_filter import up_up_entry_allowed
 from .v522_ablation_cli import (
     ATR_BARS, FEE_RATE, MAXIMUM_LEVERAGE, RISK_FRACTION_OF_EQUITY,
     SLIPPAGE_RATE, STOP_MULTIPLE, _direction, atr, breakout, channel_exit,
@@ -51,6 +52,9 @@ PLANS: dict[str, dict] = {
     # cost-breakeven price once the second tranche fills (S-003.1 §5 arm C).
     "C1": {"label": "rolling_tranche_breakeven_after_2", "sizing": "rolling",
            "slices": (0.5, 0.25, 0.25), "breakeven_after": 2},
+    # PR #72 gate: two consecutive positive four-week states, longs only.
+    "U1": {"label": "rolling_single_weekly_upup", "sizing": "rolling",
+           "slices": (1.0,), "weekly_up_up_gate": True},
 }
 
 
@@ -83,6 +87,7 @@ def run_plan(
     last_window_index = None
     stop_tightenings = 0
     max_open_risk_pct = 0.0
+    counters_upup_blocked = 0
     slices = plan["slices"]
 
     def equity_now(mark_price: float) -> float:
@@ -239,8 +244,15 @@ def run_plan(
             if favourable >= next_slice * position["d1"]:
                 pending_add = next_slice
         if position is None and nemt and brk == nemt:
-            pending_entry = {"decision_index": index, "direction": nemt,
-                             "n_value": atr(bars, index)}
+            allowed = True
+            if plan.get("weekly_up_up_gate") and nemt == 1:
+                allowed = up_up_entry_allowed(
+                    bars[:index + 1], as_of=bar.timestamp + timedelta(hours=4))
+                if not allowed:
+                    counters_upup_blocked += 1
+            if allowed:
+                pending_entry = {"decision_index": index, "direction": nemt,
+                                 "n_value": atr(bars, index)}
 
         equity = equity_now(bar.close)
         if position is not None and equity > 0:
@@ -297,6 +309,7 @@ def run_plan(
         "tranches_per_trade": dict(tranche_counts),
         "unfilled_tranches": unfilled_tranches,
         "stop_tightenings": stop_tightenings,
+        "weekly_up_up_blocked": counters_upup_blocked,
         "max_open_risk_pct": max_open_risk_pct,
         "fees_paid_usdt": fees_paid,
         "slippage_cost_usdt": slippage_cost,
