@@ -32,6 +32,9 @@ from emergenzix_api.schemas import Bar
 from .nemt_momentum_v2 import compute_momentum_state
 from .registry import data_fingerprint
 from ..weekly_regime_filter import up_up_entry_allowed
+from .s004_trend_classifier import CANDIDATE as S004_CANDIDATE
+from .s004_trend_classifier import CONFIGS as S004_CONFIGS
+from .s004_trend_classifier import classify as s004_classify
 from .v522_ablation_cli import (
     ATR_BARS, FEE_RATE, MAXIMUM_LEVERAGE, RISK_FRACTION_OF_EQUITY,
     SLIPPAGE_RATE, STOP_MULTIPLE, _direction, atr, breakout, channel_exit,
@@ -41,6 +44,7 @@ PROTOCOL = "nemt-s003.1-rolling-tranche-001"
 ENTRY_BARS = 120
 EXIT_BARS = 60
 TOLERANCE = 1e-9
+WARMUP_DAYS = 420   # covers 53 completed weeks for the S-004 gate
 
 PLANS: dict[str, dict] = {
     "R0": {"label": "rolling_single", "sizing": "rolling", "slices": (1.0,)},
@@ -73,6 +77,17 @@ PLANS: dict[str, dict] = {
     "L3": {"label": "longonly_entry240_pyramid_25_35_40_stop4N", "sizing": "rolling",
            "slices": (0.25, 0.35, 0.40), "entry_bars": 240, "exit_bars": 60,
            "stop_multiple": 4.0, "long_only": True},
+    # S-004 arm A: causal sparse-trend candidate gate (see tier-4 research doc).
+    "S1": {"label": "s004_A1_agree3_eff0", "sizing": "rolling", "slices": (1.0,),
+           "s004_config": "A1"},
+    "S2": {"label": "s004_A2_agree3_eff20", "sizing": "rolling", "slices": (1.0,),
+           "s004_config": "A2"},
+    "S3": {"label": "s004_A3_agree3_eff35", "sizing": "rolling", "slices": (1.0,),
+           "s004_config": "A3"},
+    "S4": {"label": "s004_A4_agree2_eff20", "sizing": "rolling", "slices": (1.0,),
+           "s004_config": "A4"},
+    "S5": {"label": "s004_A5_agree3_eff35_exp11", "sizing": "rolling", "slices": (1.0,),
+           "s004_config": "A5"},
 }
 
 
@@ -112,6 +127,7 @@ def run_plan(
     stop_tightenings = 0
     max_open_risk_pct = 0.0
     counters_upup_blocked = 0
+    counters_s004_blocked = 0
     leverage_truncations = 0
     slices = plan["slices"]
 
@@ -280,6 +296,13 @@ def run_plan(
                     bars[:index + 1], as_of=bar.timestamp + timedelta(hours=4))
                 if not allowed:
                     counters_upup_blocked += 1
+            if allowed and plan.get("s004_config"):
+                verdict = s004_classify(
+                    bars[:index + 1], as_of=bar.timestamp + timedelta(hours=4),
+                    direction=nemt, config=S004_CONFIGS[plan["s004_config"]])
+                if verdict.status != S004_CANDIDATE:
+                    allowed = False
+                    counters_s004_blocked += 1
             if allowed:
                 pending_entry = {"decision_index": index, "direction": nemt,
                                  "n_value": atr(bars, index)}
@@ -340,6 +363,7 @@ def run_plan(
         "unfilled_tranches": unfilled_tranches,
         "stop_tightenings": stop_tightenings,
         "weekly_up_up_blocked": counters_upup_blocked,
+        "s004_blocked": counters_s004_blocked,
         "leverage_truncations": leverage_truncations,
         "max_open_risk_pct": max_open_risk_pct,
         "fees_paid_usdt": fees_paid,
@@ -444,9 +468,11 @@ def main() -> None:
     synthetic = synthetic_cashflow_tests()
     blocked_tests = [check for check in synthetic if not check["passed"]]
 
+    # Warmup must cover the longest lookback any arm uses: the S-004 classifier
+    # needs 53 completed weeks (371 days) before it can classify anything.
     payloads = fetch_binance_spot_4h_archive(
         symbol=args.symbol,
-        start_at=start.astimezone(timezone.utc) - timedelta(days=120),
+        start_at=start.astimezone(timezone.utc) - timedelta(days=WARMUP_DAYS),
         end_at=end.astimezone(timezone.utc) + timedelta(hours=4),
     )
     bars = [Bar.model_validate(item) for item in payloads]
