@@ -39,6 +39,21 @@ A research result must carry provenance and pass review before it informs a prod
 
 The backtest is a baseline implementation, not evidence of profitability. Paper orders use caller-supplied reference prices and do not represent exchange market fills.
 
+## Quick research run: initial capital + period
+
+Run a BTC/USDT 4h historical benchmark with two required inputs:
+
+```bash
+cd backend
+python -m emergenzix_api.quick_backtest_cli --capital 100 --period 1w
+# Replay a frozen historical week instead of using the most recent complete UTC dates:
+python -m emergenzix_api.quick_backtest_cli --capital 120 --period 1w --start 2025-10-21
+```
+
+Periods: `1w` (7 days), `1m` (30 days), `1y` (365 days), `3y` (1095 days), or custom `Nd`. For long windows, use the compute environment and verified historical archives. This **reuses the existing long-only spot strategy selector**, not the unimplemented small-account multi-tranche/pyramiding engine. It writes JSON, summary, equity, trade and cost-report artifacts; never submits exchange orders.
+
+See [Quick backtest setup and API](docs/QUICK_BACKTEST.md). The API accepts `{"initial_cash":100,"period":"1w"}` at `POST /api/v1/research/date-range-backtests/quick`.
+
 ## Get the repository and upstream engine
 
 Clone the repository with the pinned Freqtrade source:
