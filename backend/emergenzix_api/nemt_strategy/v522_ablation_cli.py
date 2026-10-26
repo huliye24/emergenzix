@@ -108,8 +108,16 @@ def run_arm(
     *, bars: list[Bar], arm: Arm, zone: ZoneInfo, start: datetime, end: datetime,
     capital: float = 100.0, fee_rate: float = FEE_RATE,
     slippage_rate: float = SLIPPAGE_RATE, observation_bars: int = 42,
+    gate: str = "nemt",
 ) -> dict:
-    """Run one arm over one window and return a fully audited report."""
+    """Run one arm over one window and return a fully audited report.
+
+    ``gate="nemt"`` is the frozen v5.2.2 behaviour.  ``gate="none"`` removes the
+    NEMT permission so the same engine can serve as the Donchian-only baseline
+    required by the v5.2.6 incremental-information protocol.
+    """
+    if gate not in {"nemt", "none"}:
+        raise ValueError("gate must be 'nemt' or 'none'")
     closes = [bar.close for bar in bars]
     warmup = max(arm.entry_bars, ATR_BARS) + 1
     cash, position, pending = capital, None, None
@@ -209,15 +217,22 @@ def run_arm(
 
         # 3) Decide on this close for the next open.
         state = compute_momentum_state(closes[:index + 1])
-        direction = _direction(state)
-        if direction:
+        nemt_direction = _direction(state)
+        break_direction = breakout(bars, index, arm.entry_bars)
+        if nemt_direction:
             counters["nemt_directional_events"] += 1
-            if breakout(bars, index, arm.entry_bars) == direction:
+        if gate == "nemt":
+            entry_side = nemt_direction if break_direction == nemt_direction else 0
+            if nemt_direction and break_direction == nemt_direction:
                 counters["donchian_same_direction_breakouts"] += 1
-                if position is None:
-                    pending = {"decision_index": index, "direction": direction,
-                               "n_value": atr(bars, index), "psi": state.psi,
-                               "entropy": state.entropy}
+        else:
+            if break_direction:
+                counters["donchian_same_direction_breakouts"] += 1
+            entry_side = break_direction
+        if entry_side and position is None:
+            pending = {"decision_index": index, "direction": entry_side,
+                       "n_value": atr(bars, index), "psi": state.psi,
+                       "entropy": state.entropy}
 
         unrealized = 0.0
         if position is not None:
