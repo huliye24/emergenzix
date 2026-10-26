@@ -26,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from emergenzix_api.historical_data import fetch_binance_btc_4h_archive
+from emergenzix_api.historical_data import fetch_binance_spot_4h_archive
 from emergenzix_api.schemas import Bar
 
 from .nemt_momentum_v2 import compute_momentum_state
@@ -382,6 +382,7 @@ def main() -> None:
     parser.add_argument("--start", default="2023-01-01")
     parser.add_argument("--end", default="2024-01-01")
     parser.add_argument("--capital", type=float, default=100.0)
+    parser.add_argument("--symbol", default="BTCUSDT")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -392,7 +393,8 @@ def main() -> None:
     synthetic = synthetic_cashflow_tests()
     blocked_tests = [check for check in synthetic if not check["passed"]]
 
-    payloads = fetch_binance_btc_4h_archive(
+    payloads = fetch_binance_spot_4h_archive(
+        symbol=args.symbol,
         start_at=start.astimezone(timezone.utc) - timedelta(days=120),
         end_at=end.astimezone(timezone.utc) + timedelta(hours=4),
     )
@@ -405,6 +407,7 @@ def main() -> None:
                           "batteries, so this run cannot be confirmatory."),
         "start_local": start.isoformat(), "end_local_exclusive": end.isoformat(),
         "capital": args.capital,
+        "symbol": args.symbol.strip().upper(),
         "data_fingerprint": data_fingerprint([bar.model_dump() for bar in bars]),
         "synthetic_cashflow_tests": synthetic,
         "accounting": {

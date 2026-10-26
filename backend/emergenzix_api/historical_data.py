@@ -6,6 +6,8 @@ import csv
 import hashlib
 import io
 import math
+import os
+from pathlib import Path
 import re
 import zipfile
 from datetime import date, datetime, timedelta, timezone
@@ -32,6 +34,57 @@ def _month_starts(start_at: datetime, end_at: datetime):
             current = datetime(current.year + 1, 1, 1, tzinfo=timezone.utc)
         else:
             current = datetime(current.year, current.month + 1, 1, tzinfo=timezone.utc)
+
+
+CACHE_DIR_ENV = "BINANCE_ARCHIVE_CACHE_DIR"
+
+
+def cache_directory(explicit: Path | None = None) -> Path | None:
+    """Resolve the optional on-disk archive cache directory."""
+    if explicit is not None:
+        return Path(explicit)
+    raw = os.getenv(CACHE_DIR_ENV, "").strip()
+    return Path(raw) if raw else None
+
+
+def _cache_files(cache_dir: Path, symbol: str, period: str, key: str):
+    base = cache_dir / symbol.upper()
+    return (base / f"{symbol.upper()}-4h-{period}-{key}.zip",
+            base / f"{symbol.upper()}-4h-{period}-{key}.sha256")
+
+
+def _load_cached(cache_dir: Path | None, symbol: str, period: str,
+                 key: str) -> bytes | None:
+    """Return a cached archive whose stored digest still matches its bytes."""
+    if cache_dir is None:
+        return None
+    zip_path, digest_path = _cache_files(cache_dir, symbol, period, key)
+    if not (zip_path.is_file() and digest_path.is_file()):
+        return None
+    try:
+        payload = zip_path.read_bytes()
+        stored = digest_path.read_text(encoding="utf-8").strip().lower()
+    except OSError:
+        return None
+    if hashlib.sha256(payload).hexdigest() != stored:
+        return None
+    return payload
+
+
+def _store_cached(cache_dir: Path | None, symbol: str, period: str,
+                  key: str, payload: bytes) -> None:
+    """Persist a verified archive plus the digest that was checked on download."""
+    if cache_dir is None:
+        return
+    zip_path, digest_path = _cache_files(cache_dir, symbol, period, key)
+    try:
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        zip_path.write_bytes(payload)
+        digest_path.write_text(hashlib.sha256(payload).hexdigest() + "\n",
+                               encoding="utf-8")
+    except OSError:
+        # A cache failure must never fail a run; the data is already verified.
+        return
 
 
 def _fetch_checked_archive(client: Any, url: str) -> bytes | None:
@@ -132,10 +185,18 @@ def _parse_kline_archive(
         raise HistoricalArchiveUnavailable("Downloaded Binance ZIP is not a valid archive") from exc
 
 
-def fetch_binance_btc_4h_archive(
-    *, start_at: datetime, end_at: datetime
+SYMBOL_PATTERN = re.compile(r"^[A-Z0-9]{3,20}$")
+
+
+def fetch_binance_spot_4h_archive(
+    *, symbol: str, start_at: datetime, end_at: datetime,
+    cache_dir: Path | None = None,
 ) -> list[dict[str, object]]:
-    """Fetch BTCUSDT spot 4h bars from verified monthly/daily Binance ZIP archives."""
+    """Fetch spot 4h bars for one symbol from verified Binance ZIP archives."""
+    normalized = symbol.strip().upper()
+    cache = cache_directory(cache_dir)
+    if not SYMBOL_PATTERN.match(normalized):
+        raise ValueError("symbol must be 3-20 uppercase alphanumeric characters")
     if start_at.tzinfo is None or start_at.utcoffset() is None:
         raise ValueError("start_at must include a timezone offset")
     if end_at.tzinfo is None or end_at.utcoffset() is None:
@@ -157,15 +218,19 @@ def fetch_binance_btc_4h_archive(
             for month_start in _month_starts(start_utc, end_utc):
                 month_key = f"{month_start.year:04d}-{month_start.month:02d}"
                 monthly_url = (
-                    f"{BASE_URL}/monthly/klines/BTCUSDT/4h/"
-                    f"BTCUSDT-4h-{month_key}.zip"
+                    f"{BASE_URL}/monthly/klines/{normalized}/4h/"
+                    f"{normalized}-4h-{month_key}.zip"
                 )
                 # The current month archive is normally published after month end.
                 monthly_payload = (
                     None
                     if (month_start.year, month_start.month) == (now_date.year, now_date.month)
-                    else _fetch_checked_archive(client, monthly_url)
+                    else (_load_cached(cache, normalized, "monthly", month_key)
+                          or _fetch_checked_archive(client, monthly_url))
                 )
+                if monthly_payload is not None:
+                    _store_cached(cache, normalized, "monthly", month_key,
+                                  monthly_payload)
                 if monthly_payload is not None:
                     monthly_bars = _parse_kline_archive(
                         monthly_payload, start_at=start_utc, end_at=end_utc
@@ -193,10 +258,16 @@ def fetch_binance_btc_4h_archive(
                         continue
                     day_key = current_day.isoformat()
                     daily_url = (
-                        f"{BASE_URL}/daily/klines/BTCUSDT/4h/"
-                        f"BTCUSDT-4h-{day_key}.zip"
+                        f"{BASE_URL}/daily/klines/{normalized}/4h/"
+                        f"{normalized}-4h-{day_key}.zip"
                     )
-                    daily_payload = _fetch_checked_archive(client, daily_url)
+                    daily_payload = (
+                        _load_cached(cache, normalized, "daily", day_key)
+                        or _fetch_checked_archive(client, daily_url)
+                    )
+                    if daily_payload is not None:
+                        _store_cached(cache, normalized, "daily", day_key,
+                                      daily_payload)
                     if daily_payload is None:
                         raise HistoricalArchiveUnavailable(
                             f"Missing Binance daily archive for {day_key}; "
@@ -224,3 +295,12 @@ def fetch_binance_btc_4h_archive(
     if len(bars) > MAX_BARS:
         raise ValueError(f"historical import exceeds the {MAX_BARS}-bar safety limit")
     return bars
+
+
+def fetch_binance_btc_4h_archive(
+    *, start_at: datetime, end_at: datetime
+) -> list[dict[str, object]]:
+    """Backward-compatible BTCUSDT wrapper around the generic fetcher."""
+    return fetch_binance_spot_4h_archive(
+        symbol="BTCUSDT", start_at=start_at, end_at=end_at
+    )
