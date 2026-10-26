@@ -18,6 +18,7 @@ from .backtesting import run_donchian_breakout, run_sma_crossover
 from .database import Database
 from .dataset_store import persist_dataset
 from .historical_data import fetch_binance_btc_4h_archive
+from .quick_backtest import MAX_TEST_DAYS
 from .schemas import Bar, DatasetCreate
 
 
@@ -391,8 +392,8 @@ def run_date_range_backtest(
     start_utc = _utc(start_at)
     if any((start_utc.hour, start_utc.minute, start_utc.second, start_utc.microsecond)):
         raise ValueError("start_at must be aligned to 00:00 UTC for date-based runs")
-    if not 1 <= duration_days <= 30:
-        raise ValueError("duration_days must be between 1 and 30")
+    if not 1 <= duration_days <= MAX_TEST_DAYS:
+        raise ValueError(f"duration_days must be between 1 and {MAX_TEST_DAYS}")
     if not 60 <= training_days <= 365:
         raise ValueError("training_days must be between 60 and 365")
     if not math.isfinite(initial_cash) or initial_cash <= 0:
@@ -566,8 +567,8 @@ def create_date_range_backtest(
     """Fetch verified public data, run the experiment, and persist an immutable record."""
     if not isinstance(start_date, date) or isinstance(start_date, datetime):
         raise ValueError("start_date must be a calendar date in YYYY-MM-DD format")
-    if not 1 <= duration_days <= 30:
-        raise ValueError("duration_days must be between 1 and 30")
+    if not 1 <= duration_days <= MAX_TEST_DAYS:
+        raise ValueError(f"duration_days must be between 1 and {MAX_TEST_DAYS}")
     if not 60 <= training_days <= 365:
         raise ValueError("training_days must be between 60 and 365")
     if not math.isfinite(initial_cash) or initial_cash <= 0:
