@@ -15,13 +15,17 @@ services:
     volumes:
       - ./user_data:/freqtrade/user_data
       - ./config.research.json:/freqtrade/user_data/config.research.json:ro
-      - ../../vendor/freqtrade/freqtrade/templates:/freqtrade/user_data/strategies:ro
+      - ../../vendor/freqtrade/freqtrade/templates:/freqtrade/user_data/upstream_strategies:ro
+      - ./strategies:/freqtrade/user_data/strategies:ro
+      - ./config.parity.json:/freqtrade/user_data/config.parity.json:ro
     command:
       - backtesting
       - --config
       - /freqtrade/user_data/config.research.json
       - --strategy
       - SampleStrategy
+      - --strategy-path
+      - /freqtrade/user_data/upstream_strategies
       - --timeframe
       - 4h
       - --data-format-ohlcv

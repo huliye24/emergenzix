@@ -22,6 +22,9 @@ from .freqtrade_dataset_bridge import verify_exported_dataset
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PINNED_UPSTREAM_COMMIT = "c051e9065c5b677f03817dd1f83cb980af1ed684"
 STRATEGY_NAME = "SampleStrategy"
+PARITY_NAME = "EmergenzixSmaParity"
+PARITY_FEE_RATE = "0.001"  # 10 basis points per side
+VALID_BASELINES = ("sample", "sma-5-20")
 
 
 def _parse_utc_date(value: str) -> date:
@@ -43,7 +46,7 @@ def _paths(root: Path) -> tuple[Path, Path, Path, Path]:
 
 
 def validate_upstream_environment(
-    root: Path, *, git_check: bool = True
+    root: Path, *, git_check: bool = True, baseline: str = "sample"
 ) -> tuple[Path, Path]:
     """Fail closed on missing submodule, untrusted trading config or mismatch."""
     compose, config, sample, user_data = _paths(root)
@@ -63,6 +66,27 @@ def validate_upstream_environment(
         or settings.get("telegram", {}).get("enabled") is not False
     ):
         raise ValueError("research config must be spot, dry-run, keyless and API-disabled")
+    if baseline not in VALID_BASELINES:
+        raise ValueError("unsupported upstream baseline")
+    if baseline == "sma-5-20":
+        parity_code = root / "ops" / "freqtrade" / "strategies" / "EmergenzixSmaParity.py"
+        parity_config = root / "ops" / "freqtrade" / "config.parity.json"
+        for path in (parity_code, parity_config):
+            if not path.is_file():
+                raise ValueError(f"missing reviewed SMA parity file: {path}")
+        parity_settings = json.loads(parity_config.read_text(encoding="utf-8"))
+        if (
+            parity_settings.get("dry_run") is not True
+            or parity_settings.get("trading_mode") != "spot"
+            or parity_settings.get("stake_amount") != "unlimited"
+            or parity_settings.get("max_open_trades") != 1
+            or parity_settings.get("tradable_balance_ratio") != 1.0
+            or parity_settings.get("exchange", {}).get("key")
+            or parity_settings.get("exchange", {}).get("secret")
+            or parity_settings.get("api_server", {}).get("enabled") is not False
+            or parity_settings.get("telegram", {}).get("enabled") is not False
+        ):
+            raise ValueError("SMA parity config must be keyless, spot and fixed-budget")
     if git_check:
         try:
             result = subprocess.run(
@@ -79,19 +103,32 @@ def validate_upstream_environment(
 def build_backtest_command(
     *, root: Path, initial_cash: float, period: str,
     start_date: date | None = None, utc_today: date | None = None,
+    baseline: str = "sample",
 ) -> tuple[list[str], date, date]:
     start, days = resolve_quick_backtest(
         initial_cash=initial_cash, period=period,
         start_date=start_date, utc_today=utc_today,
     )
     end = date.fromordinal(start.toordinal() + days)
+    if baseline not in VALID_BASELINES:
+        raise ValueError("unsupported upstream baseline")
     compose, _, _, _ = _paths(root)
+    strategy = PARITY_NAME if baseline == "sma-5-20" else STRATEGY_NAME
+    config_path = (
+        "/freqtrade/user_data/config.parity.json"
+        if baseline == "sma-5-20" else "/freqtrade/user_data/config.research.json"
+    )
+    strategy_path = (
+        "/freqtrade/user_data/strategies"
+        if baseline == "sma-5-20" else "/freqtrade/user_data/upstream_strategies"
+    )
     cmd = [
         "docker", "compose", "-f", str(compose), "--profile", "freqtrade-research",
         "run", "--rm", "--no-deps", "freqtrade-backtest",
         "backtesting",
-        "--config", "/freqtrade/user_data/config.research.json",
-        "--strategy", STRATEGY_NAME,
+        "--config", config_path,
+        "--strategy", strategy,
+        "--strategy-path", strategy_path,
         "--timeframe", "4h",
         "--pairs", "BTC/USDT",
         "--timerange", f"{start:%Y%m%d}-{end:%Y%m%d}",
@@ -99,6 +136,8 @@ def build_backtest_command(
         "--data-format-ohlcv", "json",
         "--export", "trades",
     ]
+    if baseline == "sma-5-20":
+        cmd.extend(["--fee", PARITY_FEE_RATE])
     return cmd, start, end
 
 
@@ -136,6 +175,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--period", required=True, help="1w, 1m, 1y, 3y or Nd")
     parser.add_argument("--start", type=_parse_utc_date, default=None)
     parser.add_argument(
+        "--baseline", choices=VALID_BASELINES, default="sample",
+        help="sample: upstream demo; sma-5-20: reviewed crossover signal",
+    )
+    parser.add_argument(
         "--dataset-id", default=None,
         help="verified Emergenzix source SHA-256; requires --db-path",
     )
@@ -146,10 +189,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        compose, user_data = validate_upstream_environment(PROJECT_ROOT)
+        if args.baseline == "sma-5-20" and args.dataset_id is None:
+            raise ValueError("SMA parity mode requires --dataset-id and --db-path")
+        compose, user_data = validate_upstream_environment(
+            PROJECT_ROOT, baseline=args.baseline,
+        )
         command, start, end = build_backtest_command(
             root=PROJECT_ROOT, initial_cash=args.capital,
-            period=args.period, start_date=args.start,
+            period=args.period, start_date=args.start, baseline=args.baseline,
         )
         if (args.dataset_id is None) != (args.db_path is None):
             raise ValueError("--dataset-id and --db-path must be provided together")
@@ -165,7 +212,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps({
             "mode": "offline_upstream_backtest",
             "source_commit": PINNED_UPSTREAM_COMMIT,
-            "source_strategy": STRATEGY_NAME,
+            "source_strategy": PARITY_NAME if args.baseline == "sma-5-20" else STRATEGY_NAME,
+            "baseline": args.baseline,
+            "fee_per_side": float(PARITY_FEE_RATE) if args.baseline == "sma-5-20" else None,
+            "slippage": "Freqtrade native; not the Emergenzix slippage model",
             "initial_cash": args.capital,
             "start_date_utc": start.isoformat(),
             "end_exclusive_utc": end.isoformat(),
@@ -173,7 +223,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "dataset_id": provenance["dataset_id"] if provenance else None,
             "freqtrade_data_sha256": provenance["data_sha256"] if provenance else None,
             "data_parity_verified": provenance is not None,
-            "notice": "SampleStrategy only, not NEMT; only --dataset-id mode has source parity.",
+            "notice": "Signal-parity is not execution/PnL parity. Not NEMT, no live orders.",
         }, ensure_ascii=False), flush=True)
         completed = subprocess.run(command, check=False, cwd=PROJECT_ROOT)
         return completed.returncode

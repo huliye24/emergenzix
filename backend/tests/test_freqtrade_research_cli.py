@@ -113,7 +113,7 @@ def test_main_only_invokes_research_backtest_and_creates_output_dirs(
     monkeypatch.setattr(runner, "PROJECT_ROOT", root)
     monkeypatch.setattr(
         runner, "validate_upstream_environment",
-        lambda target: (
+        lambda target, **_kwargs: (
             target / "ops" / "freqtrade" / "docker-compose.research.yml",
             target / "ops" / "freqtrade" / "user_data",
         ),
