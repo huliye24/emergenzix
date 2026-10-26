@@ -191,6 +191,7 @@ See [BTC Historical Replay Records](docs/HISTORICAL_REPLAY.md) for the replay AP
 See [BTC Historical Data Ingestion](docs/BTC_DATA_INGESTION.md) for the verified Binance 4h archive import and dataset workflow.
 
 See [BTC Date-Range Backtest](docs/DATE_RANGE_BACKTEST.md) for the date-driven one-week experiment, CLI invocation, immutable records, and CSV/Markdown report artifacts.
+See [NEMT Strategy Library](docs/NEMT_STRATEGY_LIBRARY.md) for the reviewed v4.4 research adapter, provenance fingerprints, cloud default, and its strict no-LIVE boundary.
 See [Saved Date-Range Backtest Comparison](docs/DATE_RANGE_COMPARISON.md) for read-only, fingerprint-verified comparison of persisted historical runs.
 See [Weekly Research Batch Planning and Reports](docs/RESEARCH_BATCH_PLAN.md) for deterministic manifests, an internal `plan/register/status` CLI, durable leases, a one-job historical worker, and verified reports. No order permissions are granted. Optional private Telegram `/batch plan|register|status|report` commands require `EMERGENZIX_TELEGRAM_BATCH_ENABLED=true` and only register/review tasks; they never run a worker or trade.
 For explicitly authorized cloud operations, `bash ops/research_batch_once.sh BATCH_SHA256` runs **one** historical worker job using the existing Docker Compose API image and shared SQLite volume; it does not install an automatic scheduler.
