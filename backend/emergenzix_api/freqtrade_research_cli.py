@@ -175,6 +175,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--period", required=True, help="1w, 1m, 1y, 3y or Nd")
     parser.add_argument("--start", type=_parse_utc_date, default=None)
     parser.add_argument(
+        "--baseline", choices=VALID_BASELINES, default="sample",
+        help="sample: upstream demo; sma-5-20: reviewed crossover signal",
+    )
+    parser.add_argument(
         "--dataset-id", default=None,
         help="verified Emergenzix source SHA-256; requires --db-path",
     )
@@ -185,10 +189,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        compose, user_data = validate_upstream_environment(PROJECT_ROOT)
+        if args.baseline == "sma-5-20" and args.dataset_id is None:
+            raise ValueError("SMA parity mode requires --dataset-id and --db-path")
+        compose, user_data = validate_upstream_environment(
+            PROJECT_ROOT, baseline=args.baseline,
+        )
         command, start, end = build_backtest_command(
             root=PROJECT_ROOT, initial_cash=args.capital,
-            period=args.period, start_date=args.start,
+            period=args.period, start_date=args.start, baseline=args.baseline,
         )
         if (args.dataset_id is None) != (args.db_path is None):
             raise ValueError("--dataset-id and --db-path must be provided together")
@@ -204,7 +212,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps({
             "mode": "offline_upstream_backtest",
             "source_commit": PINNED_UPSTREAM_COMMIT,
-            "source_strategy": STRATEGY_NAME,
+            "source_strategy": PARITY_NAME if args.baseline == "sma-5-20" else STRATEGY_NAME,
+            "baseline": args.baseline,
+            "fee_per_side": float(PARITY_FEE_RATE) if args.baseline == "sma-5-20" else None,
+            "slippage": "Freqtrade native; not the Emergenzix slippage model",
             "initial_cash": args.capital,
             "start_date_utc": start.isoformat(),
             "end_exclusive_utc": end.isoformat(),
@@ -212,7 +223,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "dataset_id": provenance["dataset_id"] if provenance else None,
             "freqtrade_data_sha256": provenance["data_sha256"] if provenance else None,
             "data_parity_verified": provenance is not None,
-            "notice": "SampleStrategy only, not NEMT; only --dataset-id mode has source parity.",
+            "notice": "Signal-parity is not execution/PnL parity. Not NEMT, no live orders.",
         }, ensure_ascii=False), flush=True)
         completed = subprocess.run(command, check=False, cwd=PROJECT_ROOT)
         return completed.returncode
