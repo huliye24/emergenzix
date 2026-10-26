@@ -12,11 +12,12 @@ import argparse
 import json
 import subprocess
 import sys
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Sequence
 
 from .quick_backtest import resolve_quick_backtest
+from .freqtrade_dataset_bridge import verify_exported_dataset
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PINNED_UPSTREAM_COMMIT = "c051e9065c5b677f03817dd1f83cb980af1ed684"
@@ -101,6 +102,32 @@ def build_backtest_command(
     return cmd, start, end
 
 
+def validate_shared_data_window(
+    *, root: Path, db_path: Path, dataset_id: str,
+    start: date, end: date,
+) -> dict:
+    """Demand exact source parity and >=200 startup candles before backtesting."""
+    data_dir = root / "ops" / "freqtrade" / "user_data" / "data" / "binance"
+    manifest = verify_exported_dataset(
+        db_path=db_path, dataset_id=dataset_id, data_dir=data_dir,
+    )
+    first = datetime.fromisoformat(
+        manifest["first_open_at_utc"].replace("Z", "+00:00")
+    )
+    last_close = datetime.fromisoformat(
+        manifest["last_close_exclusive_utc"].replace("Z", "+00:00")
+    )
+    request_start = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
+    request_end = datetime.combine(end, datetime.min.time(), tzinfo=timezone.utc)
+    required_start = request_start - timedelta(hours=4 * 200)
+    if first > required_start or last_close < request_end:
+        raise ValueError(
+            "shared dataset does not cover full test window plus "
+            "Freqtrade's 200 startup 4h candles"
+        )
+    return manifest
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Isolated upstream Freqtrade BTC spot baseline (backtesting only)"
@@ -108,6 +135,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--capital", type=float, required=True, help="initial USDT")
     parser.add_argument("--period", required=True, help="1w, 1m, 1y, 3y or Nd")
     parser.add_argument("--start", type=_parse_utc_date, default=None)
+    parser.add_argument(
+        "--dataset-id", default=None,
+        help="verified Emergenzix source SHA-256; requires --db-path",
+    )
+    parser.add_argument(
+        "--db-path", type=Path, default=None,
+        help="existing content-addressed Emergenzix SQLite data store",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -116,6 +151,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             root=PROJECT_ROOT, initial_cash=args.capital,
             period=args.period, start_date=args.start,
         )
+        if (args.dataset_id is None) != (args.db_path is None):
+            raise ValueError("--dataset-id and --db-path must be provided together")
+        provenance = None
+        if args.dataset_id is not None:
+            provenance = validate_shared_data_window(
+                root=PROJECT_ROOT, db_path=args.db_path, dataset_id=args.dataset_id,
+                start=start, end=end,
+            )
         # Only user_data is writable; no Freqtrade strategy code is copied.
         (user_data / "data").mkdir(parents=True, exist_ok=True)
         (user_data / "backtest_results").mkdir(parents=True, exist_ok=True)
@@ -127,7 +170,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             "start_date_utc": start.isoformat(),
             "end_exclusive_utc": end.isoformat(),
             "compose": str(compose),
-            "notice": "Not S-003; requires previously downloaded local 4h data.",
+            "dataset_id": provenance["dataset_id"] if provenance else None,
+            "freqtrade_data_sha256": provenance["data_sha256"] if provenance else None,
+            "data_parity_verified": provenance is not None,
+            "notice": "SampleStrategy only, not NEMT; only --dataset-id mode has source parity.",
         }, ensure_ascii=False), flush=True)
         completed = subprocess.run(command, check=False, cwd=PROJECT_ROOT)
         return completed.returncode
