@@ -22,6 +22,9 @@ from .freqtrade_dataset_bridge import verify_exported_dataset
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PINNED_UPSTREAM_COMMIT = "c051e9065c5b677f03817dd1f83cb980af1ed684"
 STRATEGY_NAME = "SampleStrategy"
+PARITY_NAME = "EmergenzixSmaParity"
+PARITY_FEE_RATE = "0.001"  # 10 basis points per side
+VALID_BASELINES = ("sample", "sma-5-20")
 
 
 def _parse_utc_date(value: str) -> date:
@@ -43,7 +46,7 @@ def _paths(root: Path) -> tuple[Path, Path, Path, Path]:
 
 
 def validate_upstream_environment(
-    root: Path, *, git_check: bool = True
+    root: Path, *, git_check: bool = True, baseline: str = "sample"
 ) -> tuple[Path, Path]:
     """Fail closed on missing submodule, untrusted trading config or mismatch."""
     compose, config, sample, user_data = _paths(root)
@@ -63,6 +66,27 @@ def validate_upstream_environment(
         or settings.get("telegram", {}).get("enabled") is not False
     ):
         raise ValueError("research config must be spot, dry-run, keyless and API-disabled")
+    if baseline not in VALID_BASELINES:
+        raise ValueError("unsupported upstream baseline")
+    if baseline == "sma-5-20":
+        parity_code = root / "ops" / "freqtrade" / "strategies" / "EmergenzixSmaParity.py"
+        parity_config = root / "ops" / "freqtrade" / "config.parity.json"
+        for path in (parity_code, parity_config):
+            if not path.is_file():
+                raise ValueError(f"missing reviewed SMA parity file: {path}")
+        parity_settings = json.loads(parity_config.read_text(encoding="utf-8"))
+        if (
+            parity_settings.get("dry_run") is not True
+            or parity_settings.get("trading_mode") != "spot"
+            or parity_settings.get("stake_amount") != "unlimited"
+            or parity_settings.get("max_open_trades") != 1
+            or parity_settings.get("tradable_balance_ratio") != 1.0
+            or parity_settings.get("exchange", {}).get("key")
+            or parity_settings.get("exchange", {}).get("secret")
+            or parity_settings.get("api_server", {}).get("enabled") is not False
+            or parity_settings.get("telegram", {}).get("enabled") is not False
+        ):
+            raise ValueError("SMA parity config must be keyless, spot and fixed-budget")
     if git_check:
         try:
             result = subprocess.run(
@@ -79,19 +103,32 @@ def validate_upstream_environment(
 def build_backtest_command(
     *, root: Path, initial_cash: float, period: str,
     start_date: date | None = None, utc_today: date | None = None,
+    baseline: str = "sample",
 ) -> tuple[list[str], date, date]:
     start, days = resolve_quick_backtest(
         initial_cash=initial_cash, period=period,
         start_date=start_date, utc_today=utc_today,
     )
     end = date.fromordinal(start.toordinal() + days)
+    if baseline not in VALID_BASELINES:
+        raise ValueError("unsupported upstream baseline")
     compose, _, _, _ = _paths(root)
+    strategy = PARITY_NAME if baseline == "sma-5-20" else STRATEGY_NAME
+    config_path = (
+        "/freqtrade/user_data/config.parity.json"
+        if baseline == "sma-5-20" else "/freqtrade/user_data/config.research.json"
+    )
+    strategy_path = (
+        "/freqtrade/user_data/strategies"
+        if baseline == "sma-5-20" else "/freqtrade/user_data/upstream_strategies"
+    )
     cmd = [
         "docker", "compose", "-f", str(compose), "--profile", "freqtrade-research",
         "run", "--rm", "--no-deps", "freqtrade-backtest",
         "backtesting",
-        "--config", "/freqtrade/user_data/config.research.json",
-        "--strategy", STRATEGY_NAME,
+        "--config", config_path,
+        "--strategy", strategy,
+        "--strategy-path", strategy_path,
         "--timeframe", "4h",
         "--pairs", "BTC/USDT",
         "--timerange", f"{start:%Y%m%d}-{end:%Y%m%d}",
@@ -99,6 +136,8 @@ def build_backtest_command(
         "--data-format-ohlcv", "json",
         "--export", "trades",
     ]
+    if baseline == "sma-5-20":
+        cmd.extend(["--fee", PARITY_FEE_RATE])
     return cmd, start, end
 
 
