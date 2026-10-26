@@ -70,6 +70,8 @@ def run_plan(
     *, bars: list[Bar], zone: ZoneInfo, start: datetime, end: datetime, plan: dict,
     capital: float = 100.0, fee_rate: float = FEE_RATE,
     slippage_rate: float = SLIPPAGE_RATE,
+    risk_fraction: float = RISK_FRACTION_OF_EQUITY,
+    max_leverage: float = MAXIMUM_LEVERAGE,
 ) -> dict:
     """Run one S-003.1 configuration and reconcile its ledger."""
     closes = [bar.close for bar in bars]
@@ -88,6 +90,7 @@ def run_plan(
     stop_tightenings = 0
     max_open_risk_pct = 0.0
     counters_upup_blocked = 0
+    leverage_truncations = 0
     slices = plan["slices"]
 
     def equity_now(mark_price: float) -> float:
@@ -99,7 +102,7 @@ def run_plan(
         return cash + unrealized
 
     def add_tranche(index: int, price: float, slice_index: int) -> None:
-        nonlocal cash, position, fees_paid, slippage_cost, stop_tightenings
+        nonlocal cash, position, fees_paid, slippage_cost, stop_tightenings, leverage_truncations
         side = position["side"]
         entry = price * (1 + side * slippage_rate)
         distance = abs(entry - position["stop"])
@@ -109,12 +112,13 @@ def run_plan(
         quantity = slice_amount / distance
         notional = quantity * entry
         # leverage cap applies to the aggregate notional
-        headroom = MAXIMUM_LEVERAGE * cash - position["notional"]
+        headroom = max_leverage * cash - position["notional"]
         if notional > headroom:
             if headroom <= 0:
                 return
             quantity *= headroom / notional
             notional = headroom
+            leverage_truncations += 1
         fee = notional * fee_rate
         fees_paid += fee
         slippage_cost += quantity * entry * slippage_rate
@@ -201,13 +205,14 @@ def run_plan(
             n_value = pending_entry["n_value"]
             distance = max(STOP_MULTIPLE * n_value, entry * 0.01)
             equity_ref = cash if plan["sizing"] == "rolling" else capital
-            budget = equity_ref * RISK_FRACTION_OF_EQUITY
+            budget = equity_ref * risk_fraction
             quantity = (slices[0] * budget) / distance
             notional = quantity * entry
-            headroom = MAXIMUM_LEVERAGE * cash
+            headroom = max_leverage * cash
             if notional > headroom:
                 quantity *= headroom / notional
                 notional = headroom
+                leverage_truncations += 1
             fee = notional * fee_rate
             fees_paid += fee
             slippage_cost += quantity * entry * slippage_rate
@@ -310,6 +315,7 @@ def run_plan(
         "unfilled_tranches": unfilled_tranches,
         "stop_tightenings": stop_tightenings,
         "weekly_up_up_blocked": counters_upup_blocked,
+        "leverage_truncations": leverage_truncations,
         "max_open_risk_pct": max_open_risk_pct,
         "fees_paid_usdt": fees_paid,
         "slippage_cost_usdt": slippage_cost,
@@ -321,6 +327,8 @@ def run_plan(
                                           / capital - 1) * 100,
         "worst_trade_usdt": min((t["net_pnl"] for t in trades), default=0.0),
         "external_flow": 0.0,
+        "risk_fraction": risk_fraction,
+        "max_leverage": max_leverage,
     }
     return {"config": plan["label"], "slices": list(slices), "sizing": plan["sizing"],
             "metrics": metrics, "ledger_checks": ledger_checks,
@@ -396,6 +404,8 @@ def main() -> None:
     parser.add_argument("--end", default="2024-01-01")
     parser.add_argument("--capital", type=float, default=100.0)
     parser.add_argument("--symbol", default="BTCUSDT")
+    parser.add_argument("--risk-pct", type=float, default=1.0)
+    parser.add_argument("--max-leverage", type=float, default=float(MAXIMUM_LEVERAGE))
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -420,6 +430,8 @@ def main() -> None:
                           "batteries, so this run cannot be confirmatory."),
         "start_local": start.isoformat(), "end_local_exclusive": end.isoformat(),
         "capital": args.capital,
+        "risk_pct": args.risk_pct,
+        "max_leverage": args.max_leverage,
         "symbol": args.symbol.strip().upper(),
         "data_fingerprint": data_fingerprint([bar.model_dump() for bar in bars]),
         "synthetic_cashflow_tests": synthetic,
@@ -443,7 +455,9 @@ def main() -> None:
     cells = {}
     for key, plan in PLANS.items():
         cells[key] = run_plan(bars=bars, zone=zone, start=start, end=end, plan=plan,
-                              capital=args.capital)
+                              capital=args.capital,
+                              risk_fraction=args.risk_pct / 100.0,
+                              max_leverage=args.max_leverage)
     report["cells"] = cells
 
     reconciliation = {key: cell["ledger_checks"] for key, cell in cells.items()}
