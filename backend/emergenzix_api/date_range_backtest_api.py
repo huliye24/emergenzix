@@ -14,6 +14,7 @@ from pydantic import Field, model_validator
 from .date_range_backtest import create_date_range_backtest
 from .database import Database
 from .historical_data import HistoricalArchiveUnavailable
+from .quick_backtest import MAX_TEST_DAYS, resolve_quick_backtest
 from .research_evidence import EvidenceAssessmentError, assess_saved_backtest_evidence
 from .schemas import StrictModel
 
@@ -28,7 +29,7 @@ class DateRangeBacktestCreate(StrictModel):
     """Request a BTC historical experiment with a pre-test strategy-selection window."""
 
     start_date: date
-    duration_days: int = Field(default=7, ge=1, le=30)
+    duration_days: int = Field(default=7, ge=1, le=MAX_TEST_DAYS)
     training_days: int = Field(default=90, ge=60, le=365)
     initial_cash: float = Field(default=10_000.0, gt=0, le=1_000_000_000, allow_inf_nan=False)
     fee_bps: float = Field(default=10.0, ge=0, le=1_000, allow_inf_nan=False)
@@ -42,6 +43,35 @@ class DateRangeBacktestCreate(StrictModel):
         if end_at > datetime.now(timezone.utc):
             raise ValueError("the requested test period must end in the past")
         return self
+
+
+class QuickBacktestCreate(StrictModel):
+    """Only capital and duration are required; optional UTC start replays history."""
+
+    initial_cash: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
+    period: str = Field(min_length=2, max_length=6)
+    start_date: date | None = None
+
+
+@router.post("/quick", status_code=status.HTTP_201_CREATED)
+def create_quick_backtest_route(
+    payload: QuickBacktestCreate, request: Request, response: Response
+) -> dict[str, Any]:
+    """Run the existing read-only candidate selector with a simple request."""
+    try:
+        start_date, days = resolve_quick_backtest(
+            initial_cash=payload.initial_cash,
+            period=payload.period,
+            start_date=payload.start_date,
+        )
+        normalized = DateRangeBacktestCreate(
+            start_date=start_date,
+            duration_days=days,
+            initial_cash=payload.initial_cash,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return create_date_range_backtest_route(normalized, request, response)
 
 
 def _canonical_json(payload: Any) -> str:
