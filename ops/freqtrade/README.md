@@ -95,6 +95,65 @@ The **backtest container has no network access**, no exposed ports, a read-only 
 - Config is spot-only, `dry_run=true`, with an empty exchange key and secret. Neither profile exposes an exchange-order API.
 - CI checks source/config, Python launcher, and Compose syntax. Real Docker execution, archive downloads, full report comparison and small-account minimum-order validation still require a host environment and verified market data.
 
+## 3A. Signal-parity experiment: Emergenzix SMA(5,20)
+
+Before trying NEMT, a deliberately simple baseline is available in
+`ops/freqtrade/strategies/EmergenzixSmaParity.py`. It duplicates **only the
+signal decisions** of `emergenzix_api.backtesting.run_sma_crossover`:
+
+| Contract | Both research implementations |
+| --- | --- |
+| Market | BTC/USDT 4h spot, long-only |
+| Signal | Fast SMA(5) crosses over/under SMA(20), closes only |
+| Causality | Signal on completed bar; intended fill at NEXT 4h open |
+| Wallet | Initial user capital, single long position, no pyramid |
+| Side fee in parity run | Freqtrade explicitly `--fee 0.001` (10bps) |
+| Verified history | **Must provide** same source dataset SHA-256 + DB path |
+
+For reproducible analysis (after [2A](#2a-preferred-parity-mode-use-the-same-verified-dataset-as-emergenzix)):
+
+```bash
+cd backend
+python -m emergenzix_api.freqtrade_research_cli \
+  --capital 100 --period 1w --start 2025-10-21 \
+  --baseline sma-5-20 \
+  --db-path ../data/emergenzix.db \
+  --dataset-id <64-hex-dataset-id>
+```
+
+The default `--baseline sample` remains upstream SampleStrategy, in its own
+read-only source path. The local parity strategy and its distinct wallet config
+are mounted read-only, and `--baseline sma-5-20` refuses to run without source
+parity. CI tests the **real SMA crossover methods** from the adapter with
+synthetic pandas candles and compares the signal indices and expected
+next-open execution timestamps to the existing Emergenzix implementation.
+
+### What this does NOT yet make equivalent
+
+1. **Slippage:** old Emergenzix reference defaults to 5bps per side; Freqtrade's
+   backtesting fee flag controls *fees*, not identical fill slippage. For the
+   first clean reference compare, run Emergenzix SMA with `slippage_bps=0`,
+   `fee_bps=10`; later add a separate documented fill/slippage parity policy.
+2. **Reserve and order sizing:** Freqtrade has precision, minimum stake, exchange
+   filters, order sizing and fee reservation rules, even with parity config's
+   `tradable_balance_ratio=1.0`; do not expect all quantities to match.
+3. **Exit safeguards:** Emergenzix forces the final open position to close
+   on the last candle close (with costs). Freqtrade's end-of-backtest exit
+   and stop/ROI processing may differ. A very remote safety stop and ROI
+   threshold are retained in the parity adapter; they are not exact replicas.
+4. **Engine details:** Same next-open signal *intent* does not guarantee identical
+   execution order, timestamp handling, fill price, rejected orders or final
+   equity across implementations. Instrument these as observed mismatches.
+5. **No normal historical run has been performed here.** The new CI validation
+   is source-level signal equivalence, not a live Docker-integrated PnL parity
+   or a validated S-003 staged-tranche performance result.
+
+**Acceptance for the next microtask:** execute both engines on exactly one
+same-SHA archive, compare (a) all signal timestamp/direction events and their
+4h candle indices, (b) actual entry/exit time and prices, (c) fee and fill
+differences, (d) wallet/final-equity difference and (e) open-at-end disposition;
+label every mismatch by cause. Do not tune signals to make PnL agree.
+
 ## 4. Next small work items
 
 1. **Smoke-test** the isolated Freqtrade container: verify image digest, data coverage, source revision, startup candles, 100 USDT starting balance and native output with a frozen 1w interval.
