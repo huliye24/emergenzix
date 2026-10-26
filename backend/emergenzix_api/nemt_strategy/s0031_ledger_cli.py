@@ -47,6 +47,10 @@ PLANS: dict[str, dict] = {
     "T3": {"label": "rolling_tranche_50_25_25", "sizing": "rolling",
            "slices": (0.5, 0.25, 0.25)},
     "T2": {"label": "rolling_tranche_60_40", "sizing": "rolling", "slices": (0.6, 0.4)},
+    # Arm C: identical to T3 except that the shared stop moves to the
+    # cost-breakeven price once the second tranche fills (S-003.1 §5 arm C).
+    "C1": {"label": "rolling_tranche_breakeven_after_2", "sizing": "rolling",
+           "slices": (0.5, 0.25, 0.25), "breakeven_after": 2},
 }
 
 
@@ -77,6 +81,8 @@ def run_plan(
     realized_net = 0.0
     unfilled_tranches = 0
     last_window_index = None
+    stop_tightenings = 0
+    max_open_risk_pct = 0.0
     slices = plan["slices"]
 
     def equity_now(mark_price: float) -> float:
@@ -88,7 +94,7 @@ def run_plan(
         return cash + unrealized
 
     def add_tranche(index: int, price: float, slice_index: int) -> None:
-        nonlocal cash, position, fees_paid, slippage_cost
+        nonlocal cash, position, fees_paid, slippage_cost, stop_tightenings
         side = position["side"]
         entry = price * (1 + side * slippage_rate)
         distance = abs(entry - position["stop"])
@@ -118,6 +124,17 @@ def run_plan(
             "index": index, "slice": slices[slice_index], "entry_price": entry,
             "quantity": quantity, "notional": notional, "fee": fee,
         })
+        # Arm C: once the configured tranche count is filled, move the shared
+        # stop to the cost-breakeven price.  It may only tighten.
+        breakeven_after = plan.get("breakeven_after")
+        if breakeven_after and len(position["tranches"]) >= breakeven_after:
+            cost_buffer = 2 * fee_rate + 2 * slippage_rate
+            breakeven = position["avg_entry"] * (1 + side * cost_buffer)
+            tightened = (max(position["stop"], breakeven) if side == 1
+                         else min(position["stop"], breakeven))
+            if tightened != position["stop"]:
+                position["stop"] = tightened
+                stop_tightenings += 1
 
     def close_position(index: int, raw_price: float, reason: str) -> None:
         nonlocal cash, position, fees_paid, slippage_cost, realized_net
@@ -226,6 +243,9 @@ def run_plan(
                              "n_value": atr(bars, index)}
 
         equity = equity_now(bar.close)
+        if position is not None and equity > 0:
+            open_risk = position["quantity"] * abs(position["avg_entry"] - position["stop"])
+            max_open_risk_pct = max(max_open_risk_pct, open_risk / equity * 100)
         curve.append({
             "time": bar.timestamp.isoformat(), "equity": equity, "cash": cash,
             "locked_notional": (position["notional"] if position else 0.0),
@@ -276,6 +296,8 @@ def run_plan(
         "shorts": sum(t["side"] == "SHORT" for t in trades),
         "tranches_per_trade": dict(tranche_counts),
         "unfilled_tranches": unfilled_tranches,
+        "stop_tightenings": stop_tightenings,
+        "max_open_risk_pct": max_open_risk_pct,
         "fees_paid_usdt": fees_paid,
         "slippage_cost_usdt": slippage_cost,
         "cash_occupancy_mean": statistics.fmean(occupancy) if occupancy else 0.0,

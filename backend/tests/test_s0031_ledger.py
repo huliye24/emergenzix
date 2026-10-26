@@ -79,3 +79,38 @@ def test_ledger_exports_required_fields() -> None:
                   "fees_paid", "slippage_cost", "external_flow"):
         assert field in point, field
     assert point["external_flow"] == 0.0
+
+
+def test_arm_c_matches_t3_except_for_the_stop_rule() -> None:
+    """C1 is arm C: identical to T3 apart from the breakeven stop rule."""
+    t3 = ledger.PLANS["T3"]
+    c1 = ledger.PLANS["C1"]
+    assert c1["slices"] == t3["slices"]
+    assert c1["sizing"] == t3["sizing"]
+    assert c1.get("breakeven_after") == 2
+    assert "breakeven_after" not in t3
+
+
+def test_breakeven_stop_only_tightens() -> None:
+    side = 1
+    fee_rate, slippage_rate = 0.0005, 0.0002
+    avg_entry = 100.0
+    stop = 95.0
+    cost_buffer = 2 * fee_rate + 2 * slippage_rate
+    breakeven = avg_entry * (1 + side * cost_buffer)
+    tightened = max(stop, breakeven)
+    assert tightened > stop
+    # a second application cannot loosen the stop
+    assert max(tightened, breakeven) == tightened
+
+
+def test_metrics_expose_arm_c_fields() -> None:
+    bars = _bars([100.0] * 400)
+    result = ledger.run_plan(
+        bars=bars, zone=ZONE, start=bars[0].timestamp, end=bars[-1].timestamp,
+        plan=ledger.PLANS["C1"], capital=100.0,
+    )
+    assert "stop_tightenings" in result["metrics"]
+    assert "max_open_risk_pct" in result["metrics"]
+    assert result["metrics"]["stop_tightenings"] == 0
+    assert all(result["ledger_checks"].values())
