@@ -55,6 +55,15 @@ PLANS: dict[str, dict] = {
     # PR #72 gate: two consecutive positive four-week states, longs only.
     "U1": {"label": "rolling_single_weekly_upup", "sizing": "rolling",
            "slices": (1.0,), "weekly_up_up_gate": True},
+    # Low-frequency arms: a longer entry channel demands a longer trend.
+    "F1": {"label": "entry240_exit60", "sizing": "rolling", "slices": (1.0,),
+           "entry_bars": 240, "exit_bars": 60},
+    "F2": {"label": "entry480_exit120", "sizing": "rolling", "slices": (1.0,),
+           "entry_bars": 480, "exit_bars": 120},
+    # Pyramiding: increasing risk slices on a wider stop so adds can survive.
+    "P1": {"label": "entry240_exit60_pyramid_25_35_40_stop4N", "sizing": "rolling",
+           "slices": (0.25, 0.35, 0.40), "entry_bars": 240, "exit_bars": 60,
+           "stop_multiple": 4.0},
 }
 
 
@@ -76,7 +85,10 @@ def run_plan(
 ) -> dict:
     """Run one S-003.1 configuration and reconcile its ledger."""
     closes = [bar.close for bar in bars]
-    warmup = max(ENTRY_BARS, ATR_BARS) + 1
+    entry_bars = int(plan.get("entry_bars", ENTRY_BARS))
+    exit_bars = int(plan.get("exit_bars", EXIT_BARS))
+    plan_stop_multiple = float(plan.get("stop_multiple", stop_multiple))
+    warmup = max(entry_bars, ATR_BARS, exit_bars) + 1
     cash = capital
     position = None
     pending_entry = None
@@ -187,7 +199,7 @@ def run_plan(
             stop = position["stop"]
             gap = bar.open <= stop if side == 1 else bar.open >= stop
             channel = (in_decision_window
-                       and channel_exit(bars, decision_index, EXIT_BARS, side))
+                       and channel_exit(bars, decision_index, exit_bars, side))
             touched = bar.low <= stop if side == 1 else bar.high >= stop
             if gap:
                 close_position(index, bar.open, "gap_stop")
@@ -204,7 +216,7 @@ def run_plan(
             side = pending_entry["direction"]
             entry = bar.open * (1 + side * slippage_rate)
             n_value = pending_entry["n_value"]
-            distance = max(stop_multiple * n_value, entry * 0.01)
+            distance = max(plan_stop_multiple * n_value, entry * 0.01)
             equity_ref = cash if plan["sizing"] == "rolling" else capital
             budget = equity_ref * risk_fraction
             quantity = (slices[0] * budget) / distance
@@ -241,7 +253,7 @@ def run_plan(
 
         state = compute_momentum_state(closes[:index + 1])
         nemt = _direction(state)
-        brk = breakout(bars, index, ENTRY_BARS)
+        brk = breakout(bars, index, entry_bars)
 
         if position is not None and len(position["tranches"]) < len(slices):
             side = position["side"]
@@ -332,6 +344,8 @@ def run_plan(
         "max_leverage": max_leverage,
     }
     return {"config": plan["label"], "slices": list(slices), "sizing": plan["sizing"],
+            "entry_bars": entry_bars, "exit_bars": exit_bars,
+            "stop_multiple": plan_stop_multiple,
             "metrics": metrics, "ledger_checks": ledger_checks,
             "trades": trades, "equity_curve": curve}
 
