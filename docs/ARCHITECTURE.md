@@ -119,3 +119,14 @@ Each lasting architectural decision should be recorded in `docs/adr/` and linked
 The first packaging target is a browser-based web application plus a separate FastAPI container, orchestrated by Docker Compose. The API is not published to the host; the web interface binds to localhost by default. SQLite uses the named emergenzix-data volume so the database is not tied to a disposable container. See [ADR-002](adr/ADR-002-container-and-release-pipeline.md) and [release operations](RELEASE.md).
 
 GitHub Actions builds the API and web images on relevant changes. A version tag publishes both images to GitHub Container Registry and creates a GitHub Release. This workflow does not deploy to AWS. Authentication, reverse proxy/TLS, public network exposure, and AWS deployment credentials remain unresolved and must be addressed before any public deployment.
+
+
+## 11. 三层职责：术 / 道 / 容器
+
+架构责任已确立为三个概念层，详见 [ADR-003](adr/ADR-003-strategy-system-software.md)：
+
+- **交易策略（术）**：研究具体市场状态、机会、入场/分批和失效退出，向系统输出条件计划；不拥有账户权益或下单权。
+- **交易系统（道）**：统一管理组合资金、权益账本、风险、策略冲突、实际持仓与审计，不让每个策略自行改账本。
+- **交易软件（容器）**：CLI/API/Web/Telegram、数据库、Docker/AWS；只提供相同的参数入口、运行与追溯，不改变底层交易规则。
+
+其中纯研究的策略规范在独立 NEMT 仓库；可执行系统与软件容器均在 Emergenzix 仓库。新增 `equity_ledger.py` 是**只处理已平仓净损益的不可变账本组件**，包含费用、外部资金流与资金守恒检查；它尚未接入当前日期区间回测，也不处理开放仓位市值、实时保证金或多批次委托。不要据此声称 S-003.1 已完成或真实账户可交易。
