@@ -56,7 +56,7 @@ def test_reject_future_range_and_unsafe_capital() -> None:
 
 def _build_mock_root(tmp_path: Path, *, safe: bool = True) -> Path:
     base = tmp_path / "ops" / "freqtrade"
-    base.mkdir(parents=True)
+    base.mkdir(parents=True, exist_ok=True)
     (base / "docker-compose.research.yml").write_text(
         "services: {}\n", encoding="utf-8"
     )
