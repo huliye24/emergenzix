@@ -72,7 +72,7 @@ def _build_mock_root(tmp_path: Path, *, safe: bool = True) -> Path:
         tmp_path / "vendor" / "freqtrade" / "freqtrade"
         / "templates" / "sample_strategy.py"
     )
-    sample.parent.mkdir(parents=True)
+    sample.parent.mkdir(parents=True, exist_ok=True)
     sample.write_text("class SampleStrategy: pass\n", encoding="utf-8")
     return tmp_path
 
