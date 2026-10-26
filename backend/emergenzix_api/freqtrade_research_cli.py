@@ -18,7 +18,7 @@ from typing import Sequence
 
 from .quick_backtest import resolve_quick_backtest
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2].parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PINNED_UPSTREAM_COMMIT = "c051e9065c5b677f03817dd1f83cb980af1ed684"
 STRATEGY_NAME = "SampleStrategy"
 
