@@ -166,7 +166,7 @@ def test_runner_blocks_mismatched_dataset_arguments_before_docker(
     monkeypatch.setattr(cli, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(
         cli, "validate_upstream_environment",
-        lambda root: (
+        lambda root, **_kwargs: (
             root / "ops/freqtrade/docker-compose.research.yml",
             root / "ops/freqtrade/user_data",
         ),
