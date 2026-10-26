@@ -34,6 +34,39 @@ docker compose -f ops/freqtrade/docker-compose.research.yml \
 
 Start downloading **well before** the requested backtest because the upstream SampleStrategy uses a 200-candle startup window. Archived market data is not verified by Emergenzix's separate Binance ZIP + SHA-256 mechanism in this pilot. Record source, timeframe, missing-candle checks and data hashes before comparing outputs. If the exchange API is unavailable, fail rather than invent a candle.
 
+## 2A. Preferred parity mode: use the *same verified dataset* as Emergenzix
+
+When comparing engines, do **not** let one use downloaded Freqtrade candles and the other use a separate data feed: their date boundaries, microsecond/millisecond handling and missing candles may differ. Use a content-addressed BTCUSDT spot 4h dataset that already exists in the Emergenzix SQLite DB (e.g. one created by the date-range pipeline):
+
+```bash
+# From backend/ ; specify the DB that actually holds that dataset ID.
+python -m emergenzix_api.freqtrade_dataset_bridge \
+  --db-path ../data/emergenzix.db \
+  --dataset-id <64-hex-dataset-id>
+```
+
+The bridge reads the source SQLite database **read-only**, checks the dataset's canonical SHA-256, limits the format to a dataset *declared* `binance_public_archive` / `binance` / `BTCUSDT` / `4h`, and validates candle OHLCV, consecutive UTC 4h opens, alignment and completed candles. It produces:
+
+```text
+ops/freqtrade/user_data/data/binance/BTC_USDT-4h.json
+ops/freqtrade/user_data/data/binance/BTC_USDT-4h.emergenzix-manifest.json
+```
+
+Freqtrade's pinned JSON data-handler expects the positional layout `[epoch_ms, open, high, low, close, volume]`. The manifest records source dataset ID/SHA, exported file SHA, count, UTC boundaries, and an explicit warning that the data's exchange source remains **declared metadata** rather than independently cryptographically authenticated by the registration database. The bridge refuses incomplete candles, gaps, overwriting different existing Freqtrade data, or an altered manifest; repeat export is idempotent only if both still match.
+
+Use the **dataset-locked** Freqtrade runner and specify the same historical window as the Emergenzix report:
+
+```bash
+python -m emergenzix_api.freqtrade_research_cli \
+  --capital 100 --period 1w --start 2025-10-21 \
+  --db-path ../data/emergenzix.db \
+  --dataset-id <64-hex-dataset-id>
+```
+
+Before invoking Docker, the runner verifies the source DB **again** against the Freqtrade file/manifest and checks at least **200 previous 4h candles** for Freqtrade's pinned SampleStrategy startup window and coverage through the full exclusive end boundary. Both `--db-path` and `--dataset-id` are required together. Missing history blocks the run; it does **not** fetch or invent candles.
+
+**Critical qualification:** same dataset does not mean same strategy or equivalent fees/fills. This is still Freqtrade's upstream **SampleStrategy**, not Emergenzix's SMA/Donchian research candidate or NEMT. A matching data fingerprint permits subsequent engine parity work, but returns must **not** be compared as if the trading rules already match.
+
 ## 3. Run an offline historical backtest from capital + period
 
 From `backend/`:
