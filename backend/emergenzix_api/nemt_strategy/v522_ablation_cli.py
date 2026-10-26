@@ -92,6 +92,15 @@ def channel_exit(bars: list[Bar], index: int, exit_bars: int, side: int) -> bool
             else close > max(bar.high for bar in history))
 
 
+def _psi_direction(state) -> int:
+    """Signed momentum only, ignoring the histogram-entropy condition.
+
+    This is the ``M_t`` gate frozen by the v5.2.7 protocol: it keeps the
+    direction and magnitude rule of ``psi`` but drops ``S > 0.7``.
+    """
+    return 1 if state.psi > 0.5 else -1 if state.psi < -0.5 else 0
+
+
 def _drawdown(equities: list[float]) -> float:
     peak, maximum = equities[0], 0.0
     for equity in equities:
@@ -116,8 +125,8 @@ def run_arm(
     NEMT permission so the same engine can serve as the Donchian-only baseline
     required by the v5.2.6 incremental-information protocol.
     """
-    if gate not in {"nemt", "none"}:
-        raise ValueError("gate must be 'nemt' or 'none'")
+    if gate not in {"nemt", "none", "psi"}:
+        raise ValueError("gate must be 'nemt', 'psi' or 'none'")
     closes = [bar.close for bar in bars]
     warmup = max(arm.entry_bars, ATR_BARS) + 1
     cash, position, pending = capital, None, None
@@ -225,6 +234,13 @@ def run_arm(
             entry_side = nemt_direction if break_direction == nemt_direction else 0
             if nemt_direction and break_direction == nemt_direction:
                 counters["donchian_same_direction_breakouts"] += 1
+        elif gate == "psi":
+            psi_side = _psi_direction(state)
+            if psi_side and break_direction == psi_side:
+                counters["donchian_same_direction_breakouts"] += 1
+                entry_side = psi_side
+            else:
+                entry_side = 0
         else:
             if break_direction:
                 counters["donchian_same_direction_breakouts"] += 1
