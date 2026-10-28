@@ -16,14 +16,6 @@ from .schemas import Bar
 from .watch_agent import WatchEvent
 
 
-SCENARIO_LABELS = {
-    "continuation_down": "延续下跌",
-    "false_breakdown": "假跌破",
-    "range": "震荡区间",
-    "reversal_up": "向上反转",
-}
-
-
 def _bollinger_bands(
     bars: Sequence[Bar], *, period: int = 20, deviations: float = 2.0
 ) -> tuple[list[float], list[float], list[float]]:
@@ -90,8 +82,6 @@ def render_watch_chart(event: WatchEvent, bars: Sequence[Bar], *, candle_count: 
     levels = details.get("key_levels", {}) if isinstance(details, dict) else {}
     support = float(levels["support"])
     resistance = float(levels["resistance"])
-    scenario = str(details.get("scenario", "unknown"))
-    confidence = float(details.get("confidence", 0.0))
     live = details.get("live_monitoring") if isinstance(details, dict) else None
     live_bar = None
     if isinstance(live, dict) and live.get("forming") is True:
@@ -169,24 +159,6 @@ def render_watch_chart(event: WatchEvent, bars: Sequence[Bar], *, candle_count: 
     price_axis.axhline(resistance, color="#d32f2f", linewidth=1.4)
     price_axis.text(len(selected) - 0.5, support, f" 支撑 {support:g}", color="#2e7d32", va="bottom", ha="right")
     price_axis.text(len(selected) - 0.5, resistance, f" 压力 {resistance:g}", color="#d32f2f", va="bottom", ha="right")
-
-    latest = selected[-1]
-    live_text = f"\n实时参考：{live_bar.close:g}（形成中）" if live_bar is not None else ""
-    annotation = (
-        f"当前场景：{SCENARIO_LABELS.get(scenario, scenario)}\n"
-        f"置信度：{confidence:.1%}\n"
-        f"信号收盘：{latest.close:g}（已完成）{live_text}"
-    )
-    price_axis.annotate(
-        annotation,
-        xy=(len(selected) - 1, latest.close),
-        xytext=(max(0, len(selected) - 18), latest.close + (resistance - support) * 0.18),
-        color="#c62828",
-        fontsize=11,
-        weight="bold",
-        arrowprops={"arrowstyle": "->", "color": "#c62828", "linewidth": 1.8},
-        bbox={"boxstyle": "round,pad=0.4", "facecolor": "white", "edgecolor": "#c62828", "alpha": 0.92},
-    )
 
     price_axis.set_title(f"{event.symbol} · {event.timeframe} · Emergenzix PAPER 场景图", loc="left", fontsize=14, weight="bold")
     price_axis.set_ylabel("价格")
