@@ -1,0 +1,40 @@
+{
+  "jobDefinitionName": "emergenzix-nemt-v44",
+  "type": "container",
+  "parameters": {
+    "start": "2026-01-01",
+    "end": "2026-06-01",
+    "capital": "100"
+  },
+  "containerProperties": {
+    "image": "382309211832.dkr.ecr.cn-northwest-1.amazonaws.com.cn/emergenzix/research-runner:nemt-v44-9c6258c",
+    "command": [
+      "python",
+      "-m",
+      "emergenzix_api.nemt_strategy.v44_adapter",
+      "--start",
+      "Ref::start",
+      "--end",
+      "Ref::end",
+      "--capital",
+      "Ref::capital",
+      "--output-dir",
+      "/tmp/nemt-reports"
+    ],
+    "resourceRequirements": [
+      {"type": "VCPU", "value": "1"},
+      {"type": "MEMORY", "value": "2048"}
+    ],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-group": "/aws/batch/job",
+        "awslogs-region": "cn-northwest-1",
+        "awslogs-stream-prefix": "emergenzix-nemt-v44"
+      }
+    }
+  },
+  "retryStrategy": {"attempts": 1},
+  "timeout": {"attemptDurationSeconds": 1800},
+  "platformCapabilities": ["EC2"]
+}

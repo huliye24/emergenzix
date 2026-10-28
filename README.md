@@ -2,13 +2,18 @@
 
 **An open-source, risk-controlled quantitative trading product.**
 
+NEMT theory, mathematical hypotheses, strategy specifications, and research
+conclusions live in the separate
+[Non-Equilibrium Market Theory repository](https://github.com/huliye24/Non-Equilibrium-Market-Theory).
+This repository contains the software implementation and operational product.
+
 Emergenzix is the product layer emerging from the NEMT research program. It is designed to turn market data and reviewed research into reproducible strategy evaluation and auditable trading workflows.
 
 > **Development status:** `main` contains the initial backend, responsive dashboard, a CCXT-based public OHLCV endpoint, and a pinned Freqtrade upstream submodule. This is the v0.1.0 development target. Docker Compose packaging and GitHub container-release automation are being added; do not treat the version as released until Codex/AWS verification is complete.
 
 ## NEMT and Emergenzix
 
-- **NEMT — research and experiments:** economic hypotheses, quantitative theory, research datasets, MATLAB/GPU experiments, and reproducible research.
+- **NEMT — theory and strategy research:** economic hypotheses, quantitative theory, strategy specifications, experiments, and reproducible conclusions. The public theory source is maintained in the separate NEMT theory repository.
 - **Emergenzix — product and operations:** strategy management, backtesting, paper trading, product APIs, risk controls, and the user-facing responsive interface.
 
 A research result must carry provenance and pass review before it informs a product strategy. Research code and experiment artifacts are not copied into the product runtime by default.
@@ -33,6 +38,21 @@ A research result must carry provenance and pass review before it informs a prod
 - Automated backend tests, frontend type-check/build, Docker image build CI, and tag-triggered GHCR release workflow
 
 The backtest is a baseline implementation, not evidence of profitability. Paper orders use caller-supplied reference prices and do not represent exchange market fills.
+
+## Quick research run: initial capital + period
+
+Run a BTC/USDT 4h historical benchmark with two required inputs:
+
+```bash
+cd backend
+python -m emergenzix_api.quick_backtest_cli --capital 100 --period 1w
+# Replay a frozen historical week instead of using the most recent complete UTC dates:
+python -m emergenzix_api.quick_backtest_cli --capital 120 --period 1w --start 2025-10-21
+```
+
+Periods: `1w` (7 days), `1m` (30 days), `1y` (365 days), `3y` (1095 days), or custom `Nd`. For long windows, use the compute environment and verified historical archives. This **reuses the existing long-only spot strategy selector**, not the unimplemented small-account multi-tranche/pyramiding engine. It writes JSON, summary, equity, trade and cost-report artifacts; never submits exchange orders.
+
+See [Quick backtest setup and API](docs/QUICK_BACKTEST.md). The API accepts `{"initial_cash":100,"period":"1w"}` at `POST /api/v1/research/date-range-backtests/quick`.
 
 ## Get the repository and upstream engine
 
@@ -191,6 +211,7 @@ See [BTC Historical Replay Records](docs/HISTORICAL_REPLAY.md) for the replay AP
 See [BTC Historical Data Ingestion](docs/BTC_DATA_INGESTION.md) for the verified Binance 4h archive import and dataset workflow.
 
 See [BTC Date-Range Backtest](docs/DATE_RANGE_BACKTEST.md) for the date-driven one-week experiment, CLI invocation, immutable records, and CSV/Markdown report artifacts.
+See [NEMT Strategy Library](docs/NEMT_STRATEGY_LIBRARY.md) for the reviewed v4.4 research adapter, provenance fingerprints, cloud default, and its strict no-LIVE boundary.
 See [Saved Date-Range Backtest Comparison](docs/DATE_RANGE_COMPARISON.md) for read-only, fingerprint-verified comparison of persisted historical runs.
 See [Weekly Research Batch Planning and Reports](docs/RESEARCH_BATCH_PLAN.md) for deterministic manifests, an internal `plan/register/status` CLI, durable leases, a one-job historical worker, and verified reports. No order permissions are granted. Optional private Telegram `/batch plan|register|status|report` commands require `EMERGENZIX_TELEGRAM_BATCH_ENABLED=true` and only register/review tasks; they never run a worker or trade.
 For explicitly authorized cloud operations, `bash ops/research_batch_once.sh BATCH_SHA256` runs **one** historical worker job using the existing Docker Compose API image and shared SQLite volume; it does not install an automatic scheduler.
@@ -200,6 +221,21 @@ See [Codex Acceptance Checklist](docs/CODEX_DATE_RANGE_BACKTEST_ACCEPTANCE.md) f
 ## GPU Alpha Lab — Experiment 001 (optional)
 
 A research-only, GPU-isolated PyTorch MLP/TCN experiment can train on an existing SHA-256-verified OHLCV dataset in the API's SQLite volume. It uses purged chronological splits, train-only normalization, a zero-return baseline, and writes hashed experiment artifacts. **No inference or trading signal is connected to the API, Telegram, PAPER orders, or LIVE orders.** The default Compose services do not start the GPU lab. See [GPU Alpha Lab setup and A10 instructions](docs/GPU_ALPHA_LAB.md) before powering on a GPU host. A green regular CI checks CPU/data behavior, not A10 hardware.
+
+## Reuse the pinned Freqtrade engine (isolated research pilot)
+
+Instead of implementing another broker, position accounting engine or backtesting framework, the first upstream-engine experiment runs the already vendored [Freqtrade](https://github.com/freqtrade/freqtrade) source in its own Docker environment.
+
+```bash
+git submodule update --init --recursive vendor/freqtrade
+docker compose -f ops/freqtrade/docker-compose.research.yml \
+  --profile freqtrade-research --profile freqtrade-download pull
+# See ops/freqtrade/README.md for explicit, public-data-only download.
+cd backend
+python -m emergenzix_api.freqtrade_research_cli --capital 100 --period 1w --start 2025-10-21
+```
+
+The backtest runs **without network access, exchange credentials, API ports or live trading**. The separate historical-data download requires an explicit action. The upstream sample strategy is a demonstration and has NOT been compared with NEMT or the S-003 staged-entry proposal. [Full isolated setup and limitations](ops/freqtrade/README.md).
 
 ## Safety boundaries
 

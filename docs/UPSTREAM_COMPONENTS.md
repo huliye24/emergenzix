@@ -69,6 +69,21 @@ Before adding another source repository or copying files into Emergenzix:
 5. Keep the existing engine as a fallback until the adapter passes Codex/AWS verification.
 6. Consider exchange TESTNET only after paper workflows, authentication, and risk controls have been reviewed. LIVE trading remains disabled.
 
-## 5. Do not import everything blindly
+## 5. Selection review (2026-10-26): reuse before reinvention
+
+| Upstream | What it already handles | Fit for Emergenzix now | Decision |
+| --- | --- | --- | --- |
+| [Freqtrade](https://github.com/freqtrade/freqtrade) | Crypto backtesting, spot exchange integration, wallet/stake management, dry-run, Telegram/UI, position-adjustment callbacks | Existing pinned GPL-3.0 submodule and Python strategy surface | **First-choice pilot** |
+| [NautilusTrader](https://github.com/nautechsystems/nautilus_trader) | High-performance Rust/Python event-driven backtest and live-trading core | Consider later if fill fidelity / multi-asset event volume cannot be met by Freqtrade | Do not import yet |
+| [QuantConnect LEAN](https://github.com/QuantConnect/Lean) | Cross-market modular backtest and execution engine (Apache-2.0) | Broader scope; separate CLI/data/licensing operational requirements for some workflows | Do not import yet |
+| [Backtrader](https://github.com/mementum/backtrader) | Multi-timeframe Python backtesting, broker simulators and sizers | Useful reference but would add a second parallel Python engine | Do not import yet |
+
+**Reason**: backtest, order/portfolio accounting, strategy callbacks and deployment primitives are commodity infrastructure. Repeatedly implementing each in the Emergenzix API adds incompatible accounting rules and duplicates tests. Our distinctive work should focus on NEMT hypotheses, regime-to-strategy mapping, conditional playbooks, and verifiable experiments.
+
+An initial, opt-in Freqtrade research runner is now specified at [ops/freqtrade](../ops/freqtrade/README.md). It uses the **already pinned** Git submodule and an **independent official Docker image**, a separate public-data downloader and an offline historical backtest service. The upstream image must be identified by its digest before a frozen experiment; the image's version is not guaranteed to match the pinned sample-strategy source.
+
+This pilot is **not yet integrated with** the Emergenzix `POST /api/v1/backtests` API, S-003 staged entries, or the new SettledEquityLedger. Do not report the upstream SampleStrategy results as NEMT performance.
+
+## 6. Do not import everything blindly
 
 Freqtrade includes a complete bot, configuration system, database, API server, strategy lifecycle, and UI. Emergenzix should reuse the engine and data capabilities while retaining a distinct product boundary. Avoid duplicating Freqtrade's internals in the Emergenzix API or maintaining a long-lived fork unless a specific, documented change requires it.

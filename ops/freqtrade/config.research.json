@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schema.freqtrade.io/schema.json",
+  "bot_name": "emergenzix-freqtrade-research-only",
+  "dry_run": true,
+  "dry_run_wallet": 100,
+  "trading_mode": "spot",
+  "stake_currency": "USDT",
+  "stake_amount": "unlimited",
+  "tradable_balance_ratio": 0.99,
+  "max_open_trades": 1,
+  "fiat_display_currency": "USD",
+  "dataformat_ohlcv": "json",
+  "timeframe": "4h",
+  "exchange": {
+    "name": "binance",
+    "key": "",
+    "secret": "",
+    "pair_whitelist": ["BTC/USDT"],
+    "pair_blacklist": []
+  },
+  "pairlists": [
+    {"method": "StaticPairList"}
+  ],
+  "api_server": {"enabled": false},
+  "telegram": {"enabled": false}
+}
