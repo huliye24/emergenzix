@@ -1,0 +1,56 @@
+# Independent, opt-in Freqtrade research environments.
+# No service in this file is started by the normal Emergenzix Compose command.
+# This is an upstream engine pilot, not an exchange execution configuration.
+services:
+  freqtrade-backtest:
+    image: ${FREQTRADE_RESEARCH_IMAGE:-freqtradeorg/freqtrade:stable}
+    profiles: ["freqtrade-research"]
+    restart: "no"
+    network_mode: "none"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev
+    volumes:
+      - ./user_data:/freqtrade/user_data
+      - ./config.research.json:/freqtrade/user_data/config.research.json:ro
+      - ../../vendor/freqtrade/freqtrade/templates:/freqtrade/user_data/upstream_strategies:ro
+      - ./strategies:/freqtrade/user_data/strategies:ro
+      - ./config.parity.json:/freqtrade/user_data/config.parity.json:ro
+    command:
+      - backtesting
+      - --config
+      - /freqtrade/user_data/config.research.json
+      - --strategy
+      - SampleStrategy
+      - --strategy-path
+      - /freqtrade/user_data/upstream_strategies
+      - --timeframe
+      - 4h
+      - --data-format-ohlcv
+      - json
+
+  # Public market data only. This service has network access ONLY when
+  # explicitly invoked for downloads; no keys, ports, API or trade command.
+  freqtrade-public-data:
+    image: ${FREQTRADE_RESEARCH_IMAGE:-freqtradeorg/freqtrade:stable}
+    profiles: ["freqtrade-download"]
+    restart: "no"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - ./user_data:/freqtrade/user_data
+      - ./config.research.json:/freqtrade/user_data/config.research.json:ro
+    command:
+      - download-data
+      - --config
+      - /freqtrade/user_data/config.research.json
+      - --exchange
+      - binance
+      - --pairs
+      - BTC/USDT
+      - --timeframes
+      - 4h
+      - --data-format-ohlcv
+      - json

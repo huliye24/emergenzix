@@ -61,3 +61,13 @@ Exchange credentials, private account access, and order submission are not part 
 - Package manifests, test names, CI workflow, and acceptance documents were read directly from that snapshot.
 - NEMT and Emergenzix both contain GPL-3.0 license texts; file-level notices and third-party dependency compatibility still require review for each actual transfer.
 - No source file, credential, private data, dataset, or runtime artifact was copied into Emergenzix during this inventory.
+
+## Reviewed NEMT v4.4 transfer (2026-10-26)
+
+The later, explicitly approved NEMT strategy-library transfer is documented in
+[NEMT Strategy Library](NEMT_STRATEGY_LIBRARY.md). It is intentionally narrower
+than the earlier product inventory: seven dependency-free research modules and
+one content-hashed validation artifact were copied from the GPL-3.0 NEMT project.
+No raw market dataset, secret, notebook, GPU artifact, MATLAB experiment, or order
+adapter was transferred. The adapter is backtest-only and rejects unreviewed
+router months.
