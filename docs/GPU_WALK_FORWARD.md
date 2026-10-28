@@ -82,14 +82,59 @@ minimum examples and short datasets. Confirm equal inputs produce the
 same plan digest and that reading the registered dataset does not mutate
 the source SQLite database.
 
-## Not yet implemented
+## Fold-aware sample construction (stacked follow-up PR)
 
-Fold-aware feature materialization, new train-only normalization per fold,
-three separate GPU training runs, validation checkpoint selection, fold
-aggregation, slippage/fees/PnL, significance tests and any form of trade
-authorization remain outside this PR.
+The follow-up `emergenzix_gpu_lab.fold_samples.make_fold_samples` now
+materializes E001-compatible NumPy tensors for **one frozen fold**.
+This addition depends on the planning PR and must be merged afterward.
+It reuses exactly the same four causal financial features as E001 and
+retains the same `Samples` return shape (train_x/train_y, val_x/val_y,
+test_x/test_y, train/val/test anchors, mean/std and split cut indexes).
 
-**Next microtask:** feed this plan to a fold-aware sample builder, and
-prove that changing future validation/test candles cannot change a
-fold's training samples or fitted normalizer. Only then can the GPU
-trainer safely consume the planned folds.
+For each fold, the feature normalizer is fitted exclusively on features
+from candle index zero through the **last training feature anchor**,
+inclusive. Future validation/test feature rows and their target labels
+cannot influence that scaler or the fold's training samples. Features for
+the first validation/test anchors may use earlier candles as past context,
+but never information later than their own anchor.
+
+Python usage after loading a verified registered dataset:
+
+```python
+from emergenzix_gpu_lab.dataset import load_registered_dataset
+from emergenzix_gpu_lab.walk_forward import plan_walk_forward
+from emergenzix_gpu_lab.fold_samples import make_fold_samples
+
+dataset = load_registered_dataset("/path/to/emergenzix.db", "DATASET_SHA256")
+windows = plan_walk_forward(len(dataset.times), lookback=32, horizon=1)
+first = make_fold_samples(dataset, windows[0], lookback=32, horizon=1)
+print(first.train_x.shape, first.val_x.shape, first.test_x.shape)
+```
+
+No model is fitted and no files are produced by these calls. The fold
+must come from the same verified history and planning parameters; a
+stale or modified fold boundary is rejected, but these in-memory
+objects are not signed or independently authenticated.
+
+Codex CPU-only tests for the materialization follow-up:
+
+```bash
+cd backend
+python -m pytest -q tests/test_gpu_fold_samples.py tests/test_gpu_walk_forward.py tests/test_gpu_alpha_lab.py
+```
+
+These tests include future-candle mutation checks, stage/horizon
+mismatch rejection and preservation of the original E001 causal
+feature arithmetic. They have not been run as part of the code-writing
+handoff.
+
+## Still not implemented
+
+Three separate GPU training runs, checkpoint selection using each fold's
+validation only, holdout metrics and aggregation, slippage/fees/PnL,
+significance tests and strategy promotion remain outside these PRs.
+
+**Next microtask:** implement the one-fold training executor consuming
+`make_fold_samples`, saving provenance and choosing its checkpoint by
+validation loss alone. Do not start A10, add exchange permissions or
+claim that the plan and tensors demonstrate profitable alpha.
