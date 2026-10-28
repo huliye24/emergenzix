@@ -73,6 +73,14 @@ def _parse_completed_bars(payload: dict[str, Any]) -> list[Bar]:
     return completed
 
 
+def _parse_forming_bar(payload: dict[str, Any]) -> Bar:
+    """Return the newest public candle for monitoring, never signal evaluation."""
+    raw_bars = payload.get("bars")
+    if not isinstance(raw_bars, list) or len(raw_bars) < 2:
+        raise ValueError("market response must contain at least two candles")
+    return Bar.model_validate(raw_bars[-1])
+
+
 def evaluate_market_payload(
     payload: dict[str, Any], previous: WatchState, *, lookback: int, now: datetime
 ) -> tuple[WatchState, list[WatchEvent]]:
@@ -115,6 +123,17 @@ def evaluate_market_payload(
     state = WatchState(result.scenario, completed_at, trigger_key, None)
     details = result.as_dict()
     details["bar_timestamp"] = completed_at
+    forming_bar = _parse_forming_bar(payload)
+    details["live_monitoring"] = {
+        "timestamp": forming_bar.timestamp.isoformat(),
+        "open": forming_bar.open,
+        "high": forming_bar.high,
+        "low": forming_bar.low,
+        "price": forming_bar.close,
+        "volume": forming_bar.volume,
+        "forming": True,
+        "signal_input": False,
+    }
     events: list[WatchEvent] = []
     if recovered_stale_key is not None:
         stale_timestamp = recovered_stale_key[len("stale:"):]
