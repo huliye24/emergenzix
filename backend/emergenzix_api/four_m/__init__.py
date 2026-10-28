@@ -1,6 +1,11 @@
-"""4M v0.1: pure, research-only market state assessments.
+"""4M research engine with two public concepts: STATE and ACTION.
 
-No exchange adapters, network IO, account mutations or order functions.
+Pure research-only module: no orders, network IO or account mutations.
 """
-from .engine import assess, Assessment, Snapshot
-__all__ = ["assess", "Assessment", "Snapshot"]
+from .engine import Assessment, Snapshot, assess
+from .state_action import Action, State, StateAction, evaluate
+
+__all__ = [
+    "Assessment", "Snapshot", "assess",
+    "State", "Action", "StateAction", "evaluate",
+]
