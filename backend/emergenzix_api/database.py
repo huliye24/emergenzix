@@ -11,6 +11,125 @@ from pathlib import Path
 from typing import Iterator
 
 
+DATE_RANGE_DURATION_MIGRATION = "date-range-duration-1-1095-v1"
+
+
+def _create_date_range_records_table(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE date_range_backtest_records (
+            id TEXT PRIMARY KEY CHECK (length(id) = 64),
+            dataset_id TEXT NOT NULL REFERENCES market_datasets(id),
+            dataset_sha256 TEXT NOT NULL CHECK (length(dataset_sha256) = 64),
+            start_at TEXT NOT NULL,
+            end_at TEXT NOT NULL,
+            duration_days INTEGER NOT NULL CHECK (duration_days BETWEEN 1 AND 1095),
+            training_days INTEGER NOT NULL CHECK (training_days BETWEEN 60 AND 365),
+            protocol_version TEXT NOT NULL,
+            record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
+            record_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+
+
+def _install_date_range_records_guards(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_date_range_backtest_records_created_at
+            ON date_range_backtest_records(created_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_date_range_backtest_records_period
+            ON date_range_backtest_records(start_at DESC, end_at DESC)
+        """
+    )
+    connection.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS date_range_backtest_records_no_update
+        BEFORE UPDATE ON date_range_backtest_records
+        BEGIN
+            SELECT RAISE(ABORT, 'date-range backtest records are immutable');
+        END
+        """
+    )
+    connection.execute(
+        """
+        CREATE TRIGGER IF NOT EXISTS date_range_backtest_records_no_delete
+        BEFORE DELETE ON date_range_backtest_records
+        BEGIN
+            SELECT RAISE(ABORT, 'date-range backtest records are immutable');
+        END
+        """
+    )
+
+
+def _migrate_date_range_duration(connection: sqlite3.Connection) -> None:
+    row = connection.execute(
+        "SELECT sql FROM sqlite_master "
+        "WHERE type = 'table' AND name = 'date_range_backtest_records'"
+    ).fetchone()
+    if row is None or not row["sql"]:
+        raise RuntimeError("date-range record schema is missing")
+    normalized = " ".join(str(row["sql"]).lower().split())
+    if "duration_days between 1 and 1095" in normalized:
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_migrations(name, applied_at) "
+            "VALUES (?, datetime('now'))",
+            (DATE_RANGE_DURATION_MIGRATION,),
+        )
+        return
+    if "duration_days between 1 and 30" not in normalized:
+        raise RuntimeError("unsupported date-range duration constraint")
+
+    connection.commit()
+    connection.execute("PRAGMA foreign_keys = OFF")
+    connection.execute("PRAGMA legacy_alter_table = ON")
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute("DROP TRIGGER IF EXISTS date_range_backtest_records_no_update")
+        connection.execute("DROP TRIGGER IF EXISTS date_range_backtest_records_no_delete")
+        connection.execute("DROP INDEX IF EXISTS idx_date_range_backtest_records_created_at")
+        connection.execute("DROP INDEX IF EXISTS idx_date_range_backtest_records_period")
+        connection.execute(
+            "ALTER TABLE date_range_backtest_records "
+            "RENAME TO date_range_backtest_records_legacy_30d"
+        )
+        _create_date_range_records_table(connection)
+        connection.execute(
+            """
+            INSERT INTO date_range_backtest_records (
+                id, dataset_id, dataset_sha256, start_at, end_at,
+                duration_days, training_days, protocol_version,
+                record_sha256, record_json, created_at
+            ) SELECT
+                id, dataset_id, dataset_sha256, start_at, end_at,
+                duration_days, training_days, protocol_version,
+                record_sha256, record_json, created_at
+            FROM date_range_backtest_records_legacy_30d
+            """
+        )
+        connection.execute("DROP TABLE date_range_backtest_records_legacy_30d")
+        _install_date_range_records_guards(connection)
+        connection.execute(
+            "INSERT INTO schema_migrations(name, applied_at) VALUES (?, datetime('now'))",
+            (DATE_RANGE_DURATION_MIGRATION,),
+        )
+        violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        if violations:
+            raise RuntimeError("date-range duration migration broke foreign keys")
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+    finally:
+        connection.execute("PRAGMA legacy_alter_table = OFF")
+        connection.execute("PRAGMA foreign_keys = ON")
+
+
 class Database:
     def __init__(self, path: str, initial_paper_cash: float = 100_000.0) -> None:
         self.path = str(path)
@@ -124,12 +243,17 @@ class Database:
                     dataset_sha256 TEXT NOT NULL CHECK (length(dataset_sha256) = 64),
                     start_at TEXT NOT NULL,
                     end_at TEXT NOT NULL,
-                    duration_days INTEGER NOT NULL CHECK (duration_days BETWEEN 1 AND 30),
+                    duration_days INTEGER NOT NULL CHECK (duration_days BETWEEN 1 AND 1095),
                     training_days INTEGER NOT NULL CHECK (training_days BETWEEN 60 AND 365),
                     protocol_version TEXT NOT NULL,
                     record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
                     record_json TEXT NOT NULL,
                     created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    name TEXT PRIMARY KEY,
+                    applied_at TEXT NOT NULL
                 );
 
 
@@ -290,6 +414,11 @@ class Database:
                     ON paper_orders(created_at DESC);
                 """
             )
+
+            _migrate_date_range_duration(connection)
+            # The migration marker write opens a transaction on fresh/current
+            # databases. Finish it before the independent batch-schema rebuild.
+            connection.commit()
 
 
             # Prior batch schema did not allow completed jobs. SQLite cannot
