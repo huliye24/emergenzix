@@ -81,7 +81,7 @@ def _confirmed_trendline(
 
 
 def render_watch_chart(event: WatchEvent, bars: Sequence[Bar], *, candle_count: int = 60) -> bytes:
-    """Render completed candles, structure, Bollinger bands, trend and volume."""
+    """Render causal completed-bar analysis plus a clearly separated live candle."""
     selected = list(bars[-candle_count:])
     if len(selected) < 20:
         raise ValueError("at least 20 completed candles are required for a watch chart")
@@ -92,6 +92,19 @@ def render_watch_chart(event: WatchEvent, bars: Sequence[Bar], *, candle_count: 
     resistance = float(levels["resistance"])
     scenario = str(details.get("scenario", "unknown"))
     confidence = float(details.get("confidence", 0.0))
+    live = details.get("live_monitoring") if isinstance(details, dict) else None
+    live_bar = None
+    if isinstance(live, dict) and live.get("forming") is True:
+        candidate = Bar(
+            timestamp=live["timestamp"],
+            open=live["open"],
+            high=live["high"],
+            low=live["low"],
+            close=live["price"],
+            volume=live["volume"],
+        )
+        if candidate.timestamp > selected[-1].timestamp:
+            live_bar = candidate
 
     plt.rcParams["font.sans-serif"] = ["Noto Sans CJK SC", "Microsoft YaHei", "SimHei", "DejaVu Sans"]
     plt.rcParams["axes.unicode_minus"] = False
@@ -112,6 +125,29 @@ def render_watch_chart(event: WatchEvent, bars: Sequence[Bar], *, candle_count: 
         body_height = max(abs(bar.close - bar.open), max(bar.high - bar.low, 1.0) * 0.015)
         price_axis.add_patch(Rectangle((index - 0.32, body_low), 0.64, body_height, facecolor=color, edgecolor=color))
         volume_axis.bar(index, bar.volume, width=0.64, color=color, alpha=0.65)
+
+    if live_bar is not None:
+        live_index = len(selected)
+        live_color = "#00897b" if live_bar.close >= live_bar.open else "#e53935"
+        price_axis.axvspan(live_index - 0.48, live_index + 0.48, color="#fff3e0", alpha=0.9)
+        price_axis.vlines(live_index, live_bar.low, live_bar.high, color=live_color, linewidth=1.2)
+        live_body_low = min(live_bar.open, live_bar.close)
+        live_body_height = max(
+            abs(live_bar.close - live_bar.open),
+            max(live_bar.high - live_bar.low, 1.0) * 0.015,
+        )
+        price_axis.add_patch(
+            Rectangle(
+                (live_index - 0.32, live_body_low), 0.64, live_body_height,
+                facecolor=live_color, edgecolor=live_color, alpha=0.78,
+            )
+        )
+        volume_axis.bar(live_index, live_bar.volume, width=0.64, color=live_color, alpha=0.45)
+        price_axis.axhline(live_bar.close, color="#00838f", linewidth=1.0, linestyle=":")
+        price_axis.text(
+            live_index + 0.4, live_bar.close, f" 实时参考 {live_bar.close:g}",
+            color="#006064", va="center", ha="left", fontsize=9, weight="bold",
+        )
 
     middle, upper, lower = _bollinger_bands(selected)
     band_x = list(range(19, len(selected)))
@@ -135,7 +171,12 @@ def render_watch_chart(event: WatchEvent, bars: Sequence[Bar], *, candle_count: 
     price_axis.text(len(selected) - 0.5, resistance, f" 压力 {resistance:g}", color="#d32f2f", va="bottom", ha="right")
 
     latest = selected[-1]
-    annotation = f"当前场景：{SCENARIO_LABELS.get(scenario, scenario)}\n置信度：{confidence:.1%}\n最新收盘：{latest.close:g}"
+    live_text = f"\n实时参考：{live_bar.close:g}（形成中）" if live_bar is not None else ""
+    annotation = (
+        f"当前场景：{SCENARIO_LABELS.get(scenario, scenario)}\n"
+        f"置信度：{confidence:.1%}\n"
+        f"信号收盘：{latest.close:g}（已完成）{live_text}"
+    )
     price_axis.annotate(
         annotation,
         xy=(len(selected) - 1, latest.close),
@@ -157,8 +198,16 @@ def render_watch_chart(event: WatchEvent, bars: Sequence[Bar], *, candle_count: 
     ticks = list(range(0, len(selected), tick_step))
     if ticks[-1] != len(selected) - 1:
         ticks.append(len(selected) - 1)
+    if live_bar is not None:
+        ticks.append(len(selected))
     volume_axis.set_xticks(ticks)
-    volume_axis.set_xticklabels([selected[index].timestamp.strftime("%m-%d\n%H:%M") for index in ticks])
+    tick_labels = [
+        (live_bar.timestamp.strftime("%m-%d\n%H:%M") + "\n形成中")
+        if live_bar is not None and index == len(selected)
+        else selected[index].timestamp.strftime("%m-%d\n%H:%M")
+        for index in ticks
+    ]
+    volume_axis.set_xticklabels(tick_labels)
     output = BytesIO()
     figure.savefig(output, format="png", bbox_inches="tight")
     plt.close(figure)

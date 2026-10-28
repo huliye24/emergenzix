@@ -38,6 +38,16 @@ def test_watch_chart_renders_png_from_completed_bars() -> None:
             "key_levels": {"support": 79_800, "resistance": 81_000, "atr": 400},
             "trigger": "price remains between 79800 and 81000",
             "invalidation": "two completed closes outside the range buffer",
+            "live_monitoring": {
+                "timestamp": (start + timedelta(hours=4 * 30)).isoformat(),
+                "open": 80_300,
+                "high": 80_900,
+                "low": 80_200,
+                "price": 80_800,
+                "volume": 2_000,
+                "forming": True,
+                "signal_input": False,
+            },
         },
     )
 
