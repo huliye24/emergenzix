@@ -41,7 +41,7 @@ def test_flat_market_rejected_and_short_reversal_rejected():
 
 
 def test_choppy_rise_rejected():
-    d = classify_sparse_trend(candles([100,120,98,121,99,122,100,123,110]), as_of=observed(9), config=CFG)
+    d = classify_sparse_trend(candles([100,120,98,121,99,122,100,123,124]), as_of=observed(9), config=CFG)
     assert d.state == "REJECT"
     assert d.reason == "inefficient_trend_path"
 
