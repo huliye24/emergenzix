@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from datetime import datetime
+from typing import Any, Callable
 
 from .schemas import Bar
 
@@ -21,6 +22,7 @@ def run_sma_crossover(
     fee_bps: float,
     slippage_bps: float,
     evaluation_start_index: int = 0,
+    entry_gate: Callable[[list[Bar], datetime], bool] | None = None,
 ) -> dict[str, Any]:
     """Run a long-only, all-cash SMA crossover simulation.
 
@@ -56,6 +58,9 @@ def run_sma_crossover(
     ]
     fee_rate = fee_bps / 10_000.0
     slippage_rate = slippage_bps / 10_000.0
+    entry_signals_count = 0
+    blocked_entries_count = 0
+    exposed_bars_count = 0
 
     for execution_index in range(execution_start_index, len(bars)):
         signal_index = execution_index - 1
@@ -70,12 +75,19 @@ def run_sma_crossover(
             execution_bar = bars[execution_index]
 
             if cross_up and quantity <= 0 and cash > 0:
-                entry_price = float(execution_bar.open) * (1.0 + slippage_rate)
-                quantity = cash / (entry_price * (1.0 + fee_rate))
-                notional = quantity * entry_price
-                entry_fee = notional * fee_rate
-                cash = 0.0
-                entry_timestamp = execution_bar.timestamp.isoformat()
+                entry_signals_count += 1
+                allowed = entry_gate is None or entry_gate(
+                    bars[: signal_index + 1], execution_bar.timestamp
+                )
+                if not allowed:
+                    blocked_entries_count += 1
+                else:
+                    entry_price = float(execution_bar.open) * (1.0 + slippage_rate)
+                    quantity = cash / (entry_price * (1.0 + fee_rate))
+                    notional = quantity * entry_price
+                    entry_fee = notional * fee_rate
+                    cash = 0.0
+                    entry_timestamp = execution_bar.timestamp.isoformat()
 
             elif cross_down and quantity > 0:
                 exit_price = float(execution_bar.open) * (1.0 - slippage_rate)
@@ -100,6 +112,8 @@ def run_sma_crossover(
                 entry_fee = 0.0
                 entry_timestamp = None
 
+        if quantity > 0:
+            exposed_bars_count += 1
         marked_equity = cash + quantity * float(bars[execution_index].close)
         equity_curve.append(
             {
@@ -161,6 +175,9 @@ def run_sma_crossover(
         if completed_trades
         else 0.0,
         "benchmark_return_pct": round(benchmark_return_pct, 6),
+        "entry_signals_count": entry_signals_count,
+        "blocked_entries_count": blocked_entries_count,
+        "exposed_bars_count": exposed_bars_count,
         "equity_curve": equity_curve,
         "trades": trades,
         "assumptions": {
