@@ -81,6 +81,13 @@ def validate_upstream_environment(
             or parity_settings.get("stake_amount") != "unlimited"
             or parity_settings.get("max_open_trades") != 1
             or parity_settings.get("tradable_balance_ratio") != 1.0
+            or parity_settings.get("stake_currency") != "USDT"
+            or parity_settings.get("timeframe") != "4h"
+            or parity_settings.get("dataformat_ohlcv") != "json"
+            or parity_settings.get("exchange", {}).get("name") != "binance"
+            or parity_settings.get("exchange", {}).get("pair_whitelist") != ["BTC/USDT"]
+            or parity_settings.get("exchange", {}).get("pair_blacklist") != []
+            or parity_settings.get("pairlists") != [{"method": "StaticPairList"}]
             or parity_settings.get("exchange", {}).get("key")
             or parity_settings.get("exchange", {}).get("secret")
             or parity_settings.get("api_server", {}).get("enabled") is not False

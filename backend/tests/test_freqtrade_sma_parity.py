@@ -186,3 +186,46 @@ def test_parity_missing_verified_dataset_never_runs_docker(monkeypatch, tmp_path
         "--baseline", "sma-5-20",
         "--capital", "100", "--period", "1w", "--start", "2025-10-21",
     ]) == 2
+
+
+@pytest.mark.parametrize(
+    ("field", "mutated"),
+    [
+        ("stake_currency", "BTC"),
+        ("timeframe", "1h"),
+        ("dataformat_ohlcv", "feather"),
+        ("exchange.name", "kraken"),
+        ("exchange.pair_whitelist", ["ETH/USDT"]),
+        ("exchange.pair_blacklist", ["BTC/USDT"]),
+        ("pairlists", [{"method": "VolumePairList"}]),
+    ],
+)
+def test_parity_config_rejects_market_or_dataset_drift(
+    tmp_path: Path, field: str, mutated: object,
+) -> None:
+    """An apparently harmless config edit must not invalidate the SMA control."""
+    import shutil
+
+    source = ROOT / "ops/freqtrade"
+    dest = tmp_path / "ops/freqtrade"
+    dest.mkdir(parents=True)
+    for name in ("config.research.json", "config.parity.json",
+                 "docker-compose.research.yml"):
+        shutil.copyfile(source / name, dest / name)
+    (dest / "strategies").mkdir()
+    shutil.copyfile(STRATEGY_PATH, dest / "strategies/EmergenzixSmaParity.py")
+    upstream = tmp_path / "vendor/freqtrade/freqtrade/templates"
+    upstream.mkdir(parents=True)
+    (upstream / "sample_strategy.py").write_text("class SampleStrategy: pass\\n")
+
+    validate_upstream_environment(tmp_path, git_check=False, baseline="sma-5-20")
+    config_path = dest / "config.parity.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    target = config
+    parts = field.split(".")
+    for part in parts[:-1]:
+        target = target[part]
+    target[parts[-1]] = mutated
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="parity config"):
+        validate_upstream_environment(tmp_path, git_check=False, baseline="sma-5-20")
