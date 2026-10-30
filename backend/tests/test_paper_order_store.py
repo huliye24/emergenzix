@@ -95,7 +95,7 @@ def test_restart_fails_closed_when_snapshot_diverges_from_event_log(tmp_path):
     store.apply("order-1", PaperOrderEvent("submit", "SUBMIT"))
     with database.connection() as connection:
         connection.execute(
-            "UPDATE paper_order_snapshots SET snapshot_json = replace(" 
+            "UPDATE paper_order_snapshots SET snapshot_json = replace("
             "snapshot_json, '\"state\":\"SUBMITTED\"', '\"state\":\"UNKNOWN\"') "
             "WHERE order_id = 'order-1'"
         )
