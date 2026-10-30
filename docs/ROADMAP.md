@@ -46,6 +46,8 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [x] Add a fail-closed BTC/BNB 4h research sync path that merges checksum-verified Binance archives with a reconciled public tail, excludes forming candles, requires at least two years and strict continuity, and stores immutable content-addressed snapshots. Cloud scheduling and retention remain pending.
 - [x] Record ADR-004 for a versioned S3 bronze/silver/gold market-data lake, with canonical 15m BTC/BNB input, deterministic 1h/4h/1d/1w/1mo UTC aggregation, manifests, lineage, revision handling, and fail-closed publication gates.
 - [ ] Populate the S3 lake with checksum-verified BTCUSDT, ETHUSDT, and BNBUSDT 15m history from 2021-01-01 through the latest completed candle, publish Parquet partitions and derived timeframes, and verify a pinned manifest from a cloud reader.
+  - [x] BTCUSDT 2026-first acceptance slice published and independently read back from S3; see `DATA_LAKE_BTC_2026_ACCEPTANCE.md`.
+  - [ ] Extend BTCUSDT back to 2021 and publish ETHUSDT and BNBUSDT before closing the parent item.
 - [x] Persist source, exchange, symbol, and timeframe metadata with backtest results.
 - [x] Add content-addressed immutable OHLCV dataset registration and retrieval with canonical SHA-256 identifiers.
 - [x] Add a date-driven BTC weekly backtest: verified 4-hour archive coverage, pre-test-only candidate selection, immutable run records, and JSON/Markdown/CSV outputs (CI/runtime verification is tracked separately).
