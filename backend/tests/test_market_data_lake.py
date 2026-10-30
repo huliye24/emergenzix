@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pyarrow.parquet as pq
 import pytest
+from botocore.exceptions import ClientError
 
 from emergenzix_api.market_data_lake import (
     build_lake_bundle,
@@ -71,6 +72,13 @@ class FakeS3:
 
     def put_object(self, **kwargs):
         self.calls.append(kwargs)
+
+    def head_object(self, **kwargs):
+        raise ClientError(
+            {"Error": {"Code": "404", "Message": "missing"},
+             "ResponseMetadata": {"HTTPStatusCode": 404}},
+            "HeadObject",
+        )
 
 
 def test_publisher_uses_only_market_data_prefix_and_encryption() -> None:

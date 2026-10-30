@@ -1,0 +1,11 @@
+[Unit]
+Description=Check BTC 15m closed candles every 13 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=13min
+Persistent=true
+RandomizedDelaySec=15
+
+[Install]
+WantedBy=timers.target

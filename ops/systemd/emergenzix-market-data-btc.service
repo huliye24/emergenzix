@@ -1,0 +1,11 @@
+[Unit]
+Description=Emergenzix BTC closed-candle data-lake increment
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/emergenzix-data-lake/backend
+ExecStart=/opt/emergenzix-data-lake/.venv/bin/python -m emergenzix_api.market_data_lake_incremental --symbol BTCUSDT --code-version DEPLOYED_GIT_COMMIT
+Nice=10
+NoNewPrivileges=true

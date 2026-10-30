@@ -9,6 +9,8 @@ from calendar import monthrange
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
 
+from botocore.exceptions import ClientError
+
 
 BASE_INTERVAL = "15m"
 DERIVED_INTERVALS = ("1h", "4h", "1d", "1w", "1mo")
@@ -115,6 +117,7 @@ def _parquet_bytes(bars: Sequence[Mapping[str, Any]], metadata: Mapping[str, str
 def build_lake_bundle(
     *, symbol: str, base_bars: Sequence[Mapping[str, Any]],
     source_objects: Sequence[Mapping[str, Any]], code_version: str,
+    previous_snapshot: str | None = None,
 ) -> dict[str, Any]:
     normalized = validate_base_bars(base_bars)
     datasets = {BASE_INTERVAL: normalized}
@@ -154,6 +157,7 @@ def build_lake_bundle(
         "last_at": normalized[-1]["timestamp"].isoformat(),
         "base_rows": len(normalized), "source_objects": list(source_objects),
         "objects": entries, "code_version": code_version,
+        "previous_snapshot": previous_snapshot,
         "quality": {"gaps": 0, "duplicates": 0, "off_grid": 0, "forming_candle_excluded": True},
     }
     canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
@@ -167,6 +171,16 @@ def build_lake_bundle(
 def publish_bundle(*, s3_client: Any, bucket: str, bundle: Mapping[str, Any]) -> None:
     for key, payload in bundle["objects"].items():
         digest = hashlib.sha256(payload).hexdigest()
+        try:
+            existing = s3_client.head_object(Bucket=bucket, Key=key)
+        except ClientError as exc:
+            status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if status != 404:
+                raise
+        else:
+            if existing.get("Metadata", {}).get("sha256") != digest:
+                raise ValueError(f"existing S3 object metadata mismatch for {key}")
+            continue
         s3_client.put_object(
             Bucket=bucket, Key=key, Body=payload, ContentType=(
                 "application/json" if key.endswith(".json") else "application/vnd.apache.parquet"
