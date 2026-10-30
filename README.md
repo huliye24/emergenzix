@@ -22,6 +22,7 @@ A research result must carry provenance and pass review before it informs a prod
 - Persisted backtest results, equity curve, and closed-trade records
 - SQLite-backed paper account, positions, and simulated order history
 - Server-side notional limit, available-cash checks, and no-short-selling validation
+- Pure long-only PAPER position sizing with stop-risk, fee/slippage, cash, and maximum-notional caps; it is not yet connected to order creation
 - Responsive Next.js/React workspace with dedicated Overview, Strategies, Backtests, Paper Trading, and Activity views; strategy, backtest, paper-order, position, and history workflows share the existing API
 - Public spot OHLCV retrieval through CCXT, plus verified Binance BTC/USDT 4h historical archive imports with SHA-256 checksum validation
 - Content-addressed OHLCV dataset registry with canonical SHA-256 IDs, immutable duplicate handling, persisted candle payloads, and dataset metadata/list/detail endpoints
@@ -172,6 +173,10 @@ Use the observed output as evidence for the next iteration. The API currently ha
 
 Backtest requests accept exactly one input source: ordered OHLCV bars with timezone-aware timestamps, or a registered `dataset_id`. Dataset-backed runs load the saved candle sequence server-side, reject a dataset whose symbol differs from the selected strategy, and persist the dataset ID, SHA-256 fingerprint, time range, and bar count in result provenance. Fees and slippage are explicit request parameters and are included in the saved result.
 
+PAPER order creation accepts an optional `idempotency_key`. Repeating the same
+request with the same key returns the original simulated fill without changing
+cash or positions again; reusing the key for a different request is rejected.
+
 The `watch` Compose service evaluates public OHLCV continuously and writes JSON-line events only for its initial snapshot, a scenario transition, a risk failure, or a new paper-review trigger. It discards the newest exchange candle because it may still be forming, persists its last state in the data volume, and has no order-placement capability. When Telegram is configured, scenario events include a server-rendered candlestick and volume chart annotated with the same support, resistance, scenario, and completed-candle data used by the evaluator. Run one local cycle with `cd backend && python -m emergenzix_api.watch_agent --once`.
 
 Optional Telegram delivery is enabled only when both `EMERGENZIX_TELEGRAM_BOT_TOKEN` and `EMERGENZIX_TELEGRAM_CHAT_ID` are present in the server environment. Keep both values out of source control. Telegram delivery failures are reported with sanitized metadata and do not stop the watcher or create an order.
@@ -189,6 +194,12 @@ Strategy validation requires a registered immutable `dataset_id`, an explicit st
 See [BTC Historical Replay Records](docs/HISTORICAL_REPLAY.md) for the replay API, provenance, integrity checks, and interpretation limits.
 
 See [BTC Historical Data Ingestion](docs/BTC_DATA_INGESTION.md) for the verified Binance 4h archive import and dataset workflow.
+
+For multi-year cloud research snapshots of BTCUSDT and BNBUSDT, run the
+`emergenzix_api.market_history_sync` module. It combines verified archives with
+a reconciled public tail through the latest completed 4h candle and fails
+closed on gaps or source disagreement; the ingestion document records the
+operator command and observed cloud inventory.
 
 See [BTC Date-Range Backtest](docs/DATE_RANGE_BACKTEST.md) for the date-driven one-week experiment, CLI invocation, immutable records, and CSV/Markdown report artifacts.
 See [Saved Date-Range Backtest Comparison](docs/DATE_RANGE_COMPARISON.md) for read-only, fingerprint-verified comparison of persisted historical runs.
@@ -213,6 +224,7 @@ See [Codex Acceptance Checklist](docs/CODEX_DATE_RANGE_BACKTEST_ACCEPTANCE.md) f
 - [Migration inventory](docs/MIGRATION_INVENTORY.md)
 - [ADR-001: product baseline and migration boundary](docs/adr/ADR-001-product-baseline-and-migration.md)
 - [ADR-002: container and release pipeline](docs/adr/ADR-002-container-and-release-pipeline.md)
+- [ADR-003: quantitative platform domains and cloud runtime boundary](docs/adr/ADR-003-quant-platform-domain-and-cloud-runtime.md)
 - [Versioning, CI/CD, and container releases](docs/RELEASE.md)
 - [Strategy lifecycle](docs/STRATEGY_LIFECYCLE.md)
 - [Engineering rules](AGENTS.md)

@@ -231,6 +231,10 @@ class Database:
 
                 CREATE TABLE IF NOT EXISTS paper_orders (
                     id TEXT PRIMARY KEY,
+                    idempotency_key TEXT,
+                    request_sha256 TEXT CHECK (
+                        request_sha256 IS NULL OR length(request_sha256) = 64
+                    ),
                     symbol TEXT NOT NULL,
                     side TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
                     quantity REAL NOT NULL CHECK (quantity > 0),
@@ -373,6 +377,26 @@ class Database:
                     "ALTER TABLE backtests ADD COLUMN strategy_version_id "
                     "TEXT REFERENCES strategy_versions(id)"
                 )
+
+            paper_order_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(paper_orders)")
+            }
+            if "idempotency_key" not in paper_order_columns:
+                connection.execute(
+                    "ALTER TABLE paper_orders ADD COLUMN idempotency_key TEXT"
+                )
+            if "request_sha256" not in paper_order_columns:
+                connection.execute(
+                    "ALTER TABLE paper_orders ADD COLUMN request_sha256 TEXT "
+                    "CHECK (request_sha256 IS NULL OR length(request_sha256) = 64)"
+                )
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "idx_paper_orders_idempotency_key "
+                "ON paper_orders(idempotency_key) "
+                "WHERE idempotency_key IS NOT NULL"
+            )
 
             from datetime import datetime, timezone
 

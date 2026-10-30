@@ -72,7 +72,10 @@ class Bar(StrictModel):
 class DatasetCreate(StrictModel):
     """A validated OHLCV dataset to register as an immutable content-addressed record."""
 
-    source: Literal["user_supplied", "ccxt_public_ohlcv", "synthetic_demo", "binance_public_archive"] = "user_supplied"
+    source: Literal[
+        "user_supplied", "ccxt_public_ohlcv", "synthetic_demo",
+        "binance_public_archive", "binance_verified_history",
+    ] = "user_supplied"
     exchange: Literal["binance", "bybit", "okx", "kraken", "coinbase"] | None = None
     symbol: str = Field(
         min_length=3,
@@ -95,7 +98,9 @@ class DatasetCreate(StrictModel):
             for previous, current in zip(timestamps, timestamps[1:])
         ):
             raise ValueError("bars must be in strictly increasing timestamp order")
-        if self.source in {"ccxt_public_ohlcv", "binance_public_archive"}:
+        if self.source in {
+            "ccxt_public_ohlcv", "binance_public_archive", "binance_verified_history"
+        }:
             if not self.exchange or not self.timeframe:
                 raise ValueError(
                     "Market-data datasets must record exchange and timeframe metadata"
@@ -206,3 +211,9 @@ class PaperOrderCreate(StrictModel):
     quantity: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
     reference_price: float = Field(gt=0, le=1_000_000_000, allow_inf_nan=False)
     strategy_id: str | None = Field(default=None, max_length=64)
+    idempotency_key: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )

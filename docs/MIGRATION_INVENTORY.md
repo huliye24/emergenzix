@@ -44,6 +44,74 @@ Exchange credentials, private account access, and order submission are not part 
 - **Emergenzix owns:** product UX, API contracts, strategy lifecycle, evaluation records, paper state, risk enforcement, audit, deployment, and operations.
 - **Transfer rule:** consume a reviewed artifact or migrate one focused module only after recording its source revision, license, security impact, configuration, tests, and limitations.
 
+## 2026-10-30 position, accounting, and cloud-runtime addendum
+
+This addendum extends the original product-facing snapshot with a read-only
+inspection of the local NEMT research tree and the two AWS research hosts. It
+does not change the original evidence snapshot or authorize a bulk transfer.
+
+### Inspected sources
+
+- Local NEMT repository: `E:/NEMT Simulator`, branch
+  `feature/current-main`, HEAD
+  `c0c7dbf37962e4e146c448d73f103e925fbe22ba`.
+- AWS GPU research host `43.192.236.139`: the Git checkout
+  `/home/ubuntu/emergenzix` was at
+  `3e985bba55d4c3f242b49926164296b5442dc694`; additional acceptance and
+  validation directories were runtime snapshots, not authoritative Git roots.
+- AWS MATLAB/CPU research host `52.83.234.254`: Emergenzix Git checkouts were
+  older or task-specific (`b203a2f...`, `5ddb049...`, and `6195100...`) and
+  contained untracked operator scripts. They are evidence/runtime workspaces,
+  not a source of truth.
+
+The local NEMT worktree contained extensive modified and untracked research
+files. Their presence is useful for discovery but is not provenance. No cloud
+file, dataset, credential, log, database, or generated report was copied.
+
+### Focused reuse decisions
+
+| Candidate | Provenance and license | Observed verification | Decision | Required treatment |
+| --- | --- | --- | --- | --- |
+| `nemt_os/services/research/nemt_strategy_v3.py::risk_sized_notional` | Tracked in NEMT commit `f784e6ff5f9bc5465078a85b10f599a5bf716280`; source repository is GPL-3.0-or-later | NEMT has focused v3 tests; the cloud acceptance snapshot also carried an imported copy and tests | **Adapt as specification**, not a direct drop-in | Preserve source commit and copyright/license notice; remove leverage assumptions from the first spot PAPER slice; include fees, slippage, explicit stop price, cash/notional caps, and fail-closed validation |
+| `nemt_os/services/research/position_sizing.py` | Untracked local research file, SHA-256 `5fd497fbc157cd9cae4f3b75b9db52c9c4951446def4c92f33dab4649ddfba32`; stdlib-only | Its untracked test file, SHA-256 `4b65a099bfac9804f5b983c00889ca3959956494352e247322f221d10145b635`, passed 3 tests locally | **Research only; do not migrate yet** | First commit and review it in NEMT with assumptions, estimator stability, sample-size requirements, and reproducible evidence; Kelly output must never directly authorize an order |
+| `nemt_os/services/research/nemt_pyramiding_v4.py` | Tracked in NEMT commit `d133e8deaefa6a1bbb382cf7814727b0b11642d9`; GPL-3.0-or-later | Focused NEMT tests are present; no Emergenzix reproduction was run in this addendum | **Defer; later adapt policies** | Use only after base sizing, portfolio risk, ledger identities, and idempotent execution exist; never add to losing positions; preserve total campaign risk budget |
+| `nemt_os/services/research/complete_lifecycle.py` | Untracked local research file, SHA-256 `ea1e6225b74913baff4ce1c1a98f69aca636dbb38ee998c2161b9e9fb10b9b35` | Tests are present but provenance is incomplete | **Research only; do not migrate** | Commit/review in NEMT first; separate signal, sizing, execution, and accounting before any product adaptation |
+| Cloud `equity_ledger.py` acceptance snapshot | Non-Git GPU snapshot, SHA-256 `98645f9756ef73f0db71c36b09b7481f6433c88c6922a39c063b1d461b4aff0e`; intended GPL-compatible Emergenzix code but no authoritative commit was found | Snapshot includes focused immutable-decimal conservation tests, SHA-256 `62f5a8365c149e1f0a87d8ecf4312250fe14ab910b167c80fe85fe92a6ba5c66` | **Recover provenance before reuse** | Locate the originating branch/PR or re-submit it as a reviewed patch with attribution; it covers settled closed trades only, not open positions, margin, fills, or available collateral |
+| Cloud quick-backtest and imported-strategy snapshots | Present in non-Git acceptance/release directories; absent from the inspected local Emergenzix Git history | Tests were present in the snapshots, but their CI/commit origin was not established | **Do not copy from cloud** | Recover the originating Git revision or reconstruct from reviewed NEMT source with an explicit migration record |
+| Local `freqtrade/` source tree | Upstream GPL-3.0; Emergenzix already pins Freqtrade as a submodule | No new adapter acceptance was performed | **Keep isolated behind an adapter** | Do not copy internal engine code; preserve upstream notices and compare results against the compatibility engine before adoption |
+| Local `vnpy/` source tree | Upstream MIT, copyright Xiaoyou Chen | Architecture reference only in this addendum | **Use concepts, not copied runtime code** | If code is later copied or modified, retain the MIT copyright and permission notice; TESTNET acceptance remains mandatory |
+| `quant-mvp/` | No license file was found at its directory root during inspection | Not audited | **Do not migrate** | Establish ownership and license before reading it as a code donor |
+| NEMT/cloud LIVE executors and private exchange adapters | Mixed untracked prototypes and operational files | No safe TESTNET acceptance or provenance established | **Explicitly excluded** | Never copy credentials or activate LIVE paths; routine development must remain PAPER-only |
+
+### Next reusable product slice
+
+The first position-sizing product slice should be an Emergenzix-owned,
+deterministic PAPER calculator derived from the tracked v3 risk-budget concept,
+not from the untracked Kelly implementation. Its inputs should be account
+equity, entry price, protective stop, risk fraction, fee/slippage buffer,
+available cash, and maximum notional. Its output should be a reviewable sizing
+decision with the binding cap and no ability to create an order. Invalid or
+non-finite inputs, zero stop distance, insufficient cash, and unknown mode must
+return no executable quantity.
+
+## 2026-10-30 NEMT v4.4/v5.2.7 research-source addendum
+
+The NEMT research package now used for compatibility work was recovered from
+the public Emergenzix Git commit
+`5b453c4332a216a38df0582679a147dc0978c4c8`, rather than from an untracked
+cloud runtime directory. The focused migration contains
+`backend/emergenzix_api/nemt_strategy/` and its original unit tests. Its
+registry marks NEMT v4.4 as `BACKTEST_ONLY` with `live_enabled=False`; NEMT
+v5.2.7 remains an experiment and is not registered as an executable product
+strategy or promoted to PAPER, TESTNET, or LIVE.
+
+The new outer walk-forward scheduler is an Emergenzix-owned protocol layer. It
+does not fetch data, submit orders, or grant strategy approval. A real M0
+three-arm comparison remains pending until the existing v4.4 CLI is refactored
+to consume the same in-memory bars, fee/slippage assumptions, capital, and risk
+limits as the Donchian-only and v5.2.7 arms. Until then, framework tests are not
+research evidence and no relative-performance conclusion may be drawn.
+
 ## Unresolved questions
 
 1. Which NEMT UI interaction patterns are valuable after replacing mock JSON contracts with Emergenzix APIs?

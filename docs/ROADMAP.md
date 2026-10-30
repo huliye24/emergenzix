@@ -43,10 +43,16 @@ This roadmap separates product readiness from research progress. Stages are gate
 **Goal:** make strategy candidates inspectable and reproducible.
 
 - [x] Add public OHLCV retrieval through CCXT with bounded exchange/timeframe/limit inputs.
+- [x] Add a fail-closed BTC/BNB 4h research sync path that merges checksum-verified Binance archives with a reconciled public tail, excludes forming candles, requires at least two years and strict continuity, and stores immutable content-addressed snapshots. Cloud scheduling and retention remain pending.
+- [x] Record ADR-004 for a versioned S3 bronze/silver/gold market-data lake, with canonical 15m BTC/BNB input, deterministic 1h/4h/1d/1w/1mo UTC aggregation, manifests, lineage, revision handling, and fail-closed publication gates.
+- [ ] Populate the S3 lake with checksum-verified BTCUSDT, ETHUSDT, and BNBUSDT 15m history from 2021-01-01 through the latest completed candle, publish Parquet partitions and derived timeframes, and verify a pinned manifest from a cloud reader.
 - [x] Persist source, exchange, symbol, and timeframe metadata with backtest results.
 - [x] Add content-addressed immutable OHLCV dataset registration and retrieval with canonical SHA-256 identifiers.
 - [x] Add a date-driven BTC weekly backtest: verified 4-hour archive coverage, pre-test-only candidate selection, immutable run records, and JSON/Markdown/CSV outputs (CI/runtime verification is tracked separately).
 - [x] Add deterministic three-fold walk-forward evidence for the fixed SMA grid, with fold-level leakage controls, evidence status, and aggregate stability metrics.
+- [x] Add a strategy-agnostic outer walk-forward protocol: 18-month training history, 3-month causal parameter selection, 3-month unseen test, and quarterly rolling. The engine accepts arbitrary experiment arms and shared cost/risk settings and reports profitable-window counts, drawdown stability, parameter changes, and results after removing the largest winner. The M0 three-arm identities live in a separate experiment configuration.
+- [x] Add a generic parameter-stability selector that evaluates local grid neighborhoods, prefers profitable plateaus over isolated return peaks, records parameter-cliff diagnostics, and can be injected per experiment arm without coupling the walk-forward engine to a strategy.
+- [ ] Connect Donchian-only, reviewed NEMT v4.4, and experimental NEMT v5.2.7 to that protocol with one in-memory OHLCV input. The protocol exists, but a real three-arm result is not yet verified; the current v4.4 CLI still downloads its own data and must be refactored without duplicating its execution logic.
 - [x] Add one versioned Donchian breakout candidate with prior-candle channels and the same cost/execution assumptions as the SMA baseline.
 - [x] Add a fixed fee/slippage sensitivity matrix for the frozen weekly candidate and export it to CSV and Markdown.
 - [x] Add a read-only CLI for fingerprint-verified comparison of saved date-range backtest records.
@@ -73,11 +79,21 @@ This roadmap separates product readiness from research progress. Stages are gate
 
 - [ ] Add configurable paper portfolios and auditable account resets.
 - [ ] Test duplicate requests, concurrent orders, stale data, timeouts, and recovery.
-- [ ] Add explicit idempotency keys and richer risk-limit configuration.
+- [x] Add optional explicit idempotency keys to PAPER orders with conflict detection.
+- [ ] Add richer risk-limit configuration.
 - [ ] Add marked-to-market portfolio valuation using a documented price source.
 - [ ] Add audit events for rejected actions and account changes.
+- [ ] Integrate deterministic position sizing with PAPER intent review (the pure calculator is implemented; API/order integration remains pending).
+- [ ] Add aggregate PAPER portfolio exposure, concentration, and drawdown checks.
+- [ ] Add an operator-controlled PAPER kill switch that fails closed.
+- [ ] Add balanced accounting entries and PnL attribution for fills, fees, slippage, and valuation changes.
+- [ ] Add explicit strategy observation, retirement, and rollback records without granting order permission.
 
 **Exit gate:** paper trading survives expected failure cases and cannot reach a live exchange adapter.
+
+The domain order and GitHub-to-cloud delivery boundary are defined in
+[ADR-003](adr/ADR-003-quant-platform-domain-and-cloud-runtime.md). Every item
+above must be split into 15–30 minute implementation tasks.
 
 ## Phase 4 — Exchange TESTNET
 

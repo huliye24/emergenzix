@@ -1,4 +1,4 @@
-"""Verified downloads from Binance's public historical 4-hour BTC spot archives."""
+"""Verified downloads from allowlisted Binance spot 4-hour archives."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import math
 import re
 import zipfile
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -17,6 +17,8 @@ import httpx
 BASE_URL = "https://data.binance.vision/data/spot"
 MAX_RANGE_DAYS = 3660
 MAX_BARS = 50_000
+SUPPORTED_SPOT_SYMBOLS = frozenset({"BTCUSDT", "ETHUSDT", "BNBUSDT"})
+SUPPORTED_KLINE_INTERVALS = frozenset({"15m", "1h", "4h", "1d", "1w", "1mo"})
 
 
 class HistoricalArchiveUnavailable(RuntimeError):
@@ -34,7 +36,10 @@ def _month_starts(start_at: datetime, end_at: datetime):
             current = datetime(current.year, current.month + 1, 1, tzinfo=timezone.utc)
 
 
-def _fetch_checked_archive(client: Any, url: str) -> bytes | None:
+def _fetch_checked_archive(
+    client: Any, url: str,
+    observer: Callable[[str, bytes, str, str], None] | None = None,
+) -> bytes | None:
     """Download a ZIP only after verifying its official SHA-256 checksum."""
     try:
         response = client.get(url)
@@ -67,6 +72,8 @@ def _fetch_checked_archive(client: Any, url: str) -> bytes | None:
         raise HistoricalArchiveUnavailable(
             f"SHA-256 mismatch for Binance archive {url.rsplit('/', 1)[-1]}"
         )
+    if observer is not None:
+        observer(url, response.content, checksum_response.text, actual)
     return response.content
 
 
@@ -132,10 +139,20 @@ def _parse_kline_archive(
         raise HistoricalArchiveUnavailable("Downloaded Binance ZIP is not a valid archive") from exc
 
 
-def fetch_binance_btc_4h_archive(
-    *, start_at: datetime, end_at: datetime
+def fetch_binance_spot_kline_archive(
+    *, symbol: str, interval: str, start_at: datetime, end_at: datetime,
+    archive_observer: Callable[[str, bytes, str, str], None] | None = None,
 ) -> list[dict[str, object]]:
-    """Fetch BTCUSDT spot 4h bars from verified monthly/daily Binance ZIP archives."""
+    """Fetch allowlisted spot klines from checksum-verified Binance archives."""
+    normalized_symbol = symbol.strip().upper().replace("/", "")
+    if normalized_symbol not in SUPPORTED_SPOT_SYMBOLS:
+        raise ValueError(
+            f"unsupported Binance archive symbol; choose one of {sorted(SUPPORTED_SPOT_SYMBOLS)}"
+        )
+    if interval not in SUPPORTED_KLINE_INTERVALS:
+        raise ValueError(
+            f"unsupported Binance archive interval; choose one of {sorted(SUPPORTED_KLINE_INTERVALS)}"
+        )
     if start_at.tzinfo is None or start_at.utcoffset() is None:
         raise ValueError("start_at must include a timezone offset")
     if end_at.tzinfo is None or end_at.utcoffset() is None:
@@ -157,14 +174,14 @@ def fetch_binance_btc_4h_archive(
             for month_start in _month_starts(start_utc, end_utc):
                 month_key = f"{month_start.year:04d}-{month_start.month:02d}"
                 monthly_url = (
-                    f"{BASE_URL}/monthly/klines/BTCUSDT/4h/"
-                    f"BTCUSDT-4h-{month_key}.zip"
+                    f"{BASE_URL}/monthly/klines/{normalized_symbol}/{interval}/"
+                    f"{normalized_symbol}-{interval}-{month_key}.zip"
                 )
                 # The current month archive is normally published after month end.
                 monthly_payload = (
                     None
                     if (month_start.year, month_start.month) == (now_date.year, now_date.month)
-                    else _fetch_checked_archive(client, monthly_url)
+                    else _fetch_checked_archive(client, monthly_url, archive_observer)
                 )
                 if monthly_payload is not None:
                     monthly_bars = _parse_kline_archive(
@@ -193,10 +210,10 @@ def fetch_binance_btc_4h_archive(
                         continue
                     day_key = current_day.isoformat()
                     daily_url = (
-                        f"{BASE_URL}/daily/klines/BTCUSDT/4h/"
-                        f"BTCUSDT-4h-{day_key}.zip"
+                        f"{BASE_URL}/daily/klines/{normalized_symbol}/{interval}/"
+                        f"{normalized_symbol}-{interval}-{day_key}.zip"
                     )
-                    daily_payload = _fetch_checked_archive(client, daily_url)
+                    daily_payload = _fetch_checked_archive(client, daily_url, archive_observer)
                     if daily_payload is None:
                         raise HistoricalArchiveUnavailable(
                             f"Missing Binance daily archive for {day_key}; "
@@ -219,8 +236,25 @@ def fetch_binance_btc_4h_archive(
     bars = [collected[timestamp] for timestamp in sorted(collected)]
     if len(bars) < 5:
         raise HistoricalArchiveUnavailable(
-            "The requested range produced fewer than five verified BTC 4h candles"
+            f"The requested range produced fewer than five verified {normalized_symbol} {interval} candles"
         )
     if len(bars) > MAX_BARS:
         raise ValueError(f"historical import exceeds the {MAX_BARS}-bar safety limit")
     return bars
+
+
+def fetch_binance_spot_4h_archive(
+    *, symbol: str, start_at: datetime, end_at: datetime
+) -> list[dict[str, object]]:
+    return fetch_binance_spot_kline_archive(
+        symbol=symbol, interval="4h", start_at=start_at, end_at=end_at
+    )
+
+
+def fetch_binance_btc_4h_archive(
+    *, start_at: datetime, end_at: datetime
+) -> list[dict[str, object]]:
+    """Backward-compatible BTC wrapper used by existing research workflows."""
+    return fetch_binance_spot_4h_archive(
+        symbol="BTCUSDT", start_at=start_at, end_at=end_at
+    )

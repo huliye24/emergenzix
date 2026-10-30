@@ -499,6 +499,46 @@ def test_paper_order_risk_limits_and_no_shorting(client):
     assert account["cash"] == account["starting_cash"]
 
 
+def test_paper_order_idempotency_prevents_duplicate_fill(client):
+    payload = {
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "quantity": 1,
+        "reference_price": 1000,
+        "idempotency_key": "paper-order-001",
+    }
+
+    first = client.post("/api/v1/paper/orders", json=payload)
+    account_after_first = client.get("/api/v1/paper/account").json()
+    client.app.state.max_order_notional = 1.0
+    repeated = client.post("/api/v1/paper/orders", json=payload)
+    account_after_repeat = client.get("/api/v1/paper/account").json()
+
+    assert first.status_code == 201, first.text
+    assert repeated.status_code == 201, repeated.text
+    assert repeated.json()["id"] == first.json()["id"]
+    assert account_after_repeat == account_after_first
+    assert len(client.get("/api/v1/paper/orders").json()) == 1
+
+
+def test_paper_order_idempotency_rejects_changed_request(client):
+    payload = {
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "quantity": 1,
+        "reference_price": 1000,
+        "idempotency_key": "paper-order-conflict",
+    }
+    first = client.post("/api/v1/paper/orders", json=payload)
+    payload["quantity"] = 2
+    conflict = client.post("/api/v1/paper/orders", json=payload)
+
+    assert first.status_code == 201, first.text
+    assert conflict.status_code == 409
+    assert "different paper order" in conflict.json()["detail"]
+    assert len(client.get("/api/v1/paper/orders").json()) == 1
+
+
 def test_order_cannot_be_linked_to_a_different_symbol_strategy(client):
     strategy = _create_strategy(client, symbol="BTCUSDT")
     response = client.post(

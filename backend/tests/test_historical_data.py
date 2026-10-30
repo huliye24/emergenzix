@@ -12,6 +12,7 @@ from emergenzix_api.historical_data import (
     HistoricalArchiveUnavailable,
     _fetch_checked_archive,
     _parse_kline_archive,
+    fetch_binance_spot_4h_archive,
 )
 
 
@@ -85,3 +86,23 @@ def test_fetch_checked_archive_requires_matching_sha256():
     })
     with pytest.raises(HistoricalArchiveUnavailable, match="SHA-256 mismatch"):
         _fetch_checked_archive(bad_client, url)
+
+
+def test_spot_archive_symbol_allowlist_fails_closed():
+    with pytest.raises(ValueError, match="unsupported Binance archive symbol"):
+        fetch_binance_spot_4h_archive(
+            symbol="DOGEUSDT",
+            start_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            end_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
+        )
+
+
+def test_eth_is_in_the_archive_allowlist_but_unknown_interval_fails_first():
+    from emergenzix_api.historical_data import fetch_binance_spot_kline_archive
+
+    with pytest.raises(ValueError, match="unsupported Binance archive interval"):
+        fetch_binance_spot_kline_archive(
+            symbol="ETHUSDT", interval="7m",
+            start_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            end_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
+        )

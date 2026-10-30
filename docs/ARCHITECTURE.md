@@ -2,6 +2,11 @@
 
 The initial product and migration decision is recorded in [ADR-001](adr/ADR-001-product-baseline-and-migration.md). The architecture remains provisional outside that first vertical slice; production and multi-user decisions require further review.
 
+The ten-domain product model and the GitHub-to-cloud runtime boundary are
+recorded in [ADR-003](adr/ADR-003-quant-platform-domain-and-cloud-runtime.md).
+The versioned S3 market-data lake and canonical multi-timeframe rules are
+recorded in [ADR-004](adr/ADR-004-market-data-lake.md).
+
 ## 1. Current implementation
 
 The first implementation uses Python 3.11+ and FastAPI for the product API, with SQLite for local and single-process development persistence.
@@ -94,6 +99,12 @@ Unknown or inconsistent mode state must never silently activate a more permissiv
 
 SQLite is the initial development database. Its single-process scope is intentional; evaluate PostgreSQL or another production database before concurrent multi-user deployment. Local database files and runtime data must remain out of version control.
 
+Multi-year market data will use the immutable S3 bronze/silver/gold layout in
+ADR-004. Fifteen-minute Binance spot data is the first canonical input;
+1h/4h/1d/1w/1mo are deterministic UTC derivatives. SQLite retains catalog and
+manifest references rather than becoming the intraday data lake. This layout is
+accepted for implementation but is not yet populated by the product pipeline.
+
 Never place credentials in source control or client bundles. Logs must be useful for debugging without exposing secrets.
 
 ## 8. Reliability and observability
@@ -119,3 +130,9 @@ Each lasting architectural decision should be recorded in `docs/adr/` and linked
 The first packaging target is a browser-based web application plus a separate FastAPI container, orchestrated by Docker Compose. The API is not published to the host; the web interface binds to localhost by default. SQLite uses the named emergenzix-data volume so the database is not tied to a disposable container. See [ADR-002](adr/ADR-002-container-and-release-pipeline.md) and [release operations](RELEASE.md).
 
 GitHub Actions builds the API and web images on relevant changes. A version tag publishes both images to GitHub Container Registry and creates a GitHub Release. This workflow does not deploy to AWS. Authentication, reverse proxy/TLS, public network exposure, and AWS deployment credentials remain unresolved and must be addressed before any public deployment.
+
+GitHub is the source of truth for reviewed code, tests, migrations, and
+deployment definitions. Cloud hosts run pinned artifacts and own runtime state;
+they are not alternate source repositories. Credentials, databases, logs, and
+generated reports must remain outside Git. Direct edits to application code on
+a cloud host are not a supported deployment process.

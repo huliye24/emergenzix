@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 import uuid
 from pathlib import Path
@@ -769,7 +770,46 @@ def create_app(
         payload: PaperOrderCreate, request: Request
     ) -> dict[str, Any]:
         db: Database = request.app.state.database
-        notional = float(payload.quantity) * float(payload.reference_price)
+        price = float(payload.reference_price)
+        quantity = float(payload.quantity)
+        notional = quantity * price
+        request_sha256 = hashlib.sha256(
+            json.dumps(
+                {
+                    "symbol": payload.symbol,
+                    "side": payload.side,
+                    "quantity": quantity,
+                    "reference_price": price,
+                    "strategy_id": payload.strategy_id,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+
+        def existing_idempotent_order(
+            connection: sqlite3.Connection,
+        ) -> dict[str, Any] | None:
+            if payload.idempotency_key is None:
+                return None
+            existing = connection.execute(
+                "SELECT * FROM paper_orders WHERE idempotency_key = ?",
+                (payload.idempotency_key,),
+            ).fetchone()
+            if existing is None:
+                return None
+            if existing["request_sha256"] != request_sha256:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Idempotency key was already used for a different paper order",
+                )
+            return _row_to_dict(existing)
+
+        with db.connection() as connection:
+            existing_order = existing_idempotent_order(connection)
+        if existing_order is not None:
+            return existing_order
+
         max_notional = float(request.app.state.max_order_notional)
         if notional > max_notional:
             raise HTTPException(
@@ -795,12 +835,14 @@ def create_app(
         created_at = _now()
         fee_rate = float(request.app.state.paper_fee_bps) / 10_000.0
         fee = notional * fee_rate
-        price = float(payload.reference_price)
-        quantity = float(payload.quantity)
         realized_pnl = 0.0
 
         with db.connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            existing_order = existing_idempotent_order(connection)
+            if existing_order is not None:
+                return existing_order
+
             account = connection.execute(
                 "SELECT cash FROM paper_account WHERE id = 1"
             ).fetchone()
@@ -868,12 +910,15 @@ def create_app(
             connection.execute(
                 """
                 INSERT INTO paper_orders
-                    (id, symbol, side, quantity, price, notional, fee,
-                     realized_pnl, strategy_id, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'FILLED', ?)
+                    (id, idempotency_key, request_sha256, symbol, side,
+                     quantity, price, notional, fee, realized_pnl,
+                     strategy_id, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'FILLED', ?)
                 """,
                 (
                     order_id,
+                    payload.idempotency_key,
+                    request_sha256,
                     payload.symbol,
                     payload.side,
                     quantity,
