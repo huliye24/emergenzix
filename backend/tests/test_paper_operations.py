@@ -78,3 +78,57 @@ def test_idempotency_key_conflict_is_rejected(tmp_path):
     operations.submit(intent(), SAFE)
     with pytest.raises(PaperOperationRejected, match="conflicts"):
         operations.submit(intent(order_id="order-2", quantity="3"), SAFE)
+
+
+def test_fill_atomically_updates_order_ledger_and_position(tmp_path):
+    database = Database(str(tmp_path / "paper.db"))
+    activate(database)
+    operations = PaperOperations(database)
+    operations.submit(intent(), SAFE)
+    order, position = operations.record_fill(
+        "order-1", fill_event_id="fill-1", quantity=Decimal("2"),
+        price=Decimal("100"), fee=Decimal("0.2"),
+    )
+    assert order.state == "FILLED"
+    assert position.quantity == Decimal("2")
+    with database.connection() as connection:
+        entries = connection.execute("SELECT debit, credit FROM paper_ledger_entries").fetchall()
+        debits = sum((Decimal(row["debit"]) for row in entries), Decimal("0"))
+        credits = sum((Decimal(row["credit"]) for row in entries), Decimal("0"))
+    assert debits == credits == Decimal("200.2")
+
+
+def test_fill_processing_continues_after_new_orders_are_paused(tmp_path):
+    database = Database(str(tmp_path / "paper.db"))
+    activate(database)
+    operations = PaperOperations(database)
+    operations.submit(intent(), SAFE)
+    current = get_paper_kill_switch(database)
+    set_paper_kill_switch(
+        database, paused=True, reason="operator stop", expected_revision=current.revision
+    )
+    order, _ = operations.record_fill(
+        "order-1", fill_event_id="fill-1", quantity=Decimal("2"),
+        price=Decimal("100"), fee=Decimal("0.2"),
+    )
+    assert order.state == "FILLED"
+
+
+def test_fault_after_ledger_rolls_back_event_ledger_and_position(tmp_path):
+    database = Database(str(tmp_path / "paper.db"))
+    activate(database)
+    PaperOperations(database).submit(intent(), SAFE)
+
+    def fail(point):
+        if point == "after_ledger":
+            raise RuntimeError("injected fill crash")
+
+    with pytest.raises(RuntimeError, match="injected fill crash"):
+        PaperOperations(database, fault_injector=fail).record_fill(
+            "order-1", fill_event_id="fill-1", quantity=Decimal("2"),
+            price=Decimal("100"), fee=Decimal("0.2"),
+        )
+    with database.connection() as connection:
+        assert connection.execute("SELECT count(*) FROM paper_ledger_transactions").fetchone()[0] == 0
+        assert connection.execute("SELECT count(*) FROM paper_v2_positions").fetchone()[0] == 0
+        assert connection.execute("SELECT state FROM paper_order_snapshots").fetchone()[0] == "SUBMITTED"

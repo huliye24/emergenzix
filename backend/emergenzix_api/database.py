@@ -291,6 +291,47 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS paper_v2_positions (
+                    symbol TEXT PRIMARY KEY,
+                    snapshot_json TEXT NOT NULL,
+                    quantity TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS paper_ledger_transactions (
+                    transaction_id TEXT PRIMARY KEY,
+                    order_id TEXT NOT NULL REFERENCES paper_v2_order_intents(order_id),
+                    fill_event_id TEXT NOT NULL UNIQUE,
+                    realized_pnl TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS paper_ledger_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    transaction_id TEXT NOT NULL
+                        REFERENCES paper_ledger_transactions(transaction_id),
+                    account TEXT NOT NULL,
+                    debit TEXT NOT NULL,
+                    credit TEXT NOT NULL
+                );
+
+                CREATE TRIGGER IF NOT EXISTS paper_ledger_transactions_no_update
+                BEFORE UPDATE ON paper_ledger_transactions BEGIN
+                    SELECT RAISE(ABORT, 'paper ledger transactions are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS paper_ledger_transactions_no_delete
+                BEFORE DELETE ON paper_ledger_transactions BEGIN
+                    SELECT RAISE(ABORT, 'paper ledger transactions are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS paper_ledger_entries_no_update
+                BEFORE UPDATE ON paper_ledger_entries BEGIN
+                    SELECT RAISE(ABORT, 'paper ledger entries are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS paper_ledger_entries_no_delete
+                BEFORE DELETE ON paper_ledger_entries BEGIN
+                    SELECT RAISE(ABORT, 'paper ledger entries are immutable');
+                END;
+
                 CREATE INDEX IF NOT EXISTS idx_paper_order_events_order
                     ON paper_order_events(order_id, created_at, event_id);
 
