@@ -225,6 +225,7 @@ See [Codex Acceptance Checklist](docs/CODEX_DATE_RANGE_BACKTEST_ACCEPTANCE.md) f
 - [ADR-001: product baseline and migration boundary](docs/adr/ADR-001-product-baseline-and-migration.md)
 - [ADR-002: container and release pipeline](docs/adr/ADR-002-container-and-release-pipeline.md)
 - [ADR-003: quantitative platform domains and cloud runtime boundary](docs/adr/ADR-003-quant-platform-domain-and-cloud-runtime.md)
+- [ADR-005: venue-preserving multi-exchange market data](docs/adr/ADR-005-multi-venue-market-data.md)
 - [Versioning, CI/CD, and container releases](docs/RELEASE.md)
 - [Strategy lifecycle](docs/STRATEGY_LIFECYCLE.md)
 - [Engineering rules](AGENTS.md)
