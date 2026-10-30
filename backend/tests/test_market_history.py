@@ -70,7 +70,7 @@ def test_rejects_archive_public_disagreement() -> None:
 def test_rejects_internal_four_hour_gap() -> None:
     gap = datetime(2025, 1, 1, tzinfo=UTC)
     start, now, archive_fetcher, public_fetcher = _history_inputs(gap_at=gap)
-    with pytest.raises(MarketHistoryUnavailable, match="non-contiguous"):
+    with pytest.raises(MarketHistoryUnavailable, match=r"non-contiguous.*missing=1"):
         build_binance_verified_history(
             symbol="BTCUSDT", start_at=start, now=now,
             archive_fetcher=archive_fetcher, public_fetcher=public_fetcher,

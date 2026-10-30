@@ -134,8 +134,14 @@ def build_binance_verified_history(
     bars = [merged[stamp] for stamp in sorted(merged) if start <= stamp <= completed]
     expected_delta = timedelta(seconds=seconds)
     timestamps = [_stamp(bar) for bar in bars]
-    if any(current - previous != expected_delta for previous, current in zip(timestamps, timestamps[1:])):
-        raise MarketHistoryUnavailable(f"non-contiguous {interval} history")
+    for previous, current_stamp in zip(timestamps, timestamps[1:]):
+        observed = current_stamp - previous
+        if observed != expected_delta:
+            missing = max(0, int(observed.total_seconds() // seconds) - 1)
+            raise MarketHistoryUnavailable(
+                f"non-contiguous {interval} history after {previous.isoformat()} "
+                f"before {current_stamp.isoformat()} (missing={missing})"
+            )
     if _stamp(bars[0]) != start or _stamp(bars[-1]) != completed:
         raise MarketHistoryUnavailable("history does not cover the requested first and latest completed bars")
     return {
