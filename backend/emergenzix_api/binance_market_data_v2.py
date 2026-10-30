@@ -21,6 +21,7 @@ from .market_history import fetch_binance_public_tail
 
 
 DEFAULT_BUCKET = "emergenzix-research-382309211832-cn-northwest-1-an"
+SYMBOLS = {"BTCUSDT": "BTC/USDT", "ETHUSDT": "ETH/USDT", "BNBUSDT": "BNB/USDT"}
 
 
 def _archive_timestamp(value: str) -> datetime:
@@ -31,7 +32,7 @@ def _archive_timestamp(value: str) -> datetime:
     )
 
 
-def load_binance_bundles(paths: list[Path]) -> dict[str, Any]:
+def load_binance_bundles(paths: list[Path], *, symbol: str) -> dict[str, Any]:
     candles_by_time: dict[datetime, dict[str, Any]] = {}
     raw_objects: dict[str, bytes] = {}
     source_objects = []
@@ -40,8 +41,8 @@ def load_binance_bundles(paths: list[Path]) -> dict[str, Any]:
         with tarfile.open(path, "r:gz") as archive:
             members = {item.name: item for item in archive.getmembers() if item.isfile()}
             manifest = json.loads(archive.extractfile(members["manifest.json"]).read())
-            if manifest.get("symbol") != "BTCUSDT" or manifest.get("interval") != "15m":
-                raise ValueError("collection bundle identity does not match BTCUSDT 15m")
+            if manifest.get("symbol") != symbol or manifest.get("interval") != "15m":
+                raise ValueError(f"collection bundle identity does not match {symbol} 15m")
             for name, member in sorted(members.items()):
                 if not name.endswith(".zip"):
                     continue
@@ -61,7 +62,7 @@ def load_binance_bundles(paths: list[Path]) -> dict[str, Any]:
                 year, month = date_match.groups()
                 prefix = (
                     f"{ROOT_PREFIX}/bronze/provider=binance/market=spot/kind=klines/"
-                    f"symbol=btcusdt/interval=15m/year={year}/month={month}/sha256={digest}"
+                    f"symbol={symbol.lower()}/interval=15m/year={year}/month={month}/sha256={digest}"
                 )
                 zip_key = f"{prefix}/{filename}"
                 checksum_key = f"{zip_key}.CHECKSUM"
@@ -110,8 +111,10 @@ def load_binance_bundles(paths: list[Path]) -> dict[str, Any]:
     }
 
 
-def merge_public_tail(candles: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    tail = fetch_binance_public_tail(symbol="BTCUSDT", interval="15m", limit=1000)["bars"]
+def merge_public_tail(
+    candles: list[dict[str, Any]], *, symbol: str
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    tail = fetch_binance_public_tail(symbol=symbol, interval="15m", limit=1000)["bars"]
     current = datetime.now(timezone.utc)
     completed = datetime.fromtimestamp(int(current.timestamp()) // 900 * 900 - 900, tz=timezone.utc)
     archive_by_time = {item["timestamp"]: item for item in candles}
@@ -152,16 +155,20 @@ def main() -> None:
     parser.add_argument("--bucket", default=DEFAULT_BUCKET)
     parser.add_argument("--region", default="cn-northwest-1")
     parser.add_argument("--code-version", required=True)
+    parser.add_argument("--symbol", choices=sorted(SYMBOLS), required=True)
     args = parser.parse_args()
-    loaded = load_binance_bundles(args.bundle)
-    candles, tail_evidence = merge_public_tail(loaded["candles"])
+    loaded = load_binance_bundles(args.bundle, symbol=args.symbol)
+    candles, tail_evidence = merge_public_tail(loaded["candles"], symbol=args.symbol)
     evidence = json.dumps(tail_evidence, sort_keys=True).encode()
     digest = hashlib.sha256(evidence).hexdigest()
-    evidence_key = f"{ROOT_PREFIX}/bronze/provider=binance/market=spot/kind=public-tail/symbol=btcusdt/interval=15m/evidence-{digest}.json"
+    evidence_key = (
+        f"{ROOT_PREFIX}/bronze/provider=binance/market=spot/kind=public-tail/"
+        f"symbol={args.symbol.lower()}/interval=15m/evidence-{digest}.json"
+    )
     loaded["raw_objects"][evidence_key] = evidence
     loaded["source_objects"].append({"key": evidence_key, "sha256": digest, **tail_evidence})
     bundle = build_lake_bundle_v2(
-        provider="binance", exchange="binance", market="spot", symbol="BTC/USDT",
+        provider="binance", exchange="binance", market="spot", symbol=SYMBOLS[args.symbol],
         base_candles=candles, source_objects=loaded["source_objects"],
         code_version=args.code_version, allow_gaps=True,
         source_quality=loaded["source_quality"],
@@ -172,7 +179,7 @@ def main() -> None:
         bucket=args.bucket, bundle=bundle,
     )
     print(json.dumps({
-        "execution_mode": "RESEARCH_ONLY", "status": "published",
+        "execution_mode": "RESEARCH_ONLY", "status": "published", "symbol": args.symbol,
         "snapshot_id": bundle["snapshot_id"], "base_rows": len(candles),
         "first_at": candles[0]["timestamp"].isoformat(),
         "last_at": candles[-1]["timestamp"].isoformat(),

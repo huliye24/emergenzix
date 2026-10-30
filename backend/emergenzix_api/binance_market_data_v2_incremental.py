@@ -17,6 +17,7 @@ from .market_history import fetch_binance_public_tail
 
 
 DEFAULT_BUCKET = "emergenzix-research-382309211832-cn-northwest-1-an"
+SYMBOLS = {"BTCUSDT": "BTC/USDT", "ETHUSDT": "ETH/USDT", "BNBUSDT": "BNB/USDT"}
 FIELDS = (
     "open", "high", "low", "close", "base_volume", "quote_volume",
     "trade_count", "taker_buy_base_volume", "taker_buy_quote_volume",
@@ -73,11 +74,13 @@ def merge_closed_tail(
 
 
 def update_once_v2(
-    *, s3_client: Any, bucket: str, code_version: str,
+    *, s3_client: Any, bucket: str, code_version: str, symbol: str = "BTCUSDT",
     tail_fetcher: Callable[..., dict[str, Any]] = fetch_binance_public_tail,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    pointer_key = f"{ROOT_PREFIX}/pointers/binance-spot-btcusdt-15m-latest.json"
+    if symbol not in SYMBOLS:
+        raise ValueError(f"unsupported symbol; choose one of {sorted(SYMBOLS)}")
+    pointer_key = f"{ROOT_PREFIX}/pointers/binance-spot-{symbol.lower()}-15m-latest.json"
     pointer = json.loads(s3_client.get_object(Bucket=bucket, Key=pointer_key)["Body"].read())
     manifest = json.loads(
         s3_client.get_object(Bucket=bucket, Key=pointer["manifest_key"])["Body"].read()
@@ -85,7 +88,7 @@ def update_once_v2(
     stored = read_base_v2(s3_client, bucket, manifest)
     observed = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     completed = datetime.fromtimestamp(int(observed.timestamp()) // 900 * 900 - 900, tz=timezone.utc)
-    raw_tail = tail_fetcher(symbol="BTCUSDT", interval="15m", limit=1000)["bars"]
+    raw_tail = tail_fetcher(symbol=symbol, interval="15m", limit=1000)["bars"]
     updated, new_count, overlap_count = merge_closed_tail(
         stored, raw_tail, completed=completed, observed_at=observed
     )
@@ -102,10 +105,10 @@ def update_once_v2(
     evidence_sha = hashlib.sha256(evidence_bytes).hexdigest()
     evidence_key = (
         f"{ROOT_PREFIX}/bronze/provider=binance/market=spot/kind=public-tail/"
-        f"symbol=btcusdt/interval=15m/evidence-{evidence_sha}.json"
+        f"symbol={symbol.lower()}/interval=15m/evidence-{evidence_sha}.json"
     )
     bundle = build_lake_bundle_v2(
-        provider="binance", exchange="binance", market="spot", symbol="BTC/USDT",
+        provider="binance", exchange="binance", market="spot", symbol=SYMBOLS[symbol],
         base_candles=updated,
         source_objects=[
             {"snapshot_id": pointer["snapshot_id"], "manifest_key": pointer["manifest_key"]},
@@ -137,10 +140,11 @@ def main() -> None:
     parser.add_argument("--bucket", default=DEFAULT_BUCKET)
     parser.add_argument("--region", default="cn-northwest-1")
     parser.add_argument("--code-version", required=True)
+    parser.add_argument("--symbol", choices=sorted(SYMBOLS), required=True)
     args = parser.parse_args()
     result = update_once_v2(
         s3_client=boto3.client("s3", region_name=args.region),
-        bucket=args.bucket, code_version=args.code_version,
+        bucket=args.bucket, code_version=args.code_version, symbol=args.symbol,
     )
     print(json.dumps({"execution_mode": "RESEARCH_ONLY", **result}, indent=2))
 
