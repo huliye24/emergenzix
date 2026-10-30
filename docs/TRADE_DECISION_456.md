@@ -33,5 +33,24 @@ Breakout, Bollinger, MACD, volume, NEB, and NSW remain upstream signal evidence;
 none is hard-coded into domains 4-6.
 
 Future micro-tasks may add short/futures modeling, correlation estimation,
-pyramiding-plan integration, persistence, API review, and PAPER order intents.
-Those changes require their own acceptance tests and do not enable LIVE trading.
+persistence, API review, and PAPER order intents. Those changes require their
+own acceptance tests and do not enable LIVE trading.
+
+## Decreasing pyramiding plan
+
+The first pyramiding slice is also a pure review decision. It accepts an
+existing long position only when all of the following are true:
+
+1. current price is above average entry;
+2. the protective stop is above average entry and therefore locks profit;
+3. a new same-direction signal has been confirmed;
+4. the next frozen R-multiple threshold has been reached;
+5. conservative expectancy remains positive;
+6. trade, fractional-Kelly, portfolio, cluster, and total-notional budgets all
+   have remaining capacity.
+
+Default additions are requested at `1R` and `2R`, with decreasing sizes of 50%
+and 25% of initial notional. Locked profit can release trade-level risk budget,
+but it cannot bypass portfolio or correlation-cluster limits. The planner never
+loosens or changes the supplied protective stop and never adds to a losing
+position. Its output remains `approved_for_review` and cannot place an order.
