@@ -5,6 +5,7 @@ import pytest
 from emergenzix_api.market_history import (
     MarketHistoryUnavailable,
     build_binance_verified_history,
+    fetch_binance_public_tail,
     latest_completed_4h_open,
 )
 
@@ -82,3 +83,28 @@ def test_requires_two_year_minimum_coverage() -> None:
             symbol="BTCUSDT", start_at=datetime(2026, 1, 1, tzinfo=UTC),
             now=datetime(2026, 10, 30, tzinfo=UTC),
         )
+
+
+def test_public_tail_uses_market_data_endpoint(monkeypatch) -> None:
+    seen = {}
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return [
+                [1_700_000_000_000 + index * 900_000, "100", "102", "99", "101", "10"]
+                for index in range(5)
+            ]
+
+    def fake_get(url, **kwargs):
+        seen["url"] = url
+        seen["params"] = kwargs["params"]
+        return Response()
+
+    monkeypatch.setattr("emergenzix_api.market_history.httpx.get", fake_get)
+    result = fetch_binance_public_tail(symbol="ETHUSDT", interval="15m", limit=5)
+    assert seen["url"] == "https://data-api.binance.vision/api/v3/klines"
+    assert seen["params"] == {"symbol": "ETHUSDT", "interval": "15m", "limit": 5}
+    assert result["bars_count"] == 5

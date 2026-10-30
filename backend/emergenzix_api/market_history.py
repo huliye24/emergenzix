@@ -6,8 +6,9 @@ import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
+import httpx
+
 from .historical_data import fetch_binance_spot_kline_archive
-from .market_data import fetch_public_ohlcv
 
 
 FOUR_HOURS = timedelta(hours=4)
@@ -18,6 +19,37 @@ SYMBOLS = {
 
 class MarketHistoryUnavailable(RuntimeError):
     """Raised when a complete, reconciled research history cannot be built."""
+
+
+def fetch_binance_public_tail(*, symbol: str, interval: str, limit: int = 1000) -> dict[str, Any]:
+    """Fetch public klines from Binance's market-data-only endpoint."""
+    normalized = symbol.strip().upper().replace("/", "")
+    if normalized not in SYMBOLS:
+        raise ValueError(f"unsupported history symbol; choose one of {sorted(SYMBOLS)}")
+    if interval not in {"15m", "4h"}:
+        raise ValueError("public tail currently supports 15m or 4h")
+    try:
+        response = httpx.get(
+            "https://data-api.binance.vision/api/v3/klines",
+            params={"symbol": normalized, "interval": interval, "limit": limit},
+            timeout=20.0,
+        )
+        response.raise_for_status()
+        rows = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise MarketHistoryUnavailable("Binance public market-data tail is unavailable") from exc
+    bars = []
+    for row in rows:
+        if not isinstance(row, list) or len(row) < 6:
+            raise MarketHistoryUnavailable("Binance public tail returned an invalid kline")
+        bars.append({
+            "timestamp": datetime.fromtimestamp(int(row[0]) / 1000, tz=timezone.utc).isoformat(),
+            "open": float(row[1]), "high": float(row[2]), "low": float(row[3]),
+            "close": float(row[4]), "volume": float(row[5]),
+        })
+    if len(bars) < 5:
+        raise MarketHistoryUnavailable("Binance public tail returned fewer than five candles")
+    return {"bars": bars, "bars_count": len(bars), "endpoint": "data-api.binance.vision"}
 
 
 def latest_completed_4h_open(now: datetime | None = None) -> datetime:
@@ -56,7 +88,7 @@ def build_binance_verified_history(
     *, symbol: str, start_at: datetime, now: datetime | None = None,
     interval: str = "4h",
     archive_fetcher: Callable[..., list[dict[str, Any]]] = fetch_binance_spot_kline_archive,
-    public_fetcher: Callable[..., dict[str, Any]] = fetch_public_ohlcv,
+    public_fetcher: Callable[..., dict[str, Any]] = fetch_binance_public_tail,
     archive_observer: Callable[[str, bytes, str, str], None] | None = None,
 ) -> dict[str, Any]:
     """Merge checksum archives with a reconciled public tail through the last closed bar."""
@@ -82,7 +114,7 @@ def build_binance_verified_history(
         archive_observer=archive_observer,
     )
     public = public_fetcher(
-        exchange_id="binance", symbol=SYMBOLS[normalized], timeframe=interval, limit=1000
+        symbol=normalized, interval=interval, limit=1000
     )["bars"]
     archive_by_time = {_stamp(bar): bar for bar in archive}
     public_by_time = {

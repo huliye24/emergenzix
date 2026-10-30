@@ -55,7 +55,7 @@ def build_symbol_bundle(*, symbol: str, start_at: datetime, code_version: str) -
     bronze[tail_key] = public_tail
     source_objects.append({
         "key": tail_key, "sha256": tail_digest, "bytes": len(public_tail),
-        "source": "ccxt_binance_public_ohlcv", "overlap_bars": history["overlap_bars"],
+        "source": "binance_data_api_public_ohlcv", "overlap_bars": history["overlap_bars"],
     })
     bundle = build_lake_bundle(
         symbol=str(history["symbol"]), base_bars=history["bars"],

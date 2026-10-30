@@ -21,7 +21,8 @@ market-data store.
 ### Canonical source and timeframes
 
 The first canonical dataset is Binance spot BTCUSDT, ETHUSDT, and BNBUSDT at 15-minute
-resolution. Checksum-verified official archives provide history; the public API
+resolution. Checksum-verified official archives provide history; Binance's
+market-data-only `data-api.binance.vision` public endpoint
 provides the recent unpublished tail. The two sources must overlap and agree.
 
 The canonical 15-minute data deterministically derives these closed-candle
