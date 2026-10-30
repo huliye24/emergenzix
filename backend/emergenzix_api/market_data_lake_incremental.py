@@ -6,7 +6,7 @@ import argparse
 import hashlib
 import io
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 import boto3
@@ -35,7 +35,10 @@ def _read_base(s3_client: Any, bucket: str, manifest: dict[str, Any]) -> list[di
                 "high": columns["high"][index], "low": columns["low"][index],
                 "close": columns["close"][index], "volume": columns["volume"][index],
             })
-    return validate_base_bars(sorted(bars, key=lambda bar: bar["timestamp"]))
+    return validate_base_bars(
+        sorted(bars, key=lambda bar: bar["timestamp"]),
+        allow_gaps=bool(manifest.get("quality", {}).get("gaps", 0)),
+    )
 
 
 def update_once(
@@ -63,6 +66,12 @@ def update_once(
             tail.append({**item, "timestamp": stamp})
     if not tail or tail[-1]["timestamp"] <= last_stored:
         return {"status": "no_change", "snapshot_id": pointer["snapshot_id"], "last_at": last_stored.isoformat()}
+    new_tail = [item for item in tail if item["timestamp"] > last_stored]
+    if new_tail[0]["timestamp"] - last_stored != timedelta(minutes=15) or any(
+        right["timestamp"] - left["timestamp"] != timedelta(minutes=15)
+        for left, right in zip(new_tail, new_tail[1:])
+    ):
+        raise ValueError("incremental tail would introduce a new gap")
     stored = {bar["timestamp"]: bar for bar in bars}
     overlap = [bar for bar in tail if bar["timestamp"] in stored]
     if len(overlap) < 6:
@@ -72,7 +81,10 @@ def update_once(
         if any(float(previous[key]) != float(item[key]) for key in ("open", "high", "low", "close", "volume")):
             raise ValueError(f"incremental source mismatch at {item['timestamp'].isoformat()}")
     merged = {**stored, **{item["timestamp"]: item for item in tail}}
-    updated = validate_base_bars([merged[stamp] for stamp in sorted(merged)])
+    inherited_gaps = bool(manifest.get("quality", {}).get("gaps", 0))
+    updated = validate_base_bars(
+        [merged[stamp] for stamp in sorted(merged)], allow_gaps=inherited_gaps
+    )
     evidence = {
         "source": "binance_data_api_public_ohlcv", "overlap_bars": len(overlap),
         "first_at": tail[0]["timestamp"].isoformat(), "last_at": tail[-1]["timestamp"].isoformat(),
@@ -87,6 +99,7 @@ def update_once(
             {"key": evidence_key, "sha256": evidence_sha, **evidence},
         ],
         code_version=code_version, previous_snapshot=pointer["snapshot_id"],
+        allow_gaps=inherited_gaps,
     )
     bundle["objects"][evidence_key] = evidence_bytes
     publish_bundle(s3_client=s3_client, bucket=bucket, bundle=bundle)
