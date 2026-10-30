@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import io
 import json
+from pathlib import Path
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -245,11 +246,20 @@ def publish_bundle(*, s3_client: Any, bucket: str, bundle: Mapping[str, Any]) ->
         )
 
 
+def export_bundle(*, root: Path, bundle: Mapping[str, Any]) -> None:
+    """Write content-addressed objects below ``root`` using their exact S3 keys."""
+    for key, payload in bundle["objects"].items():
+        target = root.joinpath(*key.split("/"))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(payload)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the five-instrument daily research lake pilot")
     parser.add_argument("--start", type=date.fromisoformat, default=DEFAULT_START)
     parser.add_argument("--end", type=date.fromisoformat, default=DEFAULT_END)
     parser.add_argument("--bucket")
+    parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--code-version", default="working-tree")
     args = parser.parse_args()
     if args.end < args.start:
@@ -268,9 +278,15 @@ def main() -> int:
             )
             if s3 is not None:
                 publish_bundle(s3_client=s3, bucket=args.bucket, bundle=bundle)
+            if args.output_dir is not None:
+                export_bundle(root=args.output_dir, bundle=bundle)
             results.append({
                 "instrument_id": instrument.instrument_id,
-                "status": "published" if s3 is not None else "validated",
+                "status": (
+                    "published" if s3 is not None
+                    else "exported" if args.output_dir is not None
+                    else "validated"
+                ),
                 "rows": bundle["manifest"]["quality"]["rows"],
                 "snapshot_id": bundle["snapshot_id"],
                 "manifest_key": bundle["manifest_key"],

@@ -7,6 +7,7 @@ import pytest
 from emergenzix_api.cross_asset_daily_lake import (
     INSTRUMENTS,
     build_provider_bundle,
+    export_bundle,
     publish_bundle,
     validate_daily_bars,
 )
@@ -76,3 +77,13 @@ def test_publish_marks_every_object_encrypted_and_research_only():
     assert len(s3.calls) == 3
     assert all(call["ServerSideEncryption"] == "AES256" for call in s3.calls)
     assert all(call["Metadata"]["research-only"] == "true" for call in s3.calls)
+
+
+def test_export_preserves_exact_s3_object_keys(tmp_path):
+    bundle = build_provider_bundle(
+        provider="example", instrument=INSTRUMENTS[0], raw=b"{}", bars=_bars(),
+        start=date(2026, 1, 1), end=date(2026, 1, 31), code_version="test",
+    )
+    export_bundle(root=tmp_path, bundle=bundle)
+    for key, payload in bundle["objects"].items():
+        assert tmp_path.joinpath(*key.split("/")).read_bytes() == payload
