@@ -113,6 +113,10 @@ def update_once_v2(
         ],
         code_version=code_version, previous_snapshot=pointer["snapshot_id"],
         allow_gaps=bool(manifest["quality"]["gaps"]),
+        source_quality={
+            "off_grid": manifest["quality"].get("off_grid", 0),
+            "off_grid_details": manifest["quality"].get("off_grid_details", []),
+        },
     )
     bundle["objects"][evidence_key] = evidence_bytes
     current_pointer = json.loads(

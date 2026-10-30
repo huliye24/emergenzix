@@ -5,7 +5,13 @@ from datetime import datetime, timedelta, timezone
 import pyarrow.parquet as pq
 from botocore.exceptions import ClientError
 
-from emergenzix_api.market_data_lake_v2 import build_lake_bundle_v2, publish_bundle_v2
+import pytest
+
+from emergenzix_api.market_data_lake_v2 import (
+    build_lake_bundle_v2,
+    publish_bundle_v2,
+    validate_candles_v2,
+)
 
 
 UTC = timezone.utc
@@ -50,6 +56,15 @@ def test_v2_bundle_preserves_volume_schema_and_is_deterministic() -> None:
     assert table.schema.metadata[b"schema_version"] == b"emergenzix-market-candle-v2"
     assert table.column("quote_volume").null_count == 0
     assert table.column("trade_count").type == "int64"
+
+
+def test_v2_validation_rejects_off_grid_source_rows() -> None:
+    source = candles()
+    source[0]["timestamp"] += timedelta(seconds=1)
+    source[0]["close_time"] += timedelta(seconds=1)
+    source[0]["available_at"] += timedelta(seconds=1)
+    with pytest.raises(ValueError, match="UTC 15-minute grid"):
+        validate_candles_v2(source)
 
 
 class FakeS3:

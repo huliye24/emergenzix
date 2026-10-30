@@ -35,6 +35,7 @@ def load_binance_bundles(paths: list[Path]) -> dict[str, Any]:
     candles_by_time: dict[datetime, dict[str, Any]] = {}
     raw_objects: dict[str, bytes] = {}
     source_objects = []
+    off_grid_details = []
     for path in paths:
         with tarfile.open(path, "r:gz") as archive:
             members = {item.name: item for item in archive.getmembers() if item.isfile()}
@@ -91,6 +92,11 @@ def load_binance_bundles(paths: list[Path]) -> dict[str, Any]:
                                 }
                             except (IndexError, ValueError, OverflowError):
                                 continue
+                            if opened.minute % 15 or opened.second or opened.microsecond:
+                                off_grid_details.append({
+                                    "timestamp": opened.isoformat(), "source_file": filename,
+                                })
+                                continue
                             previous = candles_by_time.get(opened)
                             if previous is not None and previous != candle:
                                 raise ValueError(f"conflicting candle at {opened.isoformat()}")
@@ -98,6 +104,9 @@ def load_binance_bundles(paths: list[Path]) -> dict[str, Any]:
     return {
         "candles": [candles_by_time[stamp] for stamp in sorted(candles_by_time)],
         "raw_objects": raw_objects, "source_objects": source_objects,
+        "source_quality": {
+            "off_grid": len(off_grid_details), "off_grid_details": off_grid_details,
+        },
     }
 
 
@@ -155,6 +164,7 @@ def main() -> None:
         provider="binance", exchange="binance", market="spot", symbol="BTC/USDT",
         base_candles=candles, source_objects=loaded["source_objects"],
         code_version=args.code_version, allow_gaps=True,
+        source_quality=loaded["source_quality"],
     )
     bundle["objects"].update(loaded["raw_objects"])
     publish_bundle_v2(

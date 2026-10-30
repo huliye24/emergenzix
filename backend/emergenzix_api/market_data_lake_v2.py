@@ -29,6 +29,13 @@ def validate_candles_v2(
 ) -> list[dict[str, Any]]:
     normalized = [normalize_candle_v2(item) for item in candles]
     normalized.sort(key=lambda item: item["timestamp"])
+    if any(
+        item["timestamp"].minute % 15
+        or item["timestamp"].second
+        or item["timestamp"].microsecond
+        for item in normalized
+    ):
+        raise ValueError("candles must be on the UTC 15-minute grid")
     for left, right in zip(normalized, normalized[1:]):
         delta = right["timestamp"] - left["timestamp"]
         if delta <= timedelta(0) or delta % timedelta(minutes=15):
@@ -113,6 +120,7 @@ def build_lake_bundle_v2(
     base_candles: Sequence[Mapping[str, Any]],
     source_objects: Sequence[Mapping[str, Any]], code_version: str,
     previous_snapshot: str | None = None, allow_gaps: bool = False,
+    source_quality: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized = validate_candles_v2(base_candles, allow_gaps=allow_gaps)
     gaps = []
@@ -176,7 +184,10 @@ def build_lake_bundle_v2(
         "quality": {
             "gaps": len(gaps), "gap_details": gaps,
             "missing_candles": sum(item["missing_candles"] for item in gaps),
-            "duplicates": 0, "off_grid": 0, "forming_candle_excluded": True,
+            "duplicates": 0,
+            "off_grid": int((source_quality or {}).get("off_grid", 0)),
+            "off_grid_details": list((source_quality or {}).get("off_grid_details", [])),
+            "forming_candle_excluded": True,
             "imputed_rows": sum(item["is_imputed"] for item in normalized),
         },
     }
