@@ -1,0 +1,11 @@
+{
+  "catalog_id": "cross-asset-100-v2",
+  "research_only": true,
+  "timeframe": "1d",
+  "base_catalog": "cross_asset_100_v1.json",
+  "remove_instrument_ids": ["USDINR", "USDBRL"],
+  "instruments": [
+    {"instrument_id":"EURCHF","asset_class":"fx","vendor_symbol":"EURCHF=X","price_currency":"CHF","instrument_type":"spot_fx"},
+    {"instrument_id":"USDSEK","asset_class":"fx","vendor_symbol":"SEK=X","price_currency":"SEK","instrument_type":"spot_fx"}
+  ]
+}

@@ -120,9 +120,20 @@ def test_parse_dukascopy_and_compare_without_merging():
 
 def test_versioned_catalog_has_exactly_100_unique_research_instruments():
     catalog_id, instruments = load_catalog(DEFAULT_CATALOG)
-    assert catalog_id == "cross-asset-100-v1"
+    assert catalog_id == "cross-asset-100-v2"
     assert len(instruments) == 100
     assert len({item.instrument_id for item in instruments}) == 100
     assert {item.asset_class for item in instruments} == {
         "equity", "etf", "index", "commodity", "fx"
     }
+    assert {"EURCHF", "USDSEK"} <= {item.instrument_id for item in instruments}
+    assert not {"USDINR", "USDBRL"} & {item.instrument_id for item in instruments}
+
+
+def test_history_coverage_gate_rejects_short_vendor_response():
+    with pytest.raises(ValueError, match="history coverage gate failed"):
+        build_provider_bundle(
+            provider="example", instrument=INSTRUMENTS[0], raw=b"{}", bars=_bars(),
+            start=date(2021, 1, 1), end=date(2026, 1, 1), code_version="test",
+            minimum_rows=900,
+        )

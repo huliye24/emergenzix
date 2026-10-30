@@ -44,11 +44,28 @@ INSTRUMENTS = (
 
 DUKASCOPY_INSTRUMENTS = (
     Instrument("EURUSD", "fx", "eurusd", "USD", "spot_fx_bid"),
+    Instrument("GBPUSD", "fx", "gbpusd", "USD", "spot_fx_bid"),
+    Instrument("USDJPY", "fx", "usdjpy", "JPY", "spot_fx_bid"),
+    Instrument("AUDUSD", "fx", "audusd", "USD", "spot_fx_bid"),
+    Instrument("NZDUSD", "fx", "nzdusd", "USD", "spot_fx_bid"),
+    Instrument("USDCAD", "fx", "usdcad", "CAD", "spot_fx_bid"),
+    Instrument("USDCHF", "fx", "usdchf", "CHF", "spot_fx_bid"),
+    Instrument("EURGBP", "fx", "eurgbp", "GBP", "spot_fx_bid"),
+    Instrument("EURJPY", "fx", "eurjpy", "JPY", "spot_fx_bid"),
+    Instrument("GBPJPY", "fx", "gbpjpy", "JPY", "spot_fx_bid"),
+    Instrument("AUDJPY", "fx", "audjpy", "JPY", "spot_fx_bid"),
+    Instrument("USDCNH", "fx", "usdcnh", "CNH", "spot_fx_bid"),
+    Instrument("USDHKD", "fx", "usdhkd", "HKD", "spot_fx_bid"),
+    Instrument("EURCHF", "fx", "eurchf", "CHF", "spot_fx_bid"),
+    Instrument("USDSEK", "fx", "usdsek", "SEK", "spot_fx_bid"),
     Instrument("GC", "commodity", "xauusd", "USD", "spot_gold_bid"),
     Instrument("CL", "commodity", "lightcmdusd", "USD", "commodity_cfd_bid"),
+    Instrument("KC", "commodity", "coffeecmdusx", "USD", "commodity_cfd_bid"),
+    Instrument("CT", "commodity", "cottoncmdusx", "USD", "commodity_cfd_bid"),
+    Instrument("CC", "commodity", "cocoacmdusd", "USD", "commodity_cfd_bid"),
 )
 
-DEFAULT_CATALOG = Path(__file__).with_name("data") / "cross_asset_100_v1.json"
+DEFAULT_CATALOG = Path(__file__).with_name("data") / "cross_asset_100_v2.json"
 
 
 def load_catalog(path: Path) -> tuple[str, tuple[Instrument, ...]]:
@@ -56,6 +73,10 @@ def load_catalog(path: Path) -> tuple[str, tuple[Instrument, ...]]:
     if payload.get("research_only") is not True or payload.get("timeframe") != "1d":
         raise ValueError("catalog must be research-only daily data")
     instruments = tuple(Instrument(**item) for item in payload["instruments"])
+    if payload.get("base_catalog"):
+        _, base = load_catalog(path.with_name(str(payload["base_catalog"])))
+        removed = set(payload.get("remove_instrument_ids", []))
+        instruments = tuple(item for item in base if item.instrument_id not in removed) + instruments
     ids = [item.instrument_id for item in instruments]
     symbols = [item.vendor_symbol for item in instruments]
     if len(instruments) != 100:
@@ -220,8 +241,14 @@ def _parquet_bytes(bars: Sequence[Mapping[str, Any]], metadata: Mapping[str, str
 def build_provider_bundle(
     *, provider: str, instrument: Instrument, raw: bytes,
     bars: Sequence[Mapping[str, Any]], start: date, end: date, code_version: str,
+    minimum_rows: int = 1,
 ) -> dict[str, Any]:
     normalized, quality = validate_daily_bars(bars)
+    if len(normalized) < minimum_rows:
+        raise ValueError(
+            f"history coverage gate failed: rows={len(normalized)}, minimum={minimum_rows}"
+        )
+    quality["minimum_required_rows"] = minimum_rows
     raw_sha = hashlib.sha256(raw).hexdigest()
     parquet = _parquet_bytes(normalized, {
         "schema_version": SCHEMA_VERSION,
@@ -386,6 +413,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.end < args.start:
         parser.error("--end must not precede --start")
+    minimum_rows = max(2, int((args.end - args.start).days * 0.5))
     s3 = None
     if args.bucket:
         import boto3
@@ -402,6 +430,7 @@ def main() -> int:
             bundle = build_provider_bundle(
                 provider="yahoo_chart", instrument=instrument, raw=raw, bars=bars,
                 start=args.start, end=args.end, code_version=args.code_version,
+                minimum_rows=minimum_rows,
             )
             yahoo_data[instrument.instrument_id] = (bundle, bars)
             if s3 is not None:
@@ -442,6 +471,7 @@ def main() -> int:
                 bundle = build_provider_bundle(
                     provider="dukascopy_bid", instrument=instrument, raw=raw, bars=bars,
                     start=args.start, end=args.end, code_version=args.code_version,
+                    minimum_rows=minimum_rows,
                 )
                 if s3 is not None:
                     publish_bundle(s3_client=s3, bucket=args.bucket, bundle=bundle)
