@@ -810,6 +810,17 @@ def create_app(
         if existing_order is not None:
             return existing_order
 
+        with db.connection() as connection:
+            operational_control = connection.execute(
+                "SELECT new_orders_paused, reason FROM paper_operational_control "
+                "WHERE id = 1"
+            ).fetchone()
+        if operational_control is None or bool(operational_control["new_orders_paused"]):
+            raise HTTPException(
+                status_code=409,
+                detail="New PAPER orders are paused by the operational kill switch",
+            )
+
         max_notional = float(request.app.state.max_order_notional)
         if notional > max_notional:
             raise HTTPException(

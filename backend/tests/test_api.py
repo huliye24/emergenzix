@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from fastapi.testclient import TestClient
+
 from emergenzix_api.backtesting import run_sma_crossover
+from emergenzix_api.main import create_app
 from emergenzix_api.market_data import MarketDataUnavailable
 from emergenzix_api.schemas import Bar
 from emergenzix_api.notification_outbox import NotificationOutbox
@@ -519,6 +522,28 @@ def test_paper_order_idempotency_prevents_duplicate_fill(client):
     assert repeated.json()["id"] == first.json()["id"]
     assert account_after_repeat == account_after_first
     assert len(client.get("/api/v1/paper/orders").json()) == 1
+
+
+def test_new_database_defaults_to_paper_orders_paused(tmp_path):
+    app = create_app(
+        db_path=tmp_path / "paused.db",
+        notification_db_path=tmp_path / "notifications.db",
+    )
+    with TestClient(app) as paused_client:
+        response = paused_client.post(
+            "/api/v1/paper/orders",
+            json={
+                "symbol": "BTCUSDT",
+                "side": "BUY",
+                "quantity": 1,
+                "reference_price": 100,
+                "idempotency_key": "paused-order",
+            },
+        )
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "New PAPER orders are paused by the operational kill switch"
+    )
 
 
 def test_paper_order_idempotency_rejects_changed_request(client):
