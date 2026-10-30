@@ -31,7 +31,7 @@ def _archive_timestamp(value: str) -> datetime:
     )
 
 
-def load_collection_bundle(path: Path) -> dict[str, Any]:
+def load_collection_bundle(path: Path, *, allow_gaps: bool = False) -> dict[str, Any]:
     raw_objects: dict[str, bytes] = {}
     source_objects: list[dict[str, Any]] = []
     bars_by_time: dict[datetime, dict[str, Any]] = {}
@@ -90,7 +90,7 @@ def load_collection_bundle(path: Path) -> dict[str, Any]:
                             raise ValueError(f"conflicting duplicate candle at {stamp.isoformat()}")
                         bars_by_time[stamp] = bar
     bars = [bars_by_time[stamp] for stamp in sorted(bars_by_time)]
-    validate_base_bars(bars)
+    validate_base_bars(bars, allow_gaps=allow_gaps)
     return {
         "bars": bars, "raw_objects": raw_objects,
         "source_objects": source_objects, "collector_manifest": manifest,

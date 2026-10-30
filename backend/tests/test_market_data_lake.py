@@ -47,6 +47,23 @@ def test_base_validation_rejects_gap_or_off_grid() -> None:
         validate_base_bars(source)
 
 
+def test_gap_aware_bundle_records_missing_bars_and_omits_incomplete_gold() -> None:
+    source = bars(2)
+    del source[10]
+    bundle = build_lake_bundle(
+        symbol="BTC/USDT", base_bars=source,
+        source_objects=[{"key": "bronze/gapped.zip", "sha256": "c" * 64}],
+        code_version="test-commit", allow_gaps=True,
+    )
+    assert bundle["manifest"]["quality"]["gaps"] == 1
+    assert bundle["manifest"]["quality"]["missing_candles"] == 1
+    one_hour_rows = sum(
+        item["rows"] for item in bundle["manifest"]["objects"]
+        if item["timeframe"] == "1h"
+    )
+    assert one_hour_rows == 47
+
+
 def test_bundle_is_deterministic_and_parquet_is_readable(tmp_path) -> None:
     kwargs = {
         "symbol": "BTC/USDT", "base_bars": bars(40),

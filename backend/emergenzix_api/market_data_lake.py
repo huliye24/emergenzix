@@ -48,7 +48,9 @@ def _expected_count(bucket: datetime, interval: str) -> int:
     }[interval]
 
 
-def validate_base_bars(bars: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def validate_base_bars(
+    bars: Sequence[Mapping[str, Any]], *, allow_gaps: bool = False
+) -> list[dict[str, Any]]:
     if not bars:
         raise ValueError("base dataset is empty")
     normalized: list[dict[str, Any]] = []
@@ -57,8 +59,12 @@ def validate_base_bars(bars: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]
         stamp = _timestamp(source)
         if stamp.minute % 15 or stamp.second or stamp.microsecond:
             raise ValueError("base candle is off the UTC 15-minute grid")
-        if previous is not None and stamp - previous != timedelta(minutes=15):
-            raise ValueError("base candles must be unique, ordered, and gap-free")
+        if previous is not None:
+            delta = stamp - previous
+            if delta <= timedelta(0) or delta % timedelta(minutes=15):
+                raise ValueError("base candles must be unique, ordered, and on-grid")
+            if not allow_gaps and delta != timedelta(minutes=15):
+                raise ValueError("base candles must be unique, ordered, and gap-free")
         values = {key: float(source[key]) for key in ("open", "high", "low", "close", "volume")}
         if min(values[key] for key in ("open", "high", "low", "close")) <= 0 or values["volume"] < 0:
             raise ValueError("invalid OHLCV value")
@@ -71,8 +77,10 @@ def validate_base_bars(bars: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]
     return normalized
 
 
-def resample_bars(base_bars: Sequence[Mapping[str, Any]], interval: str) -> list[dict[str, Any]]:
-    bars = validate_base_bars(base_bars)
+def resample_bars(
+    base_bars: Sequence[Mapping[str, Any]], interval: str, *, allow_gaps: bool = False
+) -> list[dict[str, Any]]:
+    bars = validate_base_bars(base_bars, allow_gaps=allow_gaps)
     groups: dict[datetime, list[dict[str, Any]]] = {}
     for bar in bars:
         groups.setdefault(_bucket_start(bar["timestamp"], interval), []).append(bar)
@@ -118,10 +126,23 @@ def build_lake_bundle(
     *, symbol: str, base_bars: Sequence[Mapping[str, Any]],
     source_objects: Sequence[Mapping[str, Any]], code_version: str,
     previous_snapshot: str | None = None,
+    allow_gaps: bool = False,
 ) -> dict[str, Any]:
-    normalized = validate_base_bars(base_bars)
+    normalized = validate_base_bars(base_bars, allow_gaps=allow_gaps)
+    gaps = []
+    for previous, current in zip(normalized, normalized[1:]):
+        delta = current["timestamp"] - previous["timestamp"]
+        if delta != timedelta(minutes=15):
+            gaps.append({
+                "after": previous["timestamp"].isoformat(),
+                "before": current["timestamp"].isoformat(),
+                "missing_candles": int(delta / timedelta(minutes=15)) - 1,
+            })
     datasets = {BASE_INTERVAL: normalized}
-    datasets.update({interval: resample_bars(normalized, interval) for interval in DERIVED_INTERVALS})
+    datasets.update({
+        interval: resample_bars(normalized, interval, allow_gaps=allow_gaps)
+        for interval in DERIVED_INTERVALS
+    })
     objects: dict[str, bytes] = {}
     entries: list[dict[str, Any]] = []
     symbol_key = symbol.lower().replace("/", "")
@@ -158,7 +179,11 @@ def build_lake_bundle(
         "base_rows": len(normalized), "source_objects": list(source_objects),
         "objects": entries, "code_version": code_version,
         "previous_snapshot": previous_snapshot,
-        "quality": {"gaps": 0, "duplicates": 0, "off_grid": 0, "forming_candle_excluded": True},
+        "quality": {
+            "gaps": len(gaps), "gap_details": gaps,
+            "missing_candles": sum(item["missing_candles"] for item in gaps),
+            "duplicates": 0, "off_grid": 0, "forming_candle_excluded": True,
+        },
     }
     canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
     snapshot_id = hashlib.sha256(canonical).hexdigest()
