@@ -11,6 +11,8 @@ from emergenzix_api.cross_asset_daily_lake import (
     compare_provider_returns,
     comparison_bundle,
     parse_dukascopy_json,
+    load_catalog,
+    DEFAULT_CATALOG,
     publish_bundle,
     validate_daily_bars,
 )
@@ -114,3 +116,13 @@ def test_parse_dukascopy_and_compare_without_merging():
     assert -1 <= report["pearson_return_correlation"] <= 1
     bundled = comparison_bundle(report)
     assert "/gold/comparisons/instrument=gc/" in bundled["manifest_key"]
+
+
+def test_versioned_catalog_has_exactly_100_unique_research_instruments():
+    catalog_id, instruments = load_catalog(DEFAULT_CATALOG)
+    assert catalog_id == "cross-asset-100-v1"
+    assert len(instruments) == 100
+    assert len({item.instrument_id for item in instruments}) == 100
+    assert {item.asset_class for item in instruments} == {
+        "equity", "etf", "index", "commodity", "fx"
+    }

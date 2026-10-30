@@ -48,6 +48,22 @@ DUKASCOPY_INSTRUMENTS = (
     Instrument("CL", "commodity", "lightcmdusd", "USD", "commodity_cfd_bid"),
 )
 
+DEFAULT_CATALOG = Path(__file__).with_name("data") / "cross_asset_100_v1.json"
+
+
+def load_catalog(path: Path) -> tuple[str, tuple[Instrument, ...]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("research_only") is not True or payload.get("timeframe") != "1d":
+        raise ValueError("catalog must be research-only daily data")
+    instruments = tuple(Instrument(**item) for item in payload["instruments"])
+    ids = [item.instrument_id for item in instruments]
+    symbols = [item.vendor_symbol for item in instruments]
+    if len(instruments) != 100:
+        raise ValueError("cross-asset catalog must contain exactly 100 instruments")
+    if len(set(ids)) != len(ids) or len(set(symbols)) != len(symbols):
+        raise ValueError("catalog instrument IDs and vendor symbols must be unique")
+    return str(payload["catalog_id"]), instruments
+
 
 class ProviderError(RuntimeError):
     """Sanitized provider failure suitable for operator output."""
@@ -363,6 +379,10 @@ def main() -> int:
         help="Directory containing pinned dukascopy-node d1 JSON exports",
     )
     parser.add_argument("--code-version", default="working-tree")
+    parser.add_argument(
+        "--catalog", type=Path,
+        help="Versioned Yahoo instrument catalog; omit for the five-instrument pilot",
+    )
     args = parser.parse_args()
     if args.end < args.start:
         parser.error("--end must not precede --start")
@@ -370,9 +390,13 @@ def main() -> int:
     if args.bucket:
         import boto3
         s3 = boto3.client("s3")
+    catalog_id = "cross-asset-five-pilot-v1"
+    yahoo_instruments = INSTRUMENTS
+    if args.catalog is not None:
+        catalog_id, yahoo_instruments = load_catalog(args.catalog)
     results = []
     yahoo_data: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
-    for instrument in INSTRUMENTS:
+    for instrument in yahoo_instruments:
         try:
             raw, bars = fetch_yahoo_chart(instrument, start=args.start, end=args.end)
             bundle = build_provider_bundle(
@@ -473,6 +497,7 @@ def main() -> int:
     print(json.dumps({
         "schema_version": SCHEMA_VERSION,
         "provider": "yahoo_chart",
+        "catalog_id": catalog_id,
         "research_only": True,
         "published": s3 is not None,
         "results": results,
