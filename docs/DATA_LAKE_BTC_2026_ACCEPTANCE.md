@@ -46,3 +46,24 @@ This acceptance covers BTCUSDT from 2026-01-01 only. It does not yet satisfy
 the M0 multi-year requirement beginning in 2021, and it does not cover ETHUSDT
 or BNBUSDT. No PAPER, TESTNET, or LIVE order permission is granted by this
 dataset or acceptance result.
+
+## Incremental updater acceptance
+
+The Ningxia CPU host runs the pinned `e9a68a5` updater as a systemd oneshot
+service triggered every 13 minutes by
+`emergenzix-market-data-btc.timer`. It uses the instance role and Binance's
+market-data-only endpoint; it stores no static AWS or exchange credential.
+
+Observed consecutive-run acceptance on 2026-10-30:
+
+1. The first run appended one newly completed 15m candle, advanced the base
+   range to 04:45 UTC, linked the previous snapshot, and published snapshot
+   `de2842a6682c175d23b6c7168b3f8cf1e63898319cf8c002b1261dfd0ccf1308`.
+2. The immediate second run returned `no_change`, retained the same snapshot,
+   and did not republish data.
+3. A systemd-triggered run exited successfully with `no_change`; the next run
+   was scheduled 13 minutes later.
+
+Only closed candles can advance the pointer. A source mismatch, insufficient
+overlap, Parquet hash failure, gap, or upload failure leaves the previous
+snapshot pointer unchanged.
