@@ -40,6 +40,8 @@ Every Silver candle uses UTC open time and these fields:
 | Field | Requirement | Meaning |
 | --- | --- | --- |
 | `timestamp` | required | UTC candle-open timestamp |
+| `close_time` | required | Exclusive UTC interval end |
+| `available_at` | required | Earliest time the completed record may be used |
 | `open`, `high`, `low`, `close` | required | Venue price in the stated quote asset |
 | `base_volume` | required | Quantity of the base asset traded |
 | `quote_volume` | nullable | Quantity of the quote asset traded / turnover |
@@ -60,6 +62,10 @@ for the exchange OHLC.
 Schema v1 objects and pinned manifests remain immutable. Schema v2 is published
 under new content hashes and pointers; existing research keeps resolving its
 pinned v1 snapshot.
+
+Keeping event time separate from availability time is a look-ahead control.
+Historical adapters use the best evidenced publication time and never a value
+earlier than `close_time`; live ingestion records observed availability.
 
 ### Provider adapters and source gates
 
