@@ -28,6 +28,7 @@ EVENT_LABELS = {
     "operational_alert": "运维告警",
     "operational_recovery": "运维恢复",
     "watcher_startup": "监控服务启动",
+    "paper_execution_alert": "PAPER执行风控告警",
 }
 
 SEVERITY_LABELS = {"info": "信息", "warning": "警告", "error": "错误"}
