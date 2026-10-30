@@ -51,7 +51,8 @@ This roadmap separates product readiness from research progress. Stages are gate
   - [x] Extend BTCUSDT back to 2021, preserve seven checksum-valid source gaps explicitly, and verify the merged snapshot plus the 13-minute updater; see `DATA_LAKE_BTC_2021_2026_ACCEPTANCE.md`.
   - [ ] Publish ETHUSDT and BNBUSDT before closing the parent item.
 - [ ] Implement ADR-005 venue-preserving multi-exchange data: schema-v2 price and volume semantics, independent Binance/OKX/Bybit manifests, listing-aware quality gates, and pinned cross-venue Gold metrics.
-  - [x] Publish and test the schema-v2 candle contract with event/availability time, base volume, quote volume, trade count, optional taker-side volumes, closed/imputed flags, nullable-field propagation, and a non-destructive v1 boundary. Adapter and S3 publication remain pending.
+  - [x] Publish and test the schema-v2 candle contract with event/availability time, base volume, quote volume, trade count, optional taker-side volumes, closed/imputed flags, nullable-field propagation, and a non-destructive v1 boundary. Non-Binance adapters remain pending.
+  - [x] Publish and independently verify Binance BTCUSDT schema-v2 price and full volume history from 2021 through current, with a separate 13-minute updater and unchanged v1 pointer; see `DATA_LAKE_BTC_V2_ACCEPTANCE.md`.
   - [ ] Verify observed historical depth and backfill eligible BTC, ETH, and BNB spot instruments independently for OKX and Bybit.
   - [ ] Publish coverage, median price, dispersion, aggregate volume, and venue-concentration products only after quote units and constituent manifests reconcile.
 - [x] Persist source, exchange, symbol, and timeframe metadata with backtest results.
