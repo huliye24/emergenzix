@@ -48,7 +48,8 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [ ] Populate the S3 lake with checksum-verified BTCUSDT, ETHUSDT, and BNBUSDT 15m history from 2021-01-01 through the latest completed candle, publish Parquet partitions and derived timeframes, and verify a pinned manifest from a cloud reader.
   - [x] BTCUSDT 2026-first acceptance slice published and independently read back from S3; see `DATA_LAKE_BTC_2026_ACCEPTANCE.md`.
   - [x] Deploy and observe an idempotent 13-minute BTC closed-candle updater on the Ningxia CPU host; consecutive publish/no-change behavior verified.
-  - [ ] Extend BTCUSDT back to 2021 and publish ETHUSDT and BNBUSDT before closing the parent item.
+  - [x] Extend BTCUSDT back to 2021, preserve seven checksum-valid source gaps explicitly, and verify the merged snapshot plus the 13-minute updater; see `DATA_LAKE_BTC_2021_2026_ACCEPTANCE.md`.
+  - [ ] Publish ETHUSDT and BNBUSDT before closing the parent item.
 - [x] Persist source, exchange, symbol, and timeframe metadata with backtest results.
 - [x] Add content-addressed immutable OHLCV dataset registration and retrieval with canonical SHA-256 identifiers.
 - [x] Add a date-driven BTC weekly backtest: verified 4-hour archive coverage, pre-test-only candidate selection, immutable run records, and JSON/Markdown/CSV outputs (CI/runtime verification is tracked separately).
