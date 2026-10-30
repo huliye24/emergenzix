@@ -45,11 +45,11 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [x] Add public OHLCV retrieval through CCXT with bounded exchange/timeframe/limit inputs.
 - [x] Add a fail-closed BTC/BNB 4h research sync path that merges checksum-verified Binance archives with a reconciled public tail, excludes forming candles, requires at least two years and strict continuity, and stores immutable content-addressed snapshots. Cloud scheduling and retention remain pending.
 - [x] Record ADR-004 for a versioned S3 bronze/silver/gold market-data lake, with canonical 15m BTC/BNB input, deterministic 1h/4h/1d/1w/1mo UTC aggregation, manifests, lineage, revision handling, and fail-closed publication gates.
-- [ ] Populate the S3 lake with checksum-verified BTCUSDT, ETHUSDT, and BNBUSDT 15m history from 2021-01-01 through the latest completed candle, publish Parquet partitions and derived timeframes, and verify a pinned manifest from a cloud reader.
+- [x] Populate the S3 lake with checksum-verified BTCUSDT, ETHUSDT, and BNBUSDT 15m history from 2021-01-01 through the latest completed candle, publish Parquet partitions and derived timeframes, and verify pinned manifests from a cloud reader.
   - [x] BTCUSDT 2026-first acceptance slice published and independently read back from S3; see `DATA_LAKE_BTC_2026_ACCEPTANCE.md`.
   - [x] Deploy and observe an idempotent 13-minute BTC closed-candle updater on the Ningxia CPU host; consecutive publish/no-change behavior verified.
   - [x] Extend BTCUSDT back to 2021, preserve seven checksum-valid source gaps explicitly, and verify the merged snapshot plus the 13-minute updater; see `DATA_LAKE_BTC_2021_2026_ACCEPTANCE.md`.
-  - [ ] Publish ETHUSDT and BNBUSDT before closing the parent item.
+  - [x] Publish ETHUSDT and BNBUSDT from their first verifiable Binance candles through current with full volume schema, independent read-back, and 13-minute updaters; see `DATA_LAKE_ETH_BNB_LISTING_CURRENT_ACCEPTANCE.md`.
 - [ ] Implement ADR-005 venue-preserving multi-exchange data: schema-v2 price and volume semantics, independent Binance/OKX/Bybit manifests, listing-aware quality gates, and pinned cross-venue Gold metrics.
   - [x] Publish and test the schema-v2 candle contract with event/availability time, base volume, quote volume, trade count, optional taker-side volumes, closed/imputed flags, nullable-field propagation, and a non-destructive v1 boundary. Non-Binance adapters remain pending.
   - [x] Publish and independently verify Binance BTCUSDT schema-v2 price and full volume history from 2021 through current, with a separate 13-minute updater and unchanged v1 pointer; see `DATA_LAKE_BTC_V2_ACCEPTANCE.md`.
