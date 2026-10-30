@@ -1,0 +1,7 @@
+services:
+  api:
+    image: ${EMERGENZIX_API_IMAGE:?set EMERGENZIX_API_IMAGE to an immutable tag}
+    build: null
+
+  watch:
+    image: ${EMERGENZIX_API_IMAGE:?set EMERGENZIX_API_IMAGE to an immutable tag}
