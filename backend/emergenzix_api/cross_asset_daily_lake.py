@@ -395,6 +395,60 @@ def comparison_bundle(report: Mapping[str, Any]) -> dict[str, Any]:
     return {"snapshot_id": report_id, "manifest_key": key, "manifest": report, "objects": {key: payload}}
 
 
+def build_catalog_snapshot(
+    *, catalog_id: str, instruments: Sequence[Instrument],
+    provider_manifests: Sequence[Mapping[str, Any]], code_version: str,
+) -> dict[str, Any]:
+    by_instrument: dict[str, list[Mapping[str, Any]]] = {}
+    for manifest in provider_manifests:
+        if manifest.get("code_version") != code_version:
+            continue
+        by_instrument.setdefault(str(manifest["instrument_id"]), []).append(manifest)
+    entries = []
+    for instrument in instruments:
+        sources = sorted(by_instrument.get(instrument.instrument_id, []), key=lambda item: item["provider"])
+        entries.append({
+            "instrument_id": instrument.instrument_id,
+            "asset_class": instrument.asset_class,
+            "instrument_type": instrument.instrument_type,
+            "price_currency": instrument.price_currency,
+            "status": "covered" if sources else "uncovered",
+            "sources": [
+                {
+                    "provider": source["provider"],
+                    "snapshot_id": source["snapshot_id"],
+                    "rows": source["quality"]["rows"],
+                    "first_at": source["first_at"],
+                    "last_at": source["last_at"],
+                }
+                for source in sources
+            ],
+        })
+    covered = sum(item["status"] == "covered" for item in entries)
+    manifest = {
+        "schema_version": "cross-asset-catalog-snapshot-v1",
+        "catalog_id": catalog_id,
+        "research_only": True,
+        "promotion_permission": "none",
+        "cross_provider_imputation": False,
+        "code_version": code_version,
+        "instrument_count": len(entries),
+        "covered_instruments": covered,
+        "uncovered_instruments": len(entries) - covered,
+        "entries": entries,
+    }
+    canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+    snapshot_id = hashlib.sha256(canonical).hexdigest()
+    manifest = {**manifest, "snapshot_id": snapshot_id}
+    key = f"{ROOT_PREFIX}/catalogs/catalog={catalog_id}/snapshot={snapshot_id}/manifest.json"
+    return {
+        "snapshot_id": snapshot_id,
+        "manifest_key": key,
+        "manifest": manifest,
+        "objects": {key: json.dumps(manifest, sort_keys=True, indent=2).encode()},
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the five-instrument daily research lake pilot")
     parser.add_argument("--start", type=date.fromisoformat, default=DEFAULT_START)
@@ -410,6 +464,10 @@ def main() -> int:
         "--catalog", type=Path,
         help="Versioned Yahoo instrument catalog; omit for the five-instrument pilot",
     )
+    parser.add_argument(
+        "--finalize-only", action="store_true",
+        help="Build the aggregate catalog snapshot from an existing --output-dir",
+    )
     args = parser.parse_args()
     if args.end < args.start:
         parser.error("--end must not precede --start")
@@ -422,6 +480,28 @@ def main() -> int:
     yahoo_instruments = INSTRUMENTS
     if args.catalog is not None:
         catalog_id, yahoo_instruments = load_catalog(args.catalog)
+    if args.finalize_only:
+        if args.catalog is None or args.output_dir is None:
+            parser.error("--finalize-only requires --catalog and --output-dir")
+        manifests = [
+            json.loads(path.read_text(encoding="utf-8"))
+            for path in args.output_dir.glob("market-data/v3/manifests/snapshot=*/manifest.json")
+        ]
+        bundle = build_catalog_snapshot(
+            catalog_id=catalog_id, instruments=yahoo_instruments,
+            provider_manifests=manifests, code_version=args.code_version,
+        )
+        export_bundle(root=args.output_dir, bundle=bundle)
+        if args.bucket:
+            publish_bundle(s3_client=s3, bucket=args.bucket, bundle=bundle)
+        print(json.dumps({
+            "catalog_id": catalog_id,
+            "snapshot_id": bundle["snapshot_id"],
+            "manifest_key": bundle["manifest_key"],
+            "covered_instruments": bundle["manifest"]["covered_instruments"],
+            "uncovered_instruments": bundle["manifest"]["uncovered_instruments"],
+        }, indent=2))
+        return 0 if bundle["manifest"]["uncovered_instruments"] == 0 else 1
     results = []
     yahoo_data: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     for instrument in yahoo_instruments:

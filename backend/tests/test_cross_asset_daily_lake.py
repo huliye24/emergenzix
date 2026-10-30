@@ -13,6 +13,7 @@ from emergenzix_api.cross_asset_daily_lake import (
     parse_dukascopy_json,
     load_catalog,
     DEFAULT_CATALOG,
+    build_catalog_snapshot,
     publish_bundle,
     validate_daily_bars,
 )
@@ -137,3 +138,18 @@ def test_history_coverage_gate_rejects_short_vendor_response():
             start=date(2021, 1, 1), end=date(2026, 1, 1), code_version="test",
             minimum_rows=900,
         )
+
+
+def test_catalog_snapshot_fails_closed_on_uncovered_instrument():
+    catalog_id, instruments = load_catalog(DEFAULT_CATALOG)
+    sample = build_provider_bundle(
+        provider="example", instrument=instruments[0], raw=b"{}", bars=_bars(),
+        start=date(2026, 1, 1), end=date(2026, 1, 31), code_version="abc",
+    )["manifest"]
+    bundle = build_catalog_snapshot(
+        catalog_id=catalog_id, instruments=instruments,
+        provider_manifests=[sample], code_version="abc",
+    )
+    assert bundle["manifest"]["covered_instruments"] == 1
+    assert bundle["manifest"]["uncovered_instruments"] == 99
+    assert bundle["manifest"]["cross_provider_imputation"] is False
