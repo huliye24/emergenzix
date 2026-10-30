@@ -271,6 +271,15 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS paper_operational_control (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    new_orders_paused INTEGER NOT NULL DEFAULT 0
+                        CHECK (new_orders_paused IN (0, 1)),
+                    reason TEXT NOT NULL DEFAULT '',
+                    revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_paper_order_events_order
                     ON paper_order_events(order_id, created_at, event_id);
 
@@ -499,4 +508,12 @@ class Database:
                     self.initial_paper_cash,
                     datetime.now(timezone.utc).isoformat(),
                 ),
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO paper_operational_control
+                    (id, new_orders_paused, reason, revision, updated_at)
+                VALUES (1, 0, '', 0, ?)
+                """,
+                (datetime.now(timezone.utc).isoformat(),),
             )
