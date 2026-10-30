@@ -8,6 +8,9 @@ from emergenzix_api.cross_asset_daily_lake import (
     INSTRUMENTS,
     build_provider_bundle,
     export_bundle,
+    compare_provider_returns,
+    comparison_bundle,
+    parse_dukascopy_json,
     publish_bundle,
     validate_daily_bars,
 )
@@ -87,3 +90,27 @@ def test_export_preserves_exact_s3_object_keys(tmp_path):
     export_bundle(root=tmp_path, bundle=bundle)
     for key, payload in bundle["objects"].items():
         assert tmp_path.joinpath(*key.split("/")).read_bytes() == payload
+
+
+def test_parse_dukascopy_and_compare_without_merging():
+    raw = json.dumps([
+        {"timestamp": 1767312000000, "open": 100, "high": 102, "low": 99, "close": 101, "volume": 10},
+        {"timestamp": 1767398400000, "open": 101, "high": 104, "low": 100, "close": 103, "volume": 12},
+        {"timestamp": 1767484800000, "open": 103, "high": 104, "low": 101, "close": 102, "volume": 11},
+    ]).encode()
+    secondary = parse_dukascopy_json(raw)
+    primary = _bars()
+    primary.append({**_bars()[-1], "timestamp": datetime(2026, 1, 4, tzinfo=UTC),
+                    "available_at": datetime(2026, 1, 5, tzinfo=UTC), "close": 102.0})
+    left_bundle = {"snapshot_id": "a" * 64}
+    right_bundle = {"snapshot_id": "b" * 64}
+    report = compare_provider_returns(
+        instrument_id="GC", primary_provider="one", primary_bundle=left_bundle,
+        primary_bars=primary, secondary_provider="two", secondary_bundle=right_bundle,
+        secondary_bars=secondary,
+    )
+    assert report["merge_or_imputation_performed"] is False
+    assert report["common_return_days"] == 2
+    assert -1 <= report["pearson_return_correlation"] <= 1
+    bundled = comparison_bundle(report)
+    assert "/gold/comparisons/instrument=gc/" in bundled["manifest_key"]

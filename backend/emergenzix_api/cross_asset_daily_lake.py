@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import io
 import json
+import math
 from pathlib import Path
 import urllib.parse
 import urllib.request
@@ -39,6 +40,12 @@ INSTRUMENTS = (
     Instrument("GC", "commodity", "GC=F", "USD", "continuous_futures_proxy"),
     Instrument("CL", "commodity", "CL=F", "USD", "continuous_futures_proxy"),
     Instrument("EURUSD", "fx", "EURUSD=X", "USD", "spot_fx"),
+)
+
+DUKASCOPY_INSTRUMENTS = (
+    Instrument("EURUSD", "fx", "eurusd", "USD", "spot_fx_bid"),
+    Instrument("GC", "commodity", "xauusd", "USD", "spot_gold_bid"),
+    Instrument("CL", "commodity", "lightcmdusd", "USD", "commodity_cfd_bid"),
 )
 
 
@@ -103,6 +110,34 @@ def fetch_yahoo_chart(
             "is_imputed": False,
         })
     return raw, bars
+
+
+def parse_dukascopy_json(raw: bytes) -> list[dict[str, Any]]:
+    """Normalize dukascopy-node d1 JSON; the raw bytes remain Bronze evidence."""
+    try:
+        records = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ProviderError("dukascopy JSON was not valid") from exc
+    if not isinstance(records, list):
+        raise ProviderError("dukascopy JSON root must be an array")
+    bars = []
+    try:
+        for item in records:
+            stamp = datetime.fromtimestamp(int(item["timestamp"]) / 1000, tz=UTC)
+            bars.append({
+                "timestamp": stamp,
+                "available_at": stamp + timedelta(days=1),
+                "open": float(item["open"]),
+                "high": float(item["high"]),
+                "low": float(item["low"]),
+                "close": float(item["close"]),
+                "adjusted_close": None,
+                "volume": float(item["volume"]) if item.get("volume") is not None else None,
+                "is_imputed": False,
+            })
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise ProviderError("dukascopy record schema was not recognized") from exc
+    return bars
 
 
 def validate_daily_bars(bars: Sequence[Mapping[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -254,12 +289,79 @@ def export_bundle(*, root: Path, bundle: Mapping[str, Any]) -> None:
         target.write_bytes(payload)
 
 
+def compare_provider_returns(
+    *, instrument_id: str, primary_provider: str, primary_bundle: Mapping[str, Any],
+    primary_bars: Sequence[Mapping[str, Any]], secondary_provider: str,
+    secondary_bundle: Mapping[str, Any], secondary_bars: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Compare same-date close returns without treating either source as a repair."""
+    def returns(bars: Sequence[Mapping[str, Any]]) -> dict[str, float]:
+        ordered = sorted(bars, key=lambda item: item["timestamp"])
+        return {
+            current["timestamp"].date().isoformat(): math.log(current["close"] / previous["close"])
+            for previous, current in zip(ordered, ordered[1:])
+            if previous["close"] > 0 and current["close"] > 0
+        }
+
+    left = returns(primary_bars)
+    right = returns(secondary_bars)
+    common = sorted(set(left) & set(right))
+    if len(common) < 2:
+        raise ValueError("provider comparison requires at least two common returns")
+    x = [left[day] for day in common]
+    y = [right[day] for day in common]
+    x_mean = sum(x) / len(x)
+    y_mean = sum(y) / len(y)
+    numerator = sum((a - x_mean) * (b - y_mean) for a, b in zip(x, y))
+    denominator = math.sqrt(
+        sum((a - x_mean) ** 2 for a in x) * sum((b - y_mean) ** 2 for b in y)
+    )
+    differences = sorted(abs(a - b) for a, b in zip(x, y))
+    midpoint = len(differences) // 2
+    median_difference = (
+        differences[midpoint] if len(differences) % 2
+        else (differences[midpoint - 1] + differences[midpoint]) / 2
+    )
+    return {
+        "schema_version": "cross-provider-return-comparison-v1",
+        "instrument_id": instrument_id,
+        "research_only": True,
+        "merge_or_imputation_performed": False,
+        "primary": {"provider": primary_provider, "snapshot_id": primary_bundle["snapshot_id"]},
+        "secondary": {"provider": secondary_provider, "snapshot_id": secondary_bundle["snapshot_id"]},
+        "common_return_days": len(common),
+        "first_common_day": common[0],
+        "last_common_day": common[-1],
+        "pearson_return_correlation": numerator / denominator if denominator else None,
+        "direction_agreement": sum((a >= 0) == (b >= 0) for a, b in zip(x, y)) / len(common),
+        "median_absolute_log_return_difference": median_difference,
+        "primary_return_coverage": len(common) / len(left),
+        "secondary_return_coverage": len(common) / len(right),
+        "interpretation_limit": "instruments may differ by venue, spot/CFD/futures semantics, roll, and close construction",
+    }
+
+
+def comparison_bundle(report: Mapping[str, Any]) -> dict[str, Any]:
+    canonical = json.dumps(report, sort_keys=True, separators=(",", ":")).encode()
+    report_id = hashlib.sha256(canonical).hexdigest()
+    key = (
+        f"{ROOT_PREFIX}/gold/comparisons/instrument={report['instrument_id'].lower()}/"
+        f"report-{report_id}.json"
+    )
+    payload = json.dumps({**report, "report_id": report_id}, sort_keys=True, indent=2).encode()
+    return {"snapshot_id": report_id, "manifest_key": key, "manifest": report, "objects": {key: payload}}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the five-instrument daily research lake pilot")
     parser.add_argument("--start", type=date.fromisoformat, default=DEFAULT_START)
     parser.add_argument("--end", type=date.fromisoformat, default=DEFAULT_END)
     parser.add_argument("--bucket")
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument(
+        "--dukascopy-dir", type=Path,
+        help="Directory containing pinned dukascopy-node d1 JSON exports",
+    )
     parser.add_argument("--code-version", default="working-tree")
     args = parser.parse_args()
     if args.end < args.start:
@@ -269,6 +371,7 @@ def main() -> int:
         import boto3
         s3 = boto3.client("s3")
     results = []
+    yahoo_data: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     for instrument in INSTRUMENTS:
         try:
             raw, bars = fetch_yahoo_chart(instrument, start=args.start, end=args.end)
@@ -276,6 +379,7 @@ def main() -> int:
                 provider="yahoo_chart", instrument=instrument, raw=raw, bars=bars,
                 start=args.start, end=args.end, code_version=args.code_version,
             )
+            yahoo_data[instrument.instrument_id] = (bundle, bars)
             if s3 is not None:
                 publish_bundle(s3_client=s3, bucket=args.bucket, bundle=bundle)
             if args.output_dir is not None:
@@ -297,6 +401,75 @@ def main() -> int:
                 "status": "failed",
                 "error_type": type(exc).__name__,
             })
+    if args.dukascopy_dir is not None:
+        for instrument in DUKASCOPY_INSTRUMENTS:
+            matches = sorted(args.dukascopy_dir.glob(f"{instrument.vendor_symbol}-d1-bid-*.json"))
+            if len(matches) != 1:
+                results.append({
+                    "instrument_id": instrument.instrument_id,
+                    "provider": "dukascopy",
+                    "status": "failed",
+                    "error_type": "SourceFileCountError",
+                })
+                continue
+            try:
+                raw = matches[0].read_bytes()
+                bars = parse_dukascopy_json(raw)
+                bundle = build_provider_bundle(
+                    provider="dukascopy_bid", instrument=instrument, raw=raw, bars=bars,
+                    start=args.start, end=args.end, code_version=args.code_version,
+                )
+                if s3 is not None:
+                    publish_bundle(s3_client=s3, bucket=args.bucket, bundle=bundle)
+                if args.output_dir is not None:
+                    export_bundle(root=args.output_dir, bundle=bundle)
+                results.append({
+                    "instrument_id": instrument.instrument_id,
+                    "provider": "dukascopy_bid",
+                    "status": (
+                        "published" if s3 is not None
+                        else "exported" if args.output_dir is not None
+                        else "validated"
+                    ),
+                    "rows": bundle["manifest"]["quality"]["rows"],
+                    "snapshot_id": bundle["snapshot_id"],
+                    "manifest_key": bundle["manifest_key"],
+                })
+                if instrument.instrument_id in ("GC", "CL") and instrument.instrument_id in yahoo_data:
+                    yahoo_bundle, yahoo_bars = yahoo_data[instrument.instrument_id]
+                    report = compare_provider_returns(
+                        instrument_id=instrument.instrument_id,
+                        primary_provider="yahoo_chart",
+                        primary_bundle=yahoo_bundle,
+                        primary_bars=yahoo_bars,
+                        secondary_provider="dukascopy_bid",
+                        secondary_bundle=bundle,
+                        secondary_bars=bars,
+                    )
+                    report_bundle = comparison_bundle(report)
+                    if s3 is not None:
+                        publish_bundle(s3_client=s3, bucket=args.bucket, bundle=report_bundle)
+                    if args.output_dir is not None:
+                        export_bundle(root=args.output_dir, bundle=report_bundle)
+                    results.append({
+                        "instrument_id": instrument.instrument_id,
+                        "provider": "cross_provider_comparison",
+                        "status": "published" if s3 is not None else "exported",
+                        "report_id": report_bundle["snapshot_id"],
+                        "report_key": report_bundle["manifest_key"],
+                        "metrics": {
+                            "common_return_days": report["common_return_days"],
+                            "pearson_return_correlation": report["pearson_return_correlation"],
+                            "direction_agreement": report["direction_agreement"],
+                        },
+                    })
+            except (ProviderError, ValueError) as exc:
+                results.append({
+                    "instrument_id": instrument.instrument_id,
+                    "provider": "dukascopy_bid",
+                    "status": "failed",
+                    "error_type": type(exc).__name__,
+                })
     print(json.dumps({
         "schema_version": SCHEMA_VERSION,
         "provider": "yahoo_chart",
