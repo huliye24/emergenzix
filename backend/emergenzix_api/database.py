@@ -273,11 +273,22 @@ class Database:
 
                 CREATE TABLE IF NOT EXISTS paper_operational_control (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
-                    new_orders_paused INTEGER NOT NULL DEFAULT 0
+                    new_orders_paused INTEGER NOT NULL DEFAULT 1
                         CHECK (new_orders_paused IN (0, 1)),
                     reason TEXT NOT NULL DEFAULT '',
                     revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
                     updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS paper_v2_order_intents (
+                    order_id TEXT PRIMARY KEY
+                        REFERENCES paper_order_snapshots(order_id),
+                    idempotency_key TEXT NOT NULL UNIQUE,
+                    request_sha256 TEXT NOT NULL CHECK (length(request_sha256) = 64),
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
+                    requested_quantity TEXT NOT NULL,
+                    created_at TEXT NOT NULL
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_paper_order_events_order
@@ -513,7 +524,7 @@ class Database:
                 """
                 INSERT OR IGNORE INTO paper_operational_control
                     (id, new_orders_paused, reason, revision, updated_at)
-                VALUES (1, 0, '', 0, ?)
+                VALUES (1, 1, 'paper_v2_not_activated', 0, ?)
                 """,
                 (datetime.now(timezone.utc).isoformat(),),
             )
