@@ -247,6 +247,45 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                -- Durable order-operation state is separate from the legacy
+                -- immediate-fill paper_orders table until the new lifecycle
+                -- is integrated behind an explicit API migration.
+                CREATE TABLE IF NOT EXISTS paper_order_snapshots (
+                    order_id TEXT PRIMARY KEY,
+                    snapshot_json TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK (state IN (
+                        'CREATED', 'SUBMITTED', 'ACKNOWLEDGED',
+                        'PARTIALLY_FILLED', 'CANCEL_PENDING', 'FILLED',
+                        'CANCELED', 'REJECTED', 'EXPIRED', 'UNKNOWN'
+                    )),
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS paper_order_events (
+                    event_id TEXT PRIMARY KEY,
+                    order_id TEXT NOT NULL
+                        REFERENCES paper_order_snapshots(order_id),
+                    event_type TEXT NOT NULL,
+                    event_json TEXT NOT NULL,
+                    resulting_state TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_paper_order_events_order
+                    ON paper_order_events(order_id, created_at, event_id);
+
+                CREATE TRIGGER IF NOT EXISTS paper_order_events_no_update
+                BEFORE UPDATE ON paper_order_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'paper order events are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS paper_order_events_no_delete
+                BEFORE DELETE ON paper_order_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'paper order events are immutable');
+                END;
+
                 CREATE INDEX IF NOT EXISTS idx_strategy_versions_strategy_version
                     ON strategy_versions(strategy_id, version DESC);
                 CREATE INDEX IF NOT EXISTS idx_market_datasets_created_at
