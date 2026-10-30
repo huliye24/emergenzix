@@ -46,6 +46,11 @@ def fetch_binance_public_tail(*, symbol: str, interval: str, limit: int = 1000) 
             "timestamp": datetime.fromtimestamp(int(row[0]) / 1000, tz=timezone.utc).isoformat(),
             "open": float(row[1]), "high": float(row[2]), "low": float(row[3]),
             "close": float(row[4]), "volume": float(row[5]),
+            "base_volume": float(row[5]),
+            "quote_volume": float(row[7]) if len(row) > 7 else None,
+            "trade_count": int(row[8]) if len(row) > 8 else None,
+            "taker_buy_base_volume": float(row[9]) if len(row) > 9 else None,
+            "taker_buy_quote_volume": float(row[10]) if len(row) > 10 else None,
         })
     if len(bars) < 5:
         raise MarketHistoryUnavailable("Binance public tail returned fewer than five candles")

@@ -86,7 +86,8 @@ def normalize_candle_v2(
 
 
 def aggregate_candles_v2(
-    candles: Sequence[Mapping[str, Any]], *, target_interval: timedelta
+    candles: Sequence[Mapping[str, Any]], *, target_interval: timedelta,
+    expected_start: datetime | None = None,
 ) -> dict[str, Any]:
     """Aggregate a complete contiguous sequence; nullable metrics stay unknown."""
     if (
@@ -101,7 +102,9 @@ def aggregate_candles_v2(
     if len(normalized) != expected:
         raise ValueError("aggregation input is incomplete")
     start = normalized[0]["timestamp"]
-    if start.timestamp() % int(target_interval.total_seconds()):
+    if expected_start is not None and start != _utc(expected_start, field="expected_start"):
+        raise ValueError("aggregation input is off the target boundary")
+    if expected_start is None and start.timestamp() % int(target_interval.total_seconds()):
         raise ValueError("aggregation input is off the target boundary")
     for left, right in zip(normalized, normalized[1:]):
         if right["timestamp"] - left["timestamp"] != timedelta(minutes=15):
