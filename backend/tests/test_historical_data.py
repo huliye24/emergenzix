@@ -10,6 +10,7 @@ import pytest
 
 from emergenzix_api.historical_data import (
     HistoricalArchiveUnavailable,
+    MAX_BARS_BY_INTERVAL,
     _fetch_checked_archive,
     _parse_kline_archive,
     fetch_binance_spot_4h_archive,
@@ -106,3 +107,8 @@ def test_eth_is_in_the_archive_allowlist_but_unknown_interval_fails_first():
             start_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
             end_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
         )
+
+
+def test_intraday_archive_limits_match_storage_tier() -> None:
+    assert MAX_BARS_BY_INTERVAL["15m"] == 500_000
+    assert MAX_BARS_BY_INTERVAL["4h"] == 50_000

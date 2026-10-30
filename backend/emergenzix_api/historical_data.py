@@ -17,6 +17,8 @@ import httpx
 BASE_URL = "https://data.binance.vision/data/spot"
 MAX_RANGE_DAYS = 3660
 MAX_BARS = 50_000
+MAX_BARS_BY_INTERVAL = {"15m": 500_000, "1h": 150_000, "4h": MAX_BARS,
+                        "1d": 20_000, "1w": 5_000, "1mo": 2_000}
 SUPPORTED_SPOT_SYMBOLS = frozenset({"BTCUSDT", "ETHUSDT", "BNBUSDT"})
 SUPPORTED_KLINE_INTERVALS = frozenset({"15m", "1h", "4h", "1d", "1w", "1mo"})
 
@@ -238,8 +240,11 @@ def fetch_binance_spot_kline_archive(
         raise HistoricalArchiveUnavailable(
             f"The requested range produced fewer than five verified {normalized_symbol} {interval} candles"
         )
-    if len(bars) > MAX_BARS:
-        raise ValueError(f"historical import exceeds the {MAX_BARS}-bar safety limit")
+    interval_limit = MAX_BARS_BY_INTERVAL[interval]
+    if len(bars) > interval_limit:
+        raise ValueError(
+            f"historical import exceeds the {interval_limit}-bar {interval} safety limit"
+        )
     return bars
 
 
