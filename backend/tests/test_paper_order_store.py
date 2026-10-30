@@ -5,7 +5,7 @@ import pytest
 
 from emergenzix_api.database import Database
 from emergenzix_api.paper_order_state import PaperOrderEvent
-from emergenzix_api.paper_order_store import PaperOrderStore
+from emergenzix_api.paper_order_store import PaperOrderRecoveryError, PaperOrderStore
 
 
 def fill(event_id: str, quantity: str) -> PaperOrderEvent:
@@ -75,3 +75,29 @@ def test_order_events_cannot_be_updated_or_deleted(tmp_path):
     with pytest.raises(sqlite3.IntegrityError, match="immutable"):
         with database.connection() as connection:
             connection.execute("DELETE FROM paper_order_events WHERE event_id = 'submit'")
+
+
+def test_restart_replays_events_and_verifies_saved_snapshot(tmp_path):
+    path = tmp_path / "paper.db"
+    store = PaperOrderStore(Database(str(path)))
+    store.create("order-1", Decimal("10"))
+    store.apply("order-1", PaperOrderEvent("submit", "SUBMIT"))
+    expected = store.apply("order-1", fill("fill-1", "4"))
+    restarted = PaperOrderStore(Database(str(path)))
+    assert restarted.replay_and_verify("order-1") == expected
+
+
+def test_restart_fails_closed_when_snapshot_diverges_from_event_log(tmp_path):
+    path = tmp_path / "paper.db"
+    database = Database(str(path))
+    store = PaperOrderStore(database)
+    store.create("order-1", Decimal("10"))
+    store.apply("order-1", PaperOrderEvent("submit", "SUBMIT"))
+    with database.connection() as connection:
+        connection.execute(
+            "UPDATE paper_order_snapshots SET snapshot_json = replace(" 
+            "snapshot_json, '\"state\":\"SUBMITTED\"', '\"state\":\"UNKNOWN\"') "
+            "WHERE order_id = 'order-1'"
+        )
+    with pytest.raises(PaperOrderRecoveryError, match="diverges"):
+        PaperOrderStore(Database(str(path))).replay_and_verify("order-1")

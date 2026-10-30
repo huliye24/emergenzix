@@ -20,6 +20,10 @@ class PaperOrderNotFound(LookupError):
     pass
 
 
+class PaperOrderRecoveryError(RuntimeError):
+    pass
+
+
 class PaperOrderStore:
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -93,6 +97,35 @@ class PaperOrderStore:
                 (self._encode_snapshot(updated), updated.state, now, order_id),
             )
         return updated
+
+    def replay_and_verify(self, order_id: str) -> PaperOrderSnapshot:
+        """Rebuild from immutable events and reject a divergent saved snapshot."""
+
+        saved = self.get(order_id)
+        replayed = new_paper_order(saved.order_id, saved.requested_quantity)
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                "SELECT event_json FROM paper_order_events WHERE order_id = ? "
+                "ORDER BY rowid",
+                (order_id,),
+            ).fetchall()
+        for row in rows:
+            payload = json.loads(row["event_json"])
+            replayed = apply_order_event(
+                replayed,
+                PaperOrderEvent(
+                    event_id=payload["event_id"],
+                    event_type=payload["event_type"],
+                    fill_quantity=Decimal(payload["fill_quantity"]),
+                    fill_price=Decimal(payload["fill_price"]),
+                    fee=Decimal(payload["fee"]),
+                ),
+            )
+        if replayed != saved:
+            raise PaperOrderRecoveryError(
+                f"saved snapshot diverges from immutable events for order {order_id}"
+            )
+        return replayed
 
     @staticmethod
     def _encode_snapshot(snapshot: PaperOrderSnapshot) -> str:
