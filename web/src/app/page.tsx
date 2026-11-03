@@ -731,12 +731,12 @@ export default function DashboardPage() {
       {activeView === "market" ? (
       <section className="market-observer" aria-label="市场实时观测与信号">
         <div className="market-command-bar">
-          <label>
-            <span>交易品种</span>
-            <select value={marketSymbol} onChange={(event) => setMarketSymbol(event.target.value)}>
-              <option value="BTCUSDT">BTC / USDT</option>
-              <option value="ETHUSDT">ETH / USDT</option>
-              <option value="BNBUSDT">BNB / USDT</option>
+          <label className="market-symbol-control">
+            <span aria-hidden="true">◉</span>
+            <select aria-label="交易品种" value={marketSymbol} onChange={(event) => setMarketSymbol(event.target.value)}>
+              <option value="BTCUSDT">BTCUSDT</option>
+              <option value="ETHUSDT">ETHUSDT</option>
+              <option value="BNBUSDT">BNBUSDT</option>
             </select>
           </label>
           <fieldset>
@@ -745,12 +745,15 @@ export default function DashboardPage() {
               <button key={timeframe} type="button" className={marketTimeframe === timeframe ? "is-active" : ""} onClick={() => setMarketTimeframe(timeframe)}>{timeframe}</button>
             ))}
           </fieldset>
+          <div className="market-indicator-button" title="当前指标：SMA 20 / SMA 50 / 成交量" aria-label="当前指标">
+            <span aria-hidden="true">⌁</span> 指标
+          </div>
           <div className="market-poll-status">
             <span className={marketSnapshot?.freshness.stale ? "signal-dot stale" : "signal-dot"} />
-            <span>{marketSnapshot?.freshness.stale ? "数据已过期" : "30 秒轮询"}</span>
+            <span>{marketSnapshot?.freshness.stale ? "STALE" : "LIVE"}</span>
           </div>
-          <button className="button button-quiet" type="button" onClick={() => void loadMarketSnapshot()} disabled={marketLoading}>
-            {marketLoading ? "更新中…" : "立即更新"}
+          <button className="market-refresh-button" type="button" title="刷新行情" aria-label="刷新行情" onClick={() => void loadMarketSnapshot()} disabled={marketLoading}>
+            {marketLoading ? "…" : "↻"}
           </button>
         </div>
 
@@ -758,14 +761,17 @@ export default function DashboardPage() {
         {marketSnapshot ? (
           <div className="market-observer-grid">
             <article className="market-chart-card">
-              <div className="market-price-row">
-                <div>
-                  <span>{marketSnapshot.symbol} · BINANCE SPOT</span>
-                  <strong>{new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(marketSnapshot.price.latest)}</strong>
+              <div className="market-instrument-row">
+                <div className="market-instrument-name">
+                  <strong>{marketSnapshot.symbol}</strong>
+                  <span>{marketSnapshot.timeframe} · BINANCE</span>
                 </div>
+                <div className="market-live-quote">
+                  <strong>{new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(marketSnapshot.price.latest)}</strong>
                 <span className={marketSnapshot.price.change_24_bars_pct >= 0 ? "positive" : "negative"}>
-                  {formatPercent(marketSnapshot.price.change_24_bars_pct)} / 24 bars
+                    {formatPercent(marketSnapshot.price.change_24_bars_pct)}
                 </span>
+                </div>
               </div>
               <MarketCandlestickChart
                 candles={marketSnapshot.candles}
@@ -786,37 +792,26 @@ export default function DashboardPage() {
 
             <aside className="market-decision-rail">
               <article className="decision-card">
-                <span className="decision-step">01 · MARKET STATE</span>
+                <span className="decision-step">市场</span>
                 <strong>{marketSnapshot.market_state.regime.replaceAll("_", " ")}</strong>
-                <small>{marketSnapshot.observers.nemt.phase.replaceAll("_", " ")} · DCI {marketSnapshot.observers.nemt.dci.toFixed(2)}</small>
+                <small>DCI {marketSnapshot.observers.nemt.dci.toFixed(2)}</small>
               </article>
               <article className="decision-card">
-                <span className="decision-step">02 · BASELINE</span>
+                <span className="decision-step">模型</span>
                 <strong className={`direction-${marketSnapshot.prediction.direction.toLowerCase()}`}>{marketSnapshot.prediction.model_consensus}</strong>
-                <small>{marketSnapshot.prediction.verified_model_count} 个已验证模型 · 非校准概率</small>
+                <small>{marketSnapshot.prediction.verified_model_count} VERIFIED</small>
               </article>
               <article className="decision-card decision-card-signal">
-                <span className="decision-step">03 · RESEARCH SIGNAL</span>
+                <span className="decision-step">信号</span>
                 <strong>{marketSnapshot.signal.research_signal.replaceAll("_", " ")}</strong>
-                <small>{marketSnapshot.signal.strategy_candidate ?? "暂无策略候选"}</small>
+                <small>{marketSnapshot.signal.strategy_candidate ?? "—"}</small>
               </article>
               <article className="decision-card decision-card-safe">
-                <span className="decision-step">04 · EXECUTION</span>
-                <strong>{marketSnapshot.safety.execution_decision.replaceAll("_", " ")}</strong>
-                <small>PAPER / LIVE 权限均关闭</small>
+                <span className="decision-step">执行</span>
+                <strong>LOCKED</strong>
+                <small>{marketSnapshot.safety.execution_decision.replaceAll("_", " ")}</small>
               </article>
             </aside>
-
-            <div className="market-model-strip">
-              {marketSnapshot.models.map((model) => (
-                <div key={model.name}><span>{model.name}</span><strong>{model.status.replaceAll("_", " ")}</strong></div>
-              ))}
-              <div><span>策略候选</span><strong>{marketSnapshot.signal.strategy_candidate ?? "等待有效状态"}</strong></div>
-            </div>
-            <div className="market-safety-banner">
-              <strong>研究信号 ≠ 交易许可</strong>
-              <span>当前页面只做观测与候选策略选择。数据过期、模型制品缺失或风险检查未完成时一律 NO ACTION。</span>
-            </div>
           </div>
         ) : <div className="market-loading-state">{marketLoading ? "正在读取公开行情并计算市场状态…" : "等待行情快照"}</div>}
       </section>
