@@ -289,6 +289,9 @@ a { color: inherit; text-decoration: none; }
 .decision-card strong { overflow: hidden; font-size: 20px; letter-spacing: -.035em; text-overflow: ellipsis; white-space: nowrap; }
 .decision-card small { color: #788697; font-size: 10px; line-height: 1.5; }
 .decision-card-signal { background: linear-gradient(145deg, rgba(46,91,65,.21), #101720); }
+.decision-card-ai { background: linear-gradient(145deg, rgba(142,105,230,.13), #101720); }
+.decision-card-ai strong { color: #c7b5ff; }
+.decision-card-ai small { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .decision-card-safe strong { color: var(--orange); }
 .direction-up { color: var(--green); }.direction-down { color: var(--red); }.direction-neutral { color: #aeb8c5; }
 .market-loading-state { min-height: 420px; display: grid; place-items: center; border: 1px dashed #2b3746; border-radius: 14px; color: #7f8d9d; }

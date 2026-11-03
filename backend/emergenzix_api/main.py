@@ -108,6 +108,9 @@ def create_app(
         ttl_seconds=settings.market_data_cache_ttl_seconds,
         max_entries=settings.market_data_cache_max_entries,
     )
+    # DeepSeek is evaluated at most once per completed-candle identity within
+    # this bounded window. Public market polling remains independent.
+    app.state.market_ai_cache = TTLCache(ttl_seconds=300, max_entries=256)
     app.state.max_order_notional = (
         max_order_notional
         if max_order_notional is not None
@@ -155,7 +158,9 @@ def create_app(
     @app.get("/api/v1/market-intelligence")
     def market_intelligence(
         request: Request,
-        symbol: Literal["BTCUSDT", "ETHUSDT", "BNBUSDT"] = Query(default="BTCUSDT"),
+        symbol: Literal["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"] = Query(
+            default="BTCUSDT"
+        ),
         timeframe: Literal["15m", "1h", "4h"] = Query(default="1h"),
     ) -> dict[str, Any]:
         """Observe public candles and return advisory analysis without order permission."""
@@ -174,7 +179,12 @@ def create_app(
                 market_data,
                 model_signal_artifact_path=request.app.state.model_signal_artifact_path,
             )
-            snapshot = attach_deepseek_market_analysis(snapshot)
+            latest_completed_at = snapshot["freshness"]["latest_completed_at"]
+            ai_cache: TTLCache = request.app.state.market_ai_cache
+            snapshot = ai_cache.get_or_create(
+                ("deepseek", symbol, timeframe, latest_completed_at),
+                lambda: attach_deepseek_market_analysis(snapshot),
+            )
             try:
                 snapshot["notification"] = queue_market_ai_advisory(
                     request.app.state.notification_outbox_path, snapshot

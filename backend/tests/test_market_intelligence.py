@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from emergenzix_api.market_intelligence import build_market_intelligence
+from emergenzix_api.main import create_app
 
 
 def _payload(*, trend: float = 0.25) -> dict[str, object]:
@@ -93,3 +94,21 @@ def test_market_intelligence_endpoint_is_read_only(client, monkeypatch) -> None:
     assert body["symbol"] == "BTC/USDT"
     assert body["safety"]["execution_decision"] == "NO_ACTION"
     assert body["safety"]["live_order_permission"] is False
+
+
+def test_market_intelligence_schema_supports_four_trading_symbols(tmp_path) -> None:
+    app = create_app(
+        db_path=tmp_path / "market-symbols.db",
+        notification_db_path=tmp_path / "notifications.db",
+    )
+    operation = app.openapi()["paths"]["/api/v1/market-intelligence"]["get"]
+    symbol_parameter = next(
+        item for item in operation["parameters"] if item["name"] == "symbol"
+    )
+
+    assert symbol_parameter["schema"]["enum"] == [
+        "BTCUSDT",
+        "ETHUSDT",
+        "BNBUSDT",
+        "SOLUSDT",
+    ]

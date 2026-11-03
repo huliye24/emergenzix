@@ -236,6 +236,24 @@ type MarketIntelligence = {
     order_permission: false;
   };
   models: Array<{ name: string; family: string; status: string }>;
+  ai_analysis: {
+    status: "verified_advisory" | "unavailable";
+    provider?: "deepseek";
+    model?: string;
+    snapshot_completed_at?: string;
+    reason?: string;
+    analysis?: {
+      summary: string;
+      observations: string[];
+      risks: string[];
+      data_quality: string[];
+      limitations: string[];
+      recommended_research: string[];
+    };
+    advisory_only: true;
+    paper_order_permission: false;
+    live_order_permission: false;
+  };
   series: Array<{ timestamp: string; close: number }>;
   candles: MarketCandle[];
   safety: {
@@ -782,6 +800,7 @@ export default function DashboardPage() {
               <option value="BTCUSDT">BTCUSDT</option>
               <option value="ETHUSDT">ETHUSDT</option>
               <option value="BNBUSDT">BNBUSDT</option>
+              <option value="SOLUSDT">SOLUSDT</option>
             </select>
           </label>
           <fieldset>
@@ -845,6 +864,13 @@ export default function DashboardPage() {
                 <span className="decision-step">模型</span>
                 <strong className={`direction-${marketSnapshot.prediction.direction.toLowerCase()}`}>{marketSnapshot.prediction.model_consensus}</strong>
                 <small>{marketSnapshot.prediction.verified_model_count} VERIFIED</small>
+              </article>
+              <article className="decision-card decision-card-ai">
+                <span className="decision-step">AI</span>
+                <strong>{marketSnapshot.ai_analysis.status === "verified_advisory" ? "DEEPSEEK" : "OFFLINE"}</strong>
+                <small title={marketSnapshot.ai_analysis.analysis?.summary ?? marketSnapshot.ai_analysis.reason}>
+                  {marketSnapshot.ai_analysis.analysis?.summary ?? marketSnapshot.ai_analysis.reason ?? "—"}
+                </small>
               </article>
               <article className="decision-card decision-card-signal">
                 <span className="decision-step">信号</span>
