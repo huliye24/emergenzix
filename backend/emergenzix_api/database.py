@@ -639,7 +639,7 @@ class Database:
             # Built-in, immutable Turtle baselines are available to the
             # viewer UI without granting visitor sessions mutation rights.
             builtin_symbols = (
-                ("BTCUSDT", "ETHUSDT", "BNBUSDT")
+                ("BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT")
                 if self.seed_builtin_strategies
                 else ()
             )

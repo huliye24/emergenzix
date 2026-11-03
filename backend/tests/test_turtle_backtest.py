@@ -93,14 +93,15 @@ def test_builtin_turtle_candidates_are_opt_in_and_idempotent(tmp_path) -> None:
         ).fetchone()[0]
 
     assert [row["symbol"] for row in strategies] == [
-        "BNBUSDT", "BNBUSDT", "BTCUSDT", "BTCUSDT", "ETHUSDT", "ETHUSDT"
+        "BNBUSDT", "BNBUSDT", "BTCUSDT", "BTCUSDT",
+        "ETHUSDT", "ETHUSDT", "SOLUSDT", "SOLUSDT",
     ]
     assert all(row["strategy_type"] == "turtle_breakout" for row in strategies)
     assert {
         (row["fast_window"], row["slow_window"]) for row in strategies
     } == {(10, 20), (20, 55)}
     assert all(row["status"] == "candidate" for row in strategies)
-    assert versions == 6
+    assert versions == 8
 
 
 @pytest.mark.asyncio

@@ -16,7 +16,7 @@ A research result must carry provenance and pass review before it informs a prod
 ## Current implementation
 
 - FastAPI backend with health and product overview endpoints
-- Strategy creation and listing for SMA crossover plus opt-in, versioned BTC/ETH/BNB Turtle 20/10 research candidates
+- Strategy creation and listing for SMA crossover plus opt-in, versioned BTC/ETH/BNB/SOL Turtle research candidates
 - Deterministic backtesting using completed-bar signals and next-bar-open execution, including a long-only Turtle baseline with ATR risk units and bounded pyramiding
 - Immutable 18-arm Turtle matrix runs across BTC/ETH/BNB, 1h/4h/1d, and 20/10 or 55/20 systems, with a fixed chronological 70/30 holdout and OOS ranking
 - Fee and slippage assumptions recorded with each backtest

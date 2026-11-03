@@ -13,6 +13,7 @@ from emergenzix_api.shadow_runner import (
     run_shadow_cycle,
 )
 from emergenzix_api.shadow_worker import run_active_sessions_once
+from emergenzix_api.shadow_api import ShadowSessionCreate
 
 
 def _seed_source_backtest(db: Database) -> tuple[str, str]:
@@ -180,3 +181,31 @@ def test_session_requires_exact_backtest_version(tmp_path):
             timeframe="1h",
             initial_cash=10_000,
         )
+
+
+def test_sol_turtle_versions_and_shadow_request_are_available(tmp_path):
+    db = Database(str(tmp_path / "sol.db"), seed_builtin_strategies=True)
+    with db.connection() as connection:
+        versions = connection.execute(
+            """
+            SELECT v.slow_window, v.fast_window
+            FROM strategy_versions AS v
+            JOIN strategies AS s ON s.id = v.strategy_id
+            WHERE s.symbol = 'SOLUSDT' AND s.strategy_type = 'turtle_breakout'
+            ORDER BY v.slow_window
+            """
+        ).fetchall()
+    assert [(row["slow_window"], row["fast_window"]) for row in versions] == [
+        (20, 10),
+        (55, 20),
+    ]
+    request = ShadowSessionCreate.model_validate(
+        {
+            "source_backtest_id": "backtest-id",
+            "strategy_version_id": "version-id",
+            "symbol": "SOLUSDT",
+            "timeframe": "4h",
+            "initial_cash": 10_000,
+        }
+    )
+    assert request.symbol == "SOLUSDT"

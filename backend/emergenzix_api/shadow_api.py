@@ -22,7 +22,7 @@ router = APIRouter(tags=["shadow"])
 class ShadowSessionCreate(StrictModel):
     source_backtest_id: str = Field(min_length=1, max_length=64)
     strategy_version_id: str = Field(min_length=1, max_length=64)
-    symbol: Literal["BTCUSDT", "ETHUSDT", "BNBUSDT"]
+    symbol: Literal["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
     timeframe: Literal["15m", "1h", "4h", "1d"]
     initial_cash: float = Field(gt=0, le=1_000_000_000)
     fee_bps: float = Field(default=10.0, ge=0, le=1_000)
