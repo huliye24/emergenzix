@@ -29,6 +29,7 @@ node_modules/
 .next/
 out/
 coverage/
+*.tsbuildinfo
 
 # Research artifacts and model weights (never commit experiment outputs)
 research-output/

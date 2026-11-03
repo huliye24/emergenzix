@@ -34,7 +34,8 @@ This roadmap separates product readiness from research progress. Stages are gate
 - [ ] Add an opt-in, chat-allowlisted Telegram command bot for status, latest reports, and historical PAPER backtests (implementation in PR; verification pending).
 - [ ] Have Codex build and run the Compose stack, exercise a paper workflow, and verify volume persistence on the AWS development environment.
 - [ ] Publish v0.1.0 only after the runtime acceptance checklist passes.
-- [ ] Add a reviewed authentication and deployment design before any network exposure.
+- [x] Add a reviewed shared visitor-code design for read-only research access and secret-file deployment (ADR-006).
+- [ ] Add per-user operator authentication and backend authorization before exposing state-changing workflows.
 
 **Exit gate:** a new contributor can run the backend locally in PAPER mode, tests pass, and no exchange credentials are required.
 

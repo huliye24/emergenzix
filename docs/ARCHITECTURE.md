@@ -53,7 +53,7 @@ This is a logical diagram; planned components are not necessarily implemented.
 
 The responsive Next.js/React dashboard consumes the FastAPI API through server-side rewrites. The API validates requests and exposes strategy, backtest, and paper-account workflows. Its interactive OpenAPI documentation is available at `/docs` when the service is running.
 
-The API currently has no authentication and must not be exposed directly to the public internet. Network deployment requires a separately reviewed authentication, authorization, secret-management, and operations design.
+The web tier has a shared viewer-only visitor-code gate. It blocks visitor mutation requests, but it is not per-user operator authorization. The API remains private to the Compose network and must not be exposed directly to the public internet. Any future state-changing network deployment requires separately reviewed backend authentication, authorization, secret management, and operations controls. See ADR-006.
 
 ## 4. Domain boundaries
 
@@ -118,7 +118,7 @@ Each lasting architectural decision should be recorded in `docs/adr/` and linked
 
 The first packaging target is a browser-based web application plus a separate FastAPI container, orchestrated by Docker Compose. The API is not published to the host; the web interface binds to localhost by default. SQLite uses the named emergenzix-data volume so the database is not tied to a disposable container. See [ADR-002](adr/ADR-002-container-and-release-pipeline.md) and [release operations](RELEASE.md).
 
-GitHub Actions builds the API and web images on relevant changes. A version tag publishes both images to GitHub Container Registry and creates a GitHub Release. This workflow does not deploy to AWS. Authentication, reverse proxy/TLS, public network exposure, and AWS deployment credentials remain unresolved and must be addressed before any public deployment.
+GitHub Actions builds the API and web images on relevant changes. A version tag publishes both images to GitHub Container Registry and creates a GitHub Release. This workflow does not deploy to AWS. The viewer gate and secret-file pattern are defined by ADR-006; operator authentication, reverse proxy/TLS review, and AWS deployment credentials remain separate operational requirements.
 
 
 ## 11. 三层职责：术 / 道 / 容器

@@ -14,6 +14,20 @@ type Overview = {
   realized_pnl: number;
 };
 
+type BinanceAccountSummary = {
+  status: "connected";
+  mode: "READ_ONLY";
+  quote_balance: { asset: "USDT"; free: string; locked: string; total: string };
+  nonzero_asset_count: number;
+  permissions: {
+    withdrawals: false;
+    product_order_permission: false;
+    credential_spot_trading: boolean;
+    credential_futures: boolean;
+    ip_restricted: boolean;
+  };
+};
+
 type Strategy = {
   id: string;
   name: string;
@@ -189,6 +203,8 @@ const WORKSPACE_VIEW_META: Record<
 export default function DashboardPage() {
   const [activeView, setActiveView] = useState<WorkspaceView>("overview");
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [binanceAccount, setBinanceAccount] = useState<BinanceAccountSummary | null>(null);
+  const [binanceStatus, setBinanceStatus] = useState("正在连接…");
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [backtests, setBacktests] = useState<BacktestResult[]>([]);
   const [orders, setOrders] = useState<PaperOrder[]>([]);
@@ -217,6 +233,11 @@ export default function DashboardPage() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
+      const accountRequest = apiRequest<BinanceAccountSummary>(
+        "/api/v1/exchange/binance/account-summary",
+      )
+        .then((account) => ({ account, error: "" }))
+        .catch(() => ({ account: null, error: "账户不可用" }));
       const [nextOverview, nextStrategies, nextBacktests, nextOrders, nextPositions] =
         await Promise.all([
           apiRequest<Overview>("/api/v1/overview"),
@@ -225,11 +246,14 @@ export default function DashboardPage() {
           apiRequest<PaperOrder[]>("/api/v1/paper/orders?limit=8"),
           apiRequest<Position[]>("/api/v1/paper/positions"),
         ]);
+      const accountResult = await accountRequest;
       setOverview(nextOverview);
       setStrategies(nextStrategies);
       setBacktests(nextBacktests);
       setOrders(nextOrders);
       setPositions(nextPositions);
+      setBinanceAccount(accountResult.account);
+      setBinanceStatus(accountResult.error);
       setSelectedStrategyId((current) => current || nextStrategies[0]?.id || "");
       setError("");
     } catch (caught) {
@@ -399,9 +423,19 @@ export default function DashboardPage() {
             <small>QUANTITATIVE WORKSPACE</small>
           </span>
         </a>
+        <div className="exchange-balance" aria-live="polite">
+          <span>BINANCE SPOT · READ ONLY</span>
+          <strong>
+            {binanceAccount
+              ? new Intl.NumberFormat("en-US", { maximumFractionDigits: 8 }).format(
+                  Number(binanceAccount.quote_balance.total),
+                ) + " USDT"
+              : binanceStatus}
+          </strong>
+        </div>
         <div className="topbar-status">
           <span className="status-dot" />
-          <span>PAPER MODE</span>
+          <span>VISITOR · VIEW ONLY</span>
           <span className="status-divider" />
           <span className="muted">LIVE DISABLED</span>
         </div>
