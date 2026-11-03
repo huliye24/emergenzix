@@ -31,6 +31,7 @@ from .historical_data_api import router as historical_data_router
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
 from .market_intelligence import build_market_intelligence
+from .market_ai import attach_deepseek_market_analysis
 from .operational_status_api import router as operational_status_router
 from .strategy_api import router as strategy_router
 from .shadow_api import router as shadow_router
@@ -168,10 +169,11 @@ def create_app(
                     limit=200,
                 ),
             )
-            return build_market_intelligence(
+            snapshot = build_market_intelligence(
                 market_data,
                 model_signal_artifact_path=request.app.state.model_signal_artifact_path,
             )
+            return attach_deepseek_market_analysis(snapshot)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except MarketDataUnavailable as exc:

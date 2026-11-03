@@ -124,6 +124,7 @@ def test_missing_proxy_runtime_fails_closed(
 
 def test_missing_api_key_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("EMERGENZIX_DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("EMERGENZIX_DEEPSEEK_API_KEY_FILE", raising=False)
 
     with pytest.raises(DeepSeekAnalysisError, match="not_configured"):
         analyze_research_evidence(
@@ -131,6 +132,17 @@ def test_missing_api_key_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
             question="Review",
             evidence={"metric": 1},
         )
+
+
+def test_api_key_can_be_loaded_from_secret_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    secret_file = tmp_path / "deepseek_api_key"
+    secret_file.write_text("file-test-key\n", encoding="utf-8")
+    monkeypatch.delenv("EMERGENZIX_DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setenv("EMERGENZIX_DEEPSEEK_API_KEY_FILE", str(secret_file))
+
+    assert DeepSeekConfig.from_env().api_key == "file-test-key"
 
 
 def test_api_reports_unconfigured_provider_without_leaking_details(

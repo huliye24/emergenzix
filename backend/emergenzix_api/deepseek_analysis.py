@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Any
 
 import httpx
@@ -65,7 +66,9 @@ class DeepSeekConfig:
 
     @classmethod
     def from_env(cls) -> "DeepSeekConfig":
-        api_key = os.getenv("EMERGENZIX_DEEPSEEK_API_KEY", "").strip()
+        api_key = _secret_from_env(
+            "EMERGENZIX_DEEPSEEK_API_KEY", "EMERGENZIX_DEEPSEEK_API_KEY_FILE"
+        )
         if not api_key:
             raise DeepSeekAnalysisError("not_configured")
         model = os.getenv("EMERGENZIX_DEEPSEEK_MODEL", "deepseek-flash").strip()
@@ -83,6 +86,19 @@ class DeepSeekConfig:
             timeout_seconds=timeout_seconds,
             max_tokens=max_tokens,
         )
+
+
+def _secret_from_env(value_name: str, file_name: str) -> str:
+    direct = os.getenv(value_name, "").strip()
+    secret_path = os.getenv(file_name, "").strip()
+    if direct and secret_path:
+        raise DeepSeekAnalysisError("invalid_configuration")
+    if secret_path:
+        try:
+            direct = Path(secret_path).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise DeepSeekAnalysisError("invalid_configuration") from exc
+    return direct
 
 
 def analyze_research_evidence(

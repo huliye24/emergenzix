@@ -203,6 +203,14 @@ names. Provider failures, truncated output, malformed JSON, and any model-added
 permission fields fail closed. The model receives no tools and cannot create
 paper, TESTNET, or LIVE orders or promote a strategy.
 
+The market-intelligence endpoint also attaches a bounded DeepSeek advisory when
+`EMERGENZIX_DEEPSEEK_API_KEY_FILE` is configured. It sends only the completed-
+candle timestamp, public price/indicator state, deterministic observers, and
+existing research signal; it excludes candles, accounts, orders, and exchange
+credentials. Missing, stale, or unusable AI output leaves the deterministic
+market snapshot available and cannot grant PAPER or LIVE order permission. Use
+`ops/docker-compose.deepseek.example.yml` for secret-file deployment.
+
 The read-only dataset quality endpoint reports timeframe-aligned candle gaps, irregular intervals, estimated coverage when spacing is consistent, and latest-candle freshness. It does not mutate datasets or automatically block historical backtests; freshness is a diagnostic heuristic.
 
 Public OHLCV responses use a bounded, in-process TTL cache (30 seconds by default, up to 256 entries). Cache keys include exchange, normalized symbol, timeframe, and requested limit. Configure it with `EMERGENZIX_MARKET_DATA_CACHE_TTL_SECONDS` and `EMERGENZIX_MARKET_DATA_CACHE_MAX_ENTRIES`; set the TTL to `0` to disable caching. Only successful provider responses are cached. Each API process has its own cache, which is cleared on restart and is not shared across replicas.

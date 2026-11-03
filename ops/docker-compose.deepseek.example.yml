@@ -1,0 +1,13 @@
+# Add this file after docker-compose.yml when DeepSeek market advisory is enabled.
+# The host path is supplied only through the host's uncommitted environment.
+services:
+  api:
+    environment:
+      EMERGENZIX_DEEPSEEK_API_KEY_FILE: /run/secrets/deepseek_api_key
+      EMERGENZIX_DEEPSEEK_MODEL: "${EMERGENZIX_DEEPSEEK_MODEL:-deepseek-flash}"
+    secrets:
+      - deepseek_api_key
+
+secrets:
+  deepseek_api_key:
+    file: ${EMERGENZIX_DEEPSEEK_API_KEY_HOST_FILE:?set host DeepSeek API key path}
