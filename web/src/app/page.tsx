@@ -358,20 +358,23 @@ export default function DashboardPage() {
   const [marketSnapshot, setMarketSnapshot] = useState<MarketIntelligence | null>(null);
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState("");
+  const [shadowStrategyId, setShadowStrategyId] = useState("");
+  const [shadowSymbol, setShadowSymbol] = useState("BTCUSDT");
+  const [shadowTimeframe, setShadowTimeframe] = useState("4h");
+  const [shadowInitialCash, setShadowInitialCash] = useState("10000");
 
   const [strategyName, setStrategyName] = useState("BTC trend baseline");
   const [strategySymbol, setStrategySymbol] = useState("BTCUSDT");
   const [fastWindow, setFastWindow] = useState("5");
   const [slowWindow, setSlowWindow] = useState("20");
 
-  const [orderSymbol, setOrderSymbol] = useState("BTCUSDT");
-  const [orderSide, setOrderSide] = useState<"BUY" | "SELL">("BUY");
-  const [orderQuantity, setOrderQuantity] = useState("0.01");
-  const [orderPrice, setOrderPrice] = useState("50000");
-
   const selectedStrategy = useMemo(
     () => strategies.find((strategy) => strategy.id === selectedStrategyId) ?? strategies[0],
     [strategies, selectedStrategyId],
+  );
+  const shadowStrategy = useMemo(
+    () => strategies.find((strategy) => strategy.id === shadowStrategyId) ?? strategies[0],
+    [strategies, shadowStrategyId],
   );
   const selectedBacktestStrategy = useMemo(
     () => {
@@ -423,6 +426,7 @@ export default function DashboardPage() {
       setBinanceAccount(accountResult.account);
       setBinanceStatus(accountResult.error);
       setSelectedStrategyId((current) => current || nextStrategies[0]?.id || "");
+      setShadowStrategyId((current) => current || nextStrategies[0]?.id || "");
       setError("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -639,35 +643,6 @@ export default function DashboardPage() {
     }
   }
 
-  async function handlePaperOrder(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusyAction("order");
-    setError("");
-    setMessage("");
-    try {
-      const order = await apiRequest<PaperOrder>("/api/v1/paper/orders", {
-        method: "POST",
-        body: JSON.stringify({
-          symbol: orderSymbol.trim().toUpperCase(),
-          side: orderSide,
-          quantity: Number(orderQuantity),
-          reference_price: Number(orderPrice),
-        }),
-      });
-      setMessage(
-        order.side +
-          " paper order filled at the entered reference price. Fee: " +
-          formatMoney(order.fee) +
-          ". No exchange was contacted.",
-      );
-      await refresh();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setBusyAction("");
-    }
-  }
-
   return (
     <div className="dashboard-shell">
       <WorkspaceNavigation activeView={activeView} onNavigate={setActiveView} />
@@ -712,7 +687,7 @@ export default function DashboardPage() {
           <span>PAPER EXECUTION ONLY</span>
         </div>
       </section>
-      ) : activeView !== "market" && activeView !== "backtests" ? (
+      ) : activeView !== "market" && activeView !== "backtests" && activeView !== "paper" ? (
       <section className="view-header">
         <div className="eyebrow"><span /> WORKSPACE <b>/</b> {WORKSPACE_VIEW_META[activeView].kicker}</div>
         <div className="view-header-row">
@@ -1134,47 +1109,62 @@ export default function DashboardPage() {
 ) : null}
 
       {activeView === "overview" || activeView === "paper" || activeView === "activity" ? (
-<section className={"content-grid lower-grid" + (activeView === "overview" ? "" : " single-view-grid")}>
+<section className={"content-grid lower-grid" + (activeView === "overview" ? "" : " single-view-grid") + (activeView === "paper" ? " shadow-view-grid" : "")}>
 
         {activeView !== "activity" ? (
-<article className="panel">
+<article className={activeView === "paper" ? "shadow-workspace" : "panel"}>
+          {activeView === "paper" ? (
+          <>
+          <div className="shadow-command-bar">
+            <label>
+              <span>策略</span>
+              <select value={shadowStrategyId} onChange={(event) => setShadowStrategyId(event.target.value)}>
+                {strategies.map((strategy) => <option key={strategy.id} value={strategy.id}>{strategy.name} · v{strategy.current_version}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>品种</span>
+              <select value={shadowSymbol} onChange={(event) => setShadowSymbol(event.target.value)}>
+                <option value="BTCUSDT">BTCUSDT</option>
+                <option value="ETHUSDT">ETHUSDT</option>
+                <option value="BNBUSDT">BNBUSDT</option>
+              </select>
+            </label>
+            <label>
+              <span>周期</span>
+              <select value={shadowTimeframe} onChange={(event) => setShadowTimeframe(event.target.value)}>
+                <option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option>
+              </select>
+            </label>
+            <label>
+              <span>初始资金</span>
+              <input type="number" min="100" step="100" value={shadowInitialCash} onChange={(event) => setShadowInitialCash(event.target.value)} />
+            </label>
+            <button type="button" className="shadow-start-button" disabled title="服务端影子运行器尚未启用">▶</button>
+          </div>
+          <div className="shadow-status-strip">
+            <div><span>VERSION</span><strong>{shadowStrategy ? `v${shadowStrategy.current_version}` : "—"}</strong></div>
+            <div><span>FINGERPRINT</span><strong>{shadowStrategy?.current_parameters_sha256.slice(0, 10) ?? "—"}</strong></div>
+            <div><span>CAPITAL</span><strong>{formatMoney(Number(shadowInitialCash) || 0)}</strong></div>
+            <div><span>STATE</span><strong className="negative">LOCKED</strong></div>
+          </div>
+          <div className="shadow-stage">
+            <span className="shadow-stage-icon">◇</span>
+            <strong>SERVER RUNNER</strong>
+            <small>NOT INSTALLED</small>
+          </div>
+          </>
+          ) : (
+          <>
           <div className="panel-heading">
             <div>
               <span className="section-index">03 / PAPER EXECUTION</span>
-              <h2>Simulate an order</h2>
+              <h2>Paper account</h2>
             </div>
             <span className="panel-mark panel-mark-orange">P</span>
           </div>
-          <p className="panel-description">
-            Orders are simulated at the reference price you enter. The API applies a notional cap, fees, cash checks, and position checks.
-          </p>
-          <form className="form-stack" onSubmit={handlePaperOrder}>
-            <label>
-              Market symbol
-              <input value={orderSymbol} onChange={(event) => setOrderSymbol(event.target.value.toUpperCase())} pattern="[A-Z0-9]{3,20}" required />
-            </label>
-            <div className="side-switch" role="group" aria-label="Order side">
-              <button type="button" className={orderSide === "BUY" ? "side-active" : ""} onClick={() => setOrderSide("BUY")}>BUY</button>
-              <button type="button" className={orderSide === "SELL" ? "side-active side-sell" : ""} onClick={() => setOrderSide("SELL")}>SELL</button>
-            </div>
-            <div className="two-fields">
-              <label>
-                Quantity
-                <input type="number" min="0.00000001" step="any" value={orderQuantity} onChange={(event) => setOrderQuantity(event.target.value)} required />
-              </label>
-              <label>
-                Reference price
-                <input type="number" min="0.00000001" step="any" value={orderPrice} onChange={(event) => setOrderPrice(event.target.value)} required />
-              </label>
-            </div>
-            <div className="order-estimate">
-              <span>Estimated notional</span>
-              <strong>{formatMoney((Number(orderQuantity) || 0) * (Number(orderPrice) || 0))}</strong>
-            </div>
-            <button className="button button-primary" type="submit" disabled={busyAction !== ""}>
-              {busyAction === "order" ? "Simulating order…" : "Submit paper order"}
-            </button>
-          </form>
+          </>
+          )}
           <div className="subsection-heading"><span>Open positions</span><span>{positions.length.toString().padStart(2, "0")}</span></div>
           {positions.length ? (
             <div className="position-list">
