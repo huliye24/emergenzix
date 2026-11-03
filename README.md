@@ -18,6 +18,7 @@ A research result must carry provenance and pass review before it informs a prod
 - FastAPI backend with health and product overview endpoints
 - Strategy creation and listing for SMA crossover plus opt-in, versioned BTC/ETH/BNB Turtle 20/10 research candidates
 - Deterministic backtesting using completed-bar signals and next-bar-open execution, including a long-only Turtle baseline with ATR risk units and bounded pyramiding
+- Immutable 18-arm Turtle matrix runs across BTC/ETH/BNB, 1h/4h/1d, and 20/10 or 55/20 systems, with a fixed chronological 70/30 holdout and OOS ranking
 - Fee and slippage assumptions recorded with each backtest
 - Persisted backtest results, equity curve, and closed-trade records
 - SQLite-backed paper account, positions, and simulated order history
@@ -84,7 +85,7 @@ SQLite data is stored in the named volume emergenzix-data and survives container
 
 Configure a visitor code of at least 12 characters and a separate session secret of at least 32 characters before opening the web interface. Prefer the read-only secret-file overlay in `ops/docker-compose.private-access.example.yml`. This shared viewer gate is not operator authentication: keep the API private and do not expose state-changing workflows until backend authorization is reviewed.
 
-An optional, separate research-operator code (minimum 16 characters) and signing secret (minimum 32 characters) may authorize only immutable historical dataset registration and historical backtest creation through the Web proxy (`POST /api/v1/datasets` and `POST /api/v1/backtests`). The operator session lasts 30 days, is independent from visitor access, and still cannot modify strategies, create PAPER orders, or reach any LIVE execution path. Configure it only through the secret-file variables documented in `.env.example`; never reuse the visitor code.
+An optional, separate research-operator code (minimum 16 characters) and signing secret (minimum 32 characters) may authorize only immutable historical dataset registration, historical backtest creation, and fixed Turtle matrix creation through the Web proxy (`POST /api/v1/datasets`, `POST /api/v1/backtests`, and `POST /api/v1/turtle-matrices`). The operator session lasts 30 days, is independent from visitor access, and still cannot modify strategies, create PAPER orders, or reach any LIVE execution path. Configure it only through the secret-file variables documented in `.env.example`; never reuse the visitor code.
 
 After a verified release has been published, set EMERGENZIX_VERSION in .env to the desired version, then use `docker compose pull` followed by `docker compose up -d` to update the running containers.
 

@@ -95,6 +95,38 @@ type MarketDataset = {
   bars_count: number;
 };
 
+type TurtleMatrixMetrics = {
+  bars_count: number;
+  total_return_pct: number;
+  max_drawdown_pct: number;
+  number_of_trades: number;
+  win_rate_pct: number;
+  benchmark_return_pct: number;
+};
+
+type TurtleMatrixRun = {
+  id: string;
+  created_at: string;
+  input_sha256: string;
+  matrix_shape: { assets: number; timeframes: number; systems: number; arms: number };
+  split: { method: string; train_fraction: number; warmup_policy: string };
+  ranking: Array<{
+    rank: number;
+    symbol: string;
+    timeframe: string;
+    system: string;
+    oos_excess_return_pct: number;
+    in_sample: TurtleMatrixMetrics;
+    out_of_sample: TurtleMatrixMetrics;
+  }>;
+  safety: {
+    execution_mode: "BACKTEST_ONLY";
+    paper_order_permission: false;
+    live_order_permission: false;
+    automatic_strategy_promotion: false;
+  };
+};
+
 type PaperOrder = {
   id: string;
   symbol: string;
@@ -252,6 +284,10 @@ export default function DashboardPage() {
   const [backtestSlippageBps, setBacktestSlippageBps] = useState("5");
   const [backtestWorkspace, setBacktestWorkspace] = useState<"catalog" | "turtle">("catalog");
   const [lastBacktestReceipt, setLastBacktestReceipt] = useState<BacktestResult | null>(null);
+  const [matrixBars, setMatrixBars] = useState("1000");
+  const [turtleMatrices, setTurtleMatrices] = useState<TurtleMatrixRun[]>([]);
+  const [latestTurtleMatrix, setLatestTurtleMatrix] = useState<TurtleMatrixRun | null>(null);
+  const [matrixProgress, setMatrixProgress] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
@@ -299,13 +335,14 @@ export default function DashboardPage() {
       )
         .then((account) => ({ account, error: "" }))
         .catch(() => ({ account: null, error: "账户不可用" }));
-      const [nextOverview, nextStrategies, nextBacktests, nextOrders, nextPositions, operatorStatus] =
+      const [nextOverview, nextStrategies, nextBacktests, nextOrders, nextPositions, nextMatrices, operatorStatus] =
         await Promise.all([
           apiRequest<Overview>("/api/v1/overview"),
           apiRequest<Strategy[]>("/api/v1/strategies"),
           apiRequest<BacktestResult[]>("/api/v1/backtests?limit=50"),
           apiRequest<PaperOrder[]>("/api/v1/paper/orders?limit=8"),
           apiRequest<Position[]>("/api/v1/paper/positions"),
+          apiRequest<TurtleMatrixRun[]>("/api/v1/turtle-matrices?limit=10"),
           apiRequest<OperatorStatus>("/api/operator"),
         ]);
       const accountResult = await accountRequest;
@@ -314,6 +351,8 @@ export default function DashboardPage() {
       setBacktests(nextBacktests);
       setOrders(nextOrders);
       setPositions(nextPositions);
+      setTurtleMatrices(nextMatrices);
+      setLatestTurtleMatrix((current) => current ?? nextMatrices[0] ?? null);
       setOperatorAuthenticated(operatorStatus.authenticated);
       setBinanceAccount(accountResult.account);
       setBinanceStatus(accountResult.error);
@@ -407,6 +446,70 @@ export default function DashboardPage() {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setBusyAction("");
+    }
+  }
+
+  async function handleRunTurtleMatrix() {
+    setBusyAction("turtle-matrix");
+    setError("");
+    setMessage("");
+    setMatrixProgress("准备 9 份市场快照");
+    try {
+      const symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT"] as const;
+      const timeframes = ["1h", "4h", "1d"] as const;
+      const datasets: Array<{ symbol: string; timeframe: string; dataset_id: string }> = [];
+
+      for (let batch = 0; batch < timeframes.length; batch += 1) {
+        const timeframe = timeframes[batch];
+        setMatrixProgress(`冻结行情 ${batch * symbols.length + 1}–${(batch + 1) * symbols.length} / 9`);
+        const registered = await Promise.all(
+          symbols.map(async (symbol) => {
+            const marketData = await apiRequest<{
+              exchange: string;
+              symbol: string;
+              timeframe: string;
+              bars: OhlcvBar[];
+            }>(
+              "/api/v1/market-data/ohlcv?exchange=binance&symbol=" +
+                encodeURIComponent(symbol) +
+                "&timeframe=" + encodeURIComponent(timeframe) +
+                "&limit=" + encodeURIComponent(matrixBars),
+            );
+            const dataset = await apiRequest<MarketDataset>("/api/v1/datasets", {
+              method: "POST",
+              body: JSON.stringify({
+                source: "ccxt_public_ohlcv",
+                exchange: marketData.exchange,
+                symbol: marketData.symbol,
+                timeframe: marketData.timeframe,
+                bars: marketData.bars,
+              }),
+            });
+            return { symbol, timeframe, dataset_id: dataset.id };
+          }),
+        );
+        datasets.push(...registered);
+      }
+
+      setMatrixProgress("计算 18 个样本外组合");
+      const result = await apiRequest<TurtleMatrixRun>("/api/v1/turtle-matrices", {
+        method: "POST",
+        body: JSON.stringify({
+          datasets,
+          train_fraction: 0.7,
+          initial_cash: Number(backtestInitialCash),
+          fee_bps: Number(backtestFeeBps),
+          slippage_bps: Number(backtestSlippageBps),
+        }),
+      });
+      setLatestTurtleMatrix(result);
+      setMessage(`矩阵 ${result.id} 已保存：18 个组合完成固定 70/30 样本外对照。`);
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusyAction("");
+      setMatrixProgress("");
     }
   }
 
@@ -804,6 +907,66 @@ export default function DashboardPage() {
                   </table>
                 </div>
               ) : <div className="empty-state">还没有海龟实验。设置参数后运行第一次固定回测。</div>}
+
+              <section className="matrix-lab" aria-labelledby="matrix-title">
+                <div className="matrix-heading">
+                  <div>
+                    <span className="section-index">TURTLE / 18-ARM OOS MATRIX</span>
+                    <h3 id="matrix-title">海龟实验矩阵</h3>
+                    <p>BTC、ETH、BNB × 1h、4h、1d × 20/10、55/20。每个组合固定使用前 70% 训练上下文和后 30% 样本外评分。</p>
+                  </div>
+                  <span className="matrix-count">18</span>
+                </div>
+                <div className="matrix-control-row">
+                  <label>
+                    每组样本
+                    <select value={matrixBars} onChange={(event) => setMatrixBars(event.target.value)}>
+                      <option value="250">250 根 / 组</option>
+                      <option value="500">500 根 / 组</option>
+                      <option value="1000">1000 根 / 组</option>
+                    </select>
+                  </label>
+                  <div><span>品种</span><strong>BTC · ETH · BNB</strong></div>
+                  <div><span>周期</span><strong>1h · 4h · 1d</strong></div>
+                  <div><span>切分</span><strong>70% / 30% OOS</strong></div>
+                  <button className="button button-primary" type="button" onClick={() => operatorAuthenticated ? void handleRunTurtleMatrix() : window.location.assign("/operator")} disabled={busyAction !== ""}>
+                    {busyAction === "turtle-matrix" ? matrixProgress || "运行矩阵…" : operatorAuthenticated ? "运行 18 组合矩阵" : "操作员登录后运行"}
+                  </button>
+                </div>
+                <div className="matrix-safety-note">
+                  统一排名按样本外超额收益排序，仅用于研究导航。不同 K 线周期覆盖的自然时间长度不同，不能把名次直接解释为未来盈利概率。
+                </div>
+
+                {latestTurtleMatrix ? (
+                  <>
+                    <div className="matrix-receipt">
+                      <span><small>矩阵 ID</small><code>{latestTurtleMatrix.id}</code></span>
+                      <span><small>输入指纹</small><code>{latestTurtleMatrix.input_sha256.slice(0, 16)}…</code></span>
+                      <span><small>运行时间</small><strong>{formatDate(latestTurtleMatrix.created_at)}</strong></span>
+                      <span><small>历史矩阵</small><strong>{turtleMatrices.length}</strong></span>
+                    </div>
+                    <div className="table-wrap">
+                      <table className="matrix-ranking-table">
+                        <thead><tr><th>#</th><th>组合</th><th>样本内</th><th>样本外</th><th>基准</th><th>超额</th><th>回撤</th><th>交易</th></tr></thead>
+                        <tbody>
+                          {latestTurtleMatrix.ranking.map((row) => (
+                            <tr key={`${row.symbol}-${row.timeframe}-${row.system}`}>
+                              <td><strong>{row.rank.toString().padStart(2, "0")}</strong></td>
+                              <td><strong>{row.symbol.replace("USDT", "")}</strong><small>{row.timeframe} · {row.system}</small></td>
+                              <td className={row.in_sample.total_return_pct >= 0 ? "positive" : "negative"}>{formatPercent(row.in_sample.total_return_pct)}</td>
+                              <td className={row.out_of_sample.total_return_pct >= 0 ? "positive" : "negative"}>{formatPercent(row.out_of_sample.total_return_pct)}</td>
+                              <td>{formatPercent(row.out_of_sample.benchmark_return_pct)}</td>
+                              <td className={row.oos_excess_return_pct >= 0 ? "positive" : "negative"}>{formatPercent(row.oos_excess_return_pct)}</td>
+                              <td className="negative">-{row.out_of_sample.max_drawdown_pct.toFixed(2)}%</td>
+                              <td>{row.out_of_sample.number_of_trades}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : <div className="empty-state matrix-empty">尚无矩阵记录。运行后会保存 18 个组合的统一样本外排名。</div>}
+              </section>
             </>
           )}
         </article>
