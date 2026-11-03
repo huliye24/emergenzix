@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import statistics
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -12,6 +14,32 @@ from .schemas import Bar
 
 
 TIMEFRAME_SECONDS = {"15m": 900, "1h": 3_600, "4h": 14_400}
+
+
+def _auxiliary_indicators(bars: list[Bar]) -> dict[str, float]:
+    """Calculate interpretable helpers from completed candles only."""
+    closes = [float(bar.close) for bar in bars]
+    volumes = [float(bar.volume) for bar in bars]
+    returns = [math.log(current / previous) for previous, current in zip(closes, closes[1:])]
+    changes = [current - previous for previous, current in zip(closes, closes[1:])]
+    recent_changes = changes[-14:]
+    average_gain = sum(max(change, 0.0) for change in recent_changes) / 14
+    average_loss = sum(max(-change, 0.0) for change in recent_changes) / 14
+    rsi = 100.0 if average_loss == 0 else 100.0 - 100.0 / (1.0 + average_gain / average_loss)
+    sma_20 = statistics.fmean(closes[-20:])
+    sma_50 = statistics.fmean(closes[-50:])
+    close_std_20 = statistics.pstdev(closes[-20:])
+    return_std_20 = statistics.pstdev(returns[-20:])
+    prior_volume_20 = statistics.fmean(volumes[-21:-1])
+    return {
+        "rsi_14_simple": round(rsi, 4),
+        "sma_20": round(sma_20, 8),
+        "sma_50": round(sma_50, 8),
+        "sma_20_50_spread_pct": round((sma_20 / sma_50 - 1.0) * 100.0, 4),
+        "bollinger_z_20": round((closes[-1] - sma_20) / close_std_20, 4) if close_std_20 else 0.0,
+        "realized_volatility_20_pct": round(return_std_20 * 100.0, 4),
+        "volume_ratio_20": round(volumes[-1] / prior_volume_20, 4) if prior_volume_20 else 0.0,
+    }
 
 
 def build_market_intelligence(
@@ -58,6 +86,7 @@ def build_market_intelligence(
         research_signal = "NO_ACTION"
         candidate = None
     nemt_observation = observe_nemt_phase(completed)
+    indicators = _auxiliary_indicators(completed)
     verified_models = load_verified_model_signals(
         model_signal_artifact_path,
         bars=completed,
@@ -105,6 +134,7 @@ def build_market_intelligence(
             "scenario_baseline": scenario.as_dict(),
             "nemt": nemt_observation,
         },
+        "indicators": indicators,
         "prediction": {
             "method": "deterministic_scenario_baseline",
             "direction": direction,
@@ -127,6 +157,18 @@ def build_market_intelligence(
         "series": [
             {"timestamp": bar.timestamp.isoformat(), "close": bar.close}
             for bar in bars[-80:]
+        ],
+        "candles": [
+            {
+                "timestamp": bar.timestamp.isoformat(),
+                "open": bar.open,
+                "high": bar.high,
+                "low": bar.low,
+                "close": bar.close,
+                "volume": bar.volume,
+                "complete": bar.timestamp != bars[-1].timestamp,
+            }
+            for index, bar in enumerate(bars[-200:])
         ],
         "safety": {
             "advisory_only": True,

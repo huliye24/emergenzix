@@ -42,6 +42,20 @@ def test_snapshot_excludes_forming_bar_and_never_grants_execution() -> None:
     assert result["prediction"]["verified_model_count"] == 0
     assert result["prediction"]["model_consensus"] == "UNAVAILABLE"
     assert result["observers"]["nemt"]["order_permission"] is False
+    assert len(result["candles"]) == 60
+    assert result["candles"][-2]["complete"] is True
+    assert result["candles"][-1]["complete"] is False
+    assert result["candles"][-1]["volume"] == 1_059
+    assert set(result["indicators"]) == {
+        "rsi_14_simple",
+        "sma_20",
+        "sma_50",
+        "sma_20_50_spread_pct",
+        "bollinger_z_20",
+        "realized_volatility_20_pct",
+        "volume_ratio_20",
+    }
+    assert result["indicators"]["rsi_14_simple"] == 100.0
     assert [item["status"] for item in result["models"][:2]] == [
         "artifact_unavailable", "artifact_unavailable"
     ]
