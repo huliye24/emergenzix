@@ -2,7 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 export const VISITOR_COOKIE_NAME = "emergenzix_visitor";
-export const VISITOR_SESSION_SECONDS = 12 * 60 * 60;
+export const VISITOR_SESSION_SECONDS = 30 * 24 * 60 * 60;
 
 type VisitorPayload = {
   exp: number;
