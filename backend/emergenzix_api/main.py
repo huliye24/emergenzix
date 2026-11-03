@@ -30,6 +30,7 @@ from .historical_replay_api import router as historical_replay_router
 from .historical_data_api import router as historical_data_router
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
+from .market_intelligence import build_market_intelligence
 from .operational_status_api import router as operational_status_router
 from .strategy_api import router as strategy_router
 from .turtle_matrix_api import router as turtle_matrix_router
@@ -139,6 +140,30 @@ def create_app(
                     limit=limit,
                 ),
             )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except MarketDataUnavailable as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/api/v1/market-intelligence")
+    def market_intelligence(
+        request: Request,
+        symbol: Literal["BTCUSDT", "ETHUSDT", "BNBUSDT"] = Query(default="BTCUSDT"),
+        timeframe: Literal["15m", "1h", "4h"] = Query(default="1h"),
+    ) -> dict[str, Any]:
+        """Observe public candles and return advisory analysis without order permission."""
+        try:
+            cache: TTLCache = request.app.state.market_data_cache
+            market_data = cache.get_or_create(
+                ("binance", normalize_symbol(symbol), timeframe, 200),
+                lambda: fetch_public_ohlcv(
+                    exchange_id="binance",
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    limit=200,
+                ),
+            )
+            return build_market_intelligence(market_data)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except MarketDataUnavailable as exc:
