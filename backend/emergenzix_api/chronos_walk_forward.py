@@ -162,10 +162,9 @@ def _model_predictions(model_id: str, jobs: list[ForecastJob], cache: Path) -> l
     from chronos import BaseChronosPipeline
 
     pipeline = BaseChronosPipeline.from_pretrained(
-        model_id,
+        local_model_snapshot(model_id, cache),
         device_map="cuda",
         dtype=torch.bfloat16,
-        cache_dir=str(cache),
         local_files_only=True,
     )
     contexts = torch.tensor([job.context for job in jobs], dtype=torch.float32)
@@ -185,6 +184,26 @@ def _model_predictions(model_id: str, jobs: list[ForecastJob], cache: Path) -> l
     del pipeline, raw, contexts
     torch.cuda.empty_cache()
     return forecasts
+
+
+def local_model_snapshot(model_id: str, cache: Path) -> str:
+    """Resolve a pinned Hugging Face cache revision without network access."""
+    if model_id not in MODEL_IDS:
+        raise ValueError(f"model is not allowlisted: {model_id}")
+    repository = cache / "hub" / ("models--" + model_id.replace("/", "--"))
+    ref = repository / "refs" / "main"
+    if not ref.is_file():
+        raise ValueError(f"missing offline model revision for {model_id}")
+    revision = ref.read_text(encoding="utf-8").strip()
+    if len(revision) != 40 or any(
+        character not in "0123456789abcdef" for character in revision
+    ):
+        raise ValueError(f"invalid offline model revision for {model_id}")
+    snapshot = repository / "snapshots" / revision
+    required = (snapshot / "config.json", snapshot / "model.safetensors")
+    if not all(path.is_file() for path in required):
+        raise ValueError(f"offline model snapshot is incomplete for {model_id}")
+    return str(snapshot)
 
 
 def _baseline_prediction(job: ForecastJob, name: str) -> float:
