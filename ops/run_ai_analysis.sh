@@ -13,10 +13,8 @@ if [[ ! -r "$api_key_path" || ! -r "$access_token_path" ]]; then
   exit 1
 fi
 
-IFS= read -r EMERGENZIX_DEEPSEEK_API_KEY < "$api_key_path"
-IFS= read -r EMERGENZIX_AI_ANALYSIS_ACCESS_TOKEN < "$access_token_path"
-EMERGENZIX_DEEPSEEK_API_KEY="${EMERGENZIX_DEEPSEEK_API_KEY%$'\r'}"
-EMERGENZIX_AI_ANALYSIS_ACCESS_TOKEN="${EMERGENZIX_AI_ANALYSIS_ACCESS_TOKEN%$'\r'}"
+EMERGENZIX_DEEPSEEK_API_KEY="$(tr -d '\r\n' < "$api_key_path")"
+EMERGENZIX_AI_ANALYSIS_ACCESS_TOKEN="$(tr -d '\r\n' < "$access_token_path")"
 if [[ -z "$EMERGENZIX_DEEPSEEK_API_KEY" || -z "$EMERGENZIX_AI_ANALYSIS_ACCESS_TOKEN" ]]; then
   printf 'AI analysis secret files are empty\n' >&2
   exit 1
