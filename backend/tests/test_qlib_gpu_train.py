@@ -8,6 +8,7 @@ from emergenzix_api.qlib_gpu_train import (
     FrameDataset,
     ordered_predictions,
     score_by_instrument,
+    tra_source_frame,
 )
 
 
@@ -55,4 +56,28 @@ def test_scoring_keeps_each_symbol_timeframe_separate() -> None:
 
     assert result["overall"]["direction_accuracy_pct"] == 100.0
     assert sorted(result["by_symbol_timeframe"]) == ["btcusdt:1h", "ethusdt:4h"]
+
+
+def test_tra_source_starts_at_each_locked_training_boundary() -> None:
+    index = pd.MultiIndex.from_tuples(
+        [
+            (pd.Timestamp("2025-12-01"), "btcusdt_1h"),
+            (pd.Timestamp("2026-01-01"), "btcusdt_1h"),
+            (pd.Timestamp("2025-11-01"), "ethusdt_4h"),
+            (pd.Timestamp("2026-02-01"), "ethusdt_4h"),
+        ],
+        names=["datetime", "instrument"],
+    )
+    raw = _frame(index)
+    train = raw.loc[
+        [
+            (pd.Timestamp("2026-01-01"), "btcusdt_1h"),
+            (pd.Timestamp("2026-02-01"), "ethusdt_4h"),
+        ]
+    ]
+    frames = type("Frames", (), {"raw": raw, "train": train})
+
+    result = tra_source_frame(frames)
+
+    assert list(result.index) == list(train.index)
 

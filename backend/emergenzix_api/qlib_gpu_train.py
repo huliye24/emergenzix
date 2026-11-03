@@ -147,17 +147,33 @@ def _train_standard(
     }
 
 
+def tra_source_frame(frames: PreparedFrames) -> pd.DataFrame:
+    """Keep a continuous TRA history beginning at each locked train start."""
+    parts = []
+    instruments = sorted(frames.train.index.get_level_values("instrument").unique())
+    for instrument in instruments:
+        train_start = frames.train.xs(instrument, level="instrument").index.min()
+        raw = frames.raw.xs(instrument, level="instrument", drop_level=False)
+        timestamps = raw.index.get_level_values("datetime")
+        parts.append(raw.loc[timestamps >= train_start])
+    result = pd.concat(parts).sort_index()
+    if result.index.duplicated().any():
+        raise ValueError("TRA source index must be unique")
+    return result
+
+
 def _tra_dataset(frames: PreparedFrames):
     from qlib.contrib.data.dataset import MTSDatasetH
     from qlib.data.dataset.handler import DataHandler
     from qlib.data.dataset.loader import StaticDataLoader
 
-    feature = frames.raw.loc[:, FEATURE_NAMES]
-    label = frames.raw.loc[:, ["LABEL0"]]
+    source = tra_source_frame(frames)
+    feature = source.loc[:, FEATURE_NAMES]
+    label = source.loc[:, ["LABEL0"]]
     handler = DataHandler(
         data_loader=StaticDataLoader({"feature": feature, "label": label})
     )
-    timestamps = frames.raw.index.get_level_values("datetime")
+    timestamps = source.index.get_level_values("datetime")
     return MTSDatasetH(
         handler=handler,
         segments={
