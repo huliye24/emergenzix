@@ -244,7 +244,7 @@ a { color: inherit; text-decoration: none; }
 .experiment-receipt code, .experiment-receipt strong { overflow: hidden; color: #cbd5df; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .fine-print { margin: 9px 0 0; color: #6e7b8b; font-size: 10px; line-height: 1.6; }
 
-.market-observer { max-width: 1320px; margin-bottom: 24px; }
+.market-observer { max-width: 1320px; margin-bottom: 24px; padding-top: 18px; }
 .market-command-bar {
   display: grid; grid-template-columns: minmax(190px, .8fr) minmax(230px, 1fr) auto auto;
   align-items: end; gap: 10px; margin-bottom: 14px; padding: 12px;

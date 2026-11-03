@@ -712,7 +712,7 @@ export default function DashboardPage() {
           <span>PAPER EXECUTION ONLY</span>
         </div>
       </section>
-      ) : (
+      ) : activeView !== "market" ? (
       <section className="view-header">
         <div className="eyebrow"><span /> WORKSPACE <b>/</b> {WORKSPACE_VIEW_META[activeView].kicker}</div>
         <div className="view-header-row">
@@ -723,7 +723,7 @@ export default function DashboardPage() {
           <span className="view-index">{WORKSPACE_VIEW_META[activeView].index}</span>
         </div>
       </section>
-      )}
+      ) : null}
 
       {error ? <div className="notice notice-error" role="alert"><strong>Action needed</strong><span>{error}</span></div> : null}
       {message ? <div className="notice notice-success" role="status"><strong>Completed</strong><span>{message}</span></div> : null}
