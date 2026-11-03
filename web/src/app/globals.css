@@ -267,10 +267,7 @@ a { color: inherit; text-decoration: none; }
 .market-price-row span { color: #7f8d9e; font-size: 9px; font-weight: 800; letter-spacing: .1em; }
 .market-price-row strong { font-size: clamp(32px, 5vw, 58px); line-height: 1; letter-spacing: -.055em; font-variant-numeric: tabular-nums; }
 .market-price-row > span { padding-top: 9px; font-size: 11px; letter-spacing: 0; }
-.market-line-chart { width: 100%; height: 340px; margin: 8px 0 0; overflow: visible; }
-.market-line-chart line { stroke: rgba(126,145,166,.2); stroke-width: 1; }
-.market-line-chart polyline { fill: none; stroke: var(--green); stroke-width: 3; vector-effect: non-scaling-stroke; }
-.market-chart-footer { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--border); }
+.market-chart-footer { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: var(--border); }
 .market-chart-footer span { display: grid; gap: 4px; padding: 10px 12px; background: #0c1219; color: #718092; font-size: 8px; font-weight: 800; letter-spacing: .08em; }
 .market-chart-footer strong { overflow: hidden; color: #d7e0e9; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .market-decision-rail { display: grid; gap: 1px; padding: 0; overflow: hidden; background: var(--border); }
@@ -289,6 +286,48 @@ a { color: inherit; text-decoration: none; }
 .market-safety-banner strong { flex: none; color: var(--orange); font-size: 11px; }
 .market-safety-banner span { color: #8995a2; font-size: 10px; line-height: 1.6; }
 .market-loading-state { min-height: 420px; display: grid; place-items: center; border: 1px dashed #2b3746; border-radius: 14px; color: #7f8d9d; }
+
+.candlestick-shell {
+  position: relative; margin: 14px 0 12px; overflow: hidden;
+  border: 1px solid rgba(126,145,166,.2); border-radius: 12px;
+  background: #0a1017; outline: none; user-select: none;
+}
+.candlestick-shell:focus-visible { border-color: rgba(155,229,180,.48); box-shadow: 0 0 0 3px rgba(78,219,145,.08); }
+.candlestick-shell:fullscreen, .candlestick-shell.is-fullscreen {
+  width: 100vw; height: 100vh; display: grid; grid-template-rows: auto auto minmax(0, 1fr);
+  margin: 0; border: 0; border-radius: 0; padding: 18px 24px 14px; background: #080d13;
+}
+.candlestick-shell:fullscreen .candlestick-chart, .candlestick-shell.is-fullscreen .candlestick-chart { height: 100%; min-height: 0; }
+.candlestick-toolbar { min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 7px 10px 7px 14px; border-bottom: 1px solid rgba(126,145,166,.16); }
+.chart-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 13px; color: #778596; font-size: 9px; font-weight: 800; letter-spacing: .08em; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.chart-legend i { width: 14px; height: 2px; border-radius: 2px; }
+.legend-sma20 { background: #b694ff; }.legend-sma50 { background: #e8a66f; }
+.chart-actions { display: flex; gap: 5px; }
+.chart-actions button { width: 34px; height: 32px; display: grid; place-items: center; border: 1px solid #2b3746; border-radius: 7px; background: #101720; color: #aab5c2; font-size: 15px; }
+.chart-actions button:hover { border-color: rgba(182,148,255,.55); background: rgba(113,82,210,.12); color: #d9cbff; }
+.chart-ohlcv-readout, .chart-gesture-hint { min-height: 34px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 0 14px; border-bottom: 1px solid rgba(126,145,166,.12); color: #8d9aaa; font-size: 9px; font-variant-numeric: tabular-nums; }
+.chart-ohlcv-readout strong { color: #cdd6df; }.chart-ohlcv-readout em { padding: 3px 5px; border: 1px solid rgba(232,166,111,.35); border-radius: 4px; color: var(--orange); font-style: normal; font-size: 7px; font-weight: 850; letter-spacing: .1em; }
+.chart-gesture-hint { color: #5f6d7d; }
+.candlestick-chart { width: 100%; height: 490px; display: block; cursor: crosshair; touch-action: none; }
+.candlestick-chart:active { cursor: grabbing; }
+.chart-plot-bg { fill: rgba(255,255,255,.008); }
+.chart-grid-line { stroke: rgba(126,145,166,.12); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart-divider { stroke: rgba(126,145,166,.24); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart-axis-label, .chart-time-label, .chart-section-label, .level-label { fill: #627082; font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+.chart-section-label { font-size: 8px; letter-spacing: .12em; }
+.candle-up .candle-wick, .candle-up .candle-body { stroke: #72d8a0; fill: #72d8a0; }
+.candle-down .candle-wick, .candle-down .candle-body { stroke: #ef7f87; fill: #ef7f87; }
+.candle-wick { stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+.candle-forming { opacity: .48; }
+.candle-up .volume-bar { fill: rgba(114,216,160,.3); }.candle-down .volume-bar { fill: rgba(239,127,135,.28); }
+.indicator-line { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; opacity: .9; }
+.indicator-sma20 { stroke: #b694ff; }.indicator-sma50 { stroke: #e8a66f; }
+.level-line { stroke-width: 1; stroke-dasharray: 5 6; vector-effect: non-scaling-stroke; opacity: .68; }
+.support-line { stroke: #72d8a0; }.resistance-line { stroke: #ef9e7f; }
+.support-label { fill: #72d8a0; }.resistance-label { fill: #ef9e7f; }
+.chart-crosshair line { stroke: rgba(213,222,232,.32); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.candlestick-empty { min-height: 420px; display: grid; place-items: center; color: #6f7d8e; }
 
 .table-wrap { width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
@@ -389,6 +428,7 @@ td:last-child, th:last-child { text-align: right; }
   .market-command-bar fieldset button { flex: 1; min-width: 0; }
   .market-line-chart { height: 240px; }
   .market-chart-footer, .market-model-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .candlestick-chart { height: 390px; }
   .market-safety-banner { align-items: flex-start; flex-direction: column; gap: 5px; }
   .footer { flex-direction: column; gap: 8px; }
   .notice { flex-direction: column; gap: 3px; }

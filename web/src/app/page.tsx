@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import MarketCandlestickChart, { type MarketCandle } from "../components/market/MarketCandlestickChart";
 import WorkspaceNavigation, { type WorkspaceView } from "../components/shell/WorkspaceNavigation";
 
 type Overview = {
@@ -178,6 +179,20 @@ type MarketIntelligence = {
     score: number;
     horizon_bars: number;
     calibrated_probability: false;
+    model_consensus: "UP" | "DOWN" | "NEUTRAL" | "MIXED" | "UNAVAILABLE";
+    verified_model_count: number;
+  };
+  observers: {
+    nemt: { phase: string; confidence: number; dci: number; direction: string };
+  };
+  indicators: {
+    rsi_14_simple: number;
+    sma_20: number;
+    sma_50: number;
+    sma_20_50_spread_pct: number;
+    bollinger_z_20: number;
+    realized_volatility_20_pct: number;
+    volume_ratio_20: number;
   };
   signal: {
     research_signal: string;
@@ -186,8 +201,9 @@ type MarketIntelligence = {
     invalidation: string;
     order_permission: false;
   };
-  models: Array<{ name: string; status: string }>;
+  models: Array<{ name: string; family: string; status: string }>;
   series: Array<{ timestamp: string; close: number }>;
+  candles: MarketCandle[];
   safety: {
     advisory_only: true;
     execution_decision: "NO_ACTION";
@@ -441,19 +457,6 @@ export default function DashboardPage() {
     const timer = window.setInterval(() => void loadMarketSnapshot(), 30_000);
     return () => window.clearInterval(timer);
   }, [activeView, loadMarketSnapshot]);
-
-  const marketChartPoints = useMemo(() => {
-    const values = marketSnapshot?.series.map((point) => point.close) ?? [];
-    if (values.length < 2) return "";
-    const minimum = Math.min(...values);
-    const maximum = Math.max(...values);
-    const span = maximum - minimum || 1;
-    return values.map((value, index) => {
-      const x = (index / (values.length - 1)) * 1000;
-      const y = 270 - ((value - minimum) / span) * 230;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(" ");
-  }, [marketSnapshot]);
 
   async function handleCreateStrategy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -764,17 +767,20 @@ export default function DashboardPage() {
                   {formatPercent(marketSnapshot.price.change_24_bars_pct)} / 24 bars
                 </span>
               </div>
-              <svg className="market-line-chart" viewBox="0 0 1000 310" preserveAspectRatio="none" role="img" aria-label={`${marketSnapshot.symbol} 最近价格走势`}>
-                <defs><linearGradient id="marketArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9be5b4" stopOpacity=".26" /><stop offset="100%" stopColor="#9be5b4" stopOpacity="0" /></linearGradient></defs>
-                <line x1="0" y1="270" x2="1000" y2="270" />
-                <polygon points={`0,300 ${marketChartPoints} 1000,300`} fill="url(#marketArea)" />
-                <polyline points={marketChartPoints} />
-              </svg>
+              <MarketCandlestickChart
+                candles={marketSnapshot.candles}
+                symbol={marketSnapshot.symbol}
+                timeframe={marketSnapshot.timeframe}
+                support={marketSnapshot.market_state.support}
+                resistance={marketSnapshot.market_state.resistance}
+              />
               <div className="market-chart-footer">
-                <span>支撑 <strong>{marketSnapshot.market_state.support.toLocaleString()}</strong></span>
-                <span>阻力 <strong>{marketSnapshot.market_state.resistance.toLocaleString()}</strong></span>
-                <span>ATR <strong>{marketSnapshot.market_state.atr_pct.toFixed(2)}%</strong></span>
-                <span>完成 K 线 <strong>{formatDate(marketSnapshot.freshness.latest_completed_at)}</strong></span>
+                <span>RSI 14 <strong>{marketSnapshot.indicators.rsi_14_simple.toFixed(1)}</strong></span>
+                <span>BB Z-Score <strong>{marketSnapshot.indicators.bollinger_z_20.toFixed(2)}</strong></span>
+                <span>量比 / 20 <strong>{marketSnapshot.indicators.volume_ratio_20.toFixed(2)}×</strong></span>
+                <span>实现波动率 <strong>{marketSnapshot.indicators.realized_volatility_20_pct.toFixed(2)}%</strong></span>
+                <span>SMA 20/50 <strong>{formatPercent(marketSnapshot.indicators.sma_20_50_spread_pct)}</strong></span>
+                <span>NEMT DCI <strong>{marketSnapshot.observers.nemt.dci.toFixed(2)}</strong></span>
               </div>
             </article>
 
@@ -782,12 +788,12 @@ export default function DashboardPage() {
               <article className="decision-card">
                 <span className="decision-step">01 · MARKET STATE</span>
                 <strong>{marketSnapshot.market_state.regime.replaceAll("_", " ")}</strong>
-                <small>{marketSnapshot.market_state.scenario} · {(marketSnapshot.market_state.confidence * 100).toFixed(1)}% 启发式权重</small>
+                <small>{marketSnapshot.observers.nemt.phase.replaceAll("_", " ")} · DCI {marketSnapshot.observers.nemt.dci.toFixed(2)}</small>
               </article>
               <article className="decision-card">
                 <span className="decision-step">02 · BASELINE</span>
-                <strong className={`direction-${marketSnapshot.prediction.direction.toLowerCase()}`}>{marketSnapshot.prediction.direction}</strong>
-                <small>下一根 K 线方向基线 · 非校准概率</small>
+                <strong className={`direction-${marketSnapshot.prediction.direction.toLowerCase()}`}>{marketSnapshot.prediction.model_consensus}</strong>
+                <small>{marketSnapshot.prediction.verified_model_count} 个已验证模型 · 非校准概率</small>
               </article>
               <article className="decision-card decision-card-signal">
                 <span className="decision-step">03 · RESEARCH SIGNAL</span>
