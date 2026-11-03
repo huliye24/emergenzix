@@ -75,8 +75,9 @@ Freqtrade includes a complete bot, configuration system, database, API server, s
 
 ## 6. Quantitative and AI candidate catalog
 
-Qlib, TradingAgents, OpenBB, FinGPT, FinRL, Qbot, vn.py, and vectorbt are
-tracked in [the quantitative upstream candidate inventory](QUANT_UPSTREAM_CANDIDATES.md).
+Research, portfolio construction, event-driven engines, crypto infrastructure,
+optimization, AI, and experiment-tracking projects are tracked with exact
+revisions in [the quantitative upstream candidate inventory](QUANT_UPSTREAM_CANDIDATES.md).
 Cataloging a project does not install it or authorize its data, credentials,
 models, gateways, or execution paths. Qbot and vectorbt currently have license
 conditions that block direct product integration pending separate review.

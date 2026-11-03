@@ -24,6 +24,14 @@ Emergenzix.
 | Qbot | `UFund-Me/Qbot` `f0425ae4ae8bd02b79656b8f7039f4cd6874095e` (`main`) | **Conflicting signals:** GitHub metadata reports MIT while the README states CC BY-NC-SA 4.0 and non-commercial use | architecture and UI ideas only | **Do not copy, package, or submodule.** Resolve the repository-wide license and file-level provenance first. Its real-trading and notification paths are outside the current product boundary. |
 | vn.py | `vnpy/vnpy` `c6e231caf32b7fc97e6459817fff66458cf7e7c4` (`master`) | MIT | event-engine, gateway, order-state, and adapter design reference | **Approved as a reference candidate.** The core dependency includes desktop/GUI requirements and gateways can trade; do not install it into the API runtime or enable a gateway. A future TESTNET adapter requires its own ADR and acceptance report. |
 | vectorbt | `polakowo/vectorbt` `70da8fe7c2a57948ca065ac362fc416bcf31458c` (`master`) | Apache-2.0 with Commons Clause; not standard Apache-2.0 | high-throughput vectorized research/backtest comparison | **Do not vendor or add as a product dependency.** The Commons Clause restricts selling products or services whose value derives substantially from the software. Obtain legal review or a license exception before integration. Concepts and independently implemented benchmarks may be evaluated without copying code. |
+| QuantConnect LEAN | `QuantConnect/Lean` `9ecfed98339c27849a2a708edc03455caf151e91` (`master`) | Apache-2.0 | deterministic event-driven backtesting and multi-asset engine comparison | **Approved for isolated reference evaluation.** It is a large .NET engine with live-trading paths. Use a pinned container and public fixtures only; do not invoke `lean live`, add broker credentials, or replace Emergenzix execution semantics without an ADR and parity tests. |
+| Backtrader | `mementum/backtrader` `b853d7c90b6721476eb5a5ea3135224e33db1f14` (`master`) | GPL-3.0-or-later | compact event-driven backtest and analyzer comparison | **Compatible but reference-only for now.** Its declared Python support and packaging are old. Evaluate only in a disposable environment against immutable fixtures before considering an adapter. |
+| PyPortfolioOpt | `PyPortfolio/PyPortfolioOpt` `a6638d2e06dae6f444fd022cfd4b3c528902a85b` (`main`) | MIT | covariance estimation, efficient frontier, Black-Litterman, and hierarchical risk parity | **Approved for package-level PAPER research evaluation.** Optimized weights are advisory output, not orders. Require bounded weights, turnover/cost constraints, deterministic inputs, and out-of-sample evaluation. |
+| Riskfolio-Lib | `dcajasn/Riskfolio-Lib` `7c5429f486d4b3d76bcee4c43a8864a11cfd9795` (`master`) | BSD-3-Clause | broader portfolio risk measures, risk parity, and constrained allocation | **Approved for isolated package evaluation.** Its solver and scientific dependency graph must remain outside the API runtime. Review optional solver licenses and reject infeasible, non-finite, or unbounded solutions. |
+| NautilusTrader | `nautechsystems/nautilus_trader` `5aace07c6e4fa82cc0329ffa69cab32f7a0261ce` (`develop`) | LGPL-3.0 | deterministic event-driven crypto data, order, portfolio, and execution modeling | **Approved as an architecture and isolated backtest candidate.** The default branch is active development and the v2 API is pre-release. Pin a released wheel/container for any experiment; do not enable venue adapters or credentials. Preserve the LGPL dynamic-link boundary and trademark notice. |
+| Hummingbot | `hummingbot/hummingbot` `9af100d6822da7d2d0291a906c730ef172284ee2` (`master`) | Apache-2.0 | crypto connector, order-book, market-making, and execution architecture reference | **Reference-only until TESTNET approval.** The product can place live orders and may report usage data. Do not install connectors, enable telemetry, import credentials, or run strategies; first extract a connector contract and paper-only simulator tests. |
+| Optuna | `optuna/optuna` `8c615f0404e4cd41dca763c6de235af7e36b75d5` (`master`) | MIT, with third-party notices | reproducible hyperparameter search and pruning for offline research | **Approved for isolated research evaluation.** Optimize training folds only, persist seeds and trial metadata, cap compute, and keep a locked holdout. A winning trial cannot promote a strategy or alter risk limits. |
+| MLflow | `mlflow/mlflow` `528eff9cc9d2cf285395414a7a1135640d477963` (`master`) | Apache-2.0 | experiment lineage, parameters, metrics, artifacts, and model evaluation | **Approved for isolated experiment tracking.** Use a pinned release with authenticated private storage. Never log secrets, exchange payloads, private datasets, or production account data; registry state grants no execution permission. |
 
 ## Integration order
 
@@ -37,7 +45,13 @@ Emergenzix.
    exchange credentials.
 4. Use TradingAgents and vn.py as architecture references until explicit
    adapter contracts and safety tests exist.
-5. Keep Qbot and vectorbt excluded until their licensing questions are resolved.
+5. Add portfolio construction through PyPortfolioOpt first, then compare advanced
+   constraints with Riskfolio-Lib in a separate solver environment.
+6. Use Optuna and MLflow to make research reproducible without allowing either
+   system to promote a strategy or authorize execution.
+7. Compare LEAN, Backtrader, and NautilusTrader only against immutable fixtures;
+   keep Hummingbot connectors disabled until a separate TESTNET decision.
+8. Keep Qbot and vectorbt excluded until their licensing questions are resolved.
 
 ## Mandatory acceptance for every future adapter
 
@@ -63,3 +77,11 @@ Emergenzix.
 - https://github.com/UFund-Me/Qbot
 - https://github.com/vnpy/vnpy
 - https://github.com/polakowo/vectorbt
+- https://github.com/QuantConnect/Lean
+- https://github.com/mementum/backtrader
+- https://github.com/PyPortfolio/PyPortfolioOpt
+- https://github.com/dcajasn/Riskfolio-Lib
+- https://github.com/nautechsystems/nautilus_trader
+- https://github.com/hummingbot/hummingbot
+- https://github.com/optuna/optuna
+- https://github.com/mlflow/mlflow
