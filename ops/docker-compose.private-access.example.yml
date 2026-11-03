@@ -1,0 +1,28 @@
+# Add this file with `-f` after docker-compose.yml on the deployment host.
+# Host paths are supplied only through the host's uncommitted environment.
+services:
+  api:
+    environment:
+      EMERGENZIX_BINANCE_API_KEY_FILE: /run/secrets/binance_api_key
+      EMERGENZIX_BINANCE_API_SECRET_FILE: /run/secrets/binance_api_secret
+    secrets:
+      - binance_api_key
+      - binance_api_secret
+
+  web:
+    environment:
+      EMERGENZIX_VISITOR_CODE_FILE: /run/secrets/visitor_code
+      EMERGENZIX_VISITOR_SESSION_SECRET_FILE: /run/secrets/visitor_session_secret
+    secrets:
+      - visitor_code
+      - visitor_session_secret
+
+secrets:
+  binance_api_key:
+    file: ${EMERGENZIX_BINANCE_API_KEY_HOST_FILE:?set host secret path}
+  binance_api_secret:
+    file: ${EMERGENZIX_BINANCE_API_SECRET_HOST_FILE:?set host secret path}
+  visitor_code:
+    file: ${EMERGENZIX_VISITOR_CODE_HOST_FILE:?set host secret path}
+  visitor_session_secret:
+    file: ${EMERGENZIX_VISITOR_SESSION_SECRET_HOST_FILE:?set host secret path}

@@ -16,6 +16,7 @@ Please include the affected component, impact, reproduction steps using a safe e
 - DEMO, PAPER, TESTNET, and LIVE configurations remain isolated.
 - LIVE trading is disabled by default and requires separate documented approval.
 - Authentication, authorization, risk checks, and order validation are enforced server-side.
+- Shared visitor sessions are viewer-only and must not authorize state changes; future operator actions require separate backend authorization.
 - Unknown mode, stale data, failed risk checks, and uncertain order state fail closed.
 - Logs, screenshots, test fixtures, and issue reports must redact sensitive data.
 - Dependencies must be reviewed for known vulnerabilities and license compatibility.

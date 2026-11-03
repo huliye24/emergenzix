@@ -32,6 +32,8 @@ A research result must carry provenance and pass review before it informs a prod
 - Dataset source, exchange, symbol, and timeframe persisted with backtest results
 - Deterministic completed-candle scenario analysis for downside continuation, false breakdown, range, and upside reversal
 - Optional DeepSeek JSON analysis of bounded research evidence through a separately authenticated internal route; all output is advisory and every order/promotion permission is forced false by server code
+- Viewer-only visitor-code access with an HMAC-signed HttpOnly session; visitor requests cannot mutate `/api/v1` resources
+- Optional fail-closed Binance Spot account visibility using server-mounted secrets and signed GET requests only; no exchange order method exists
 - Automated backend tests, frontend type-check/build, Docker image build CI, and tag-triggered GHCR release workflow
 
 The backtest is a baseline implementation, not evidence of profitability. Paper orders use caller-supplied reference prices and do not represent exchange market fills.
@@ -80,7 +82,7 @@ Available commands are /status, /latest, and /backtest YYYY-MM-DD [days]. See [T
 
 SQLite data is stored in the named volume emergenzix-data and survives container recreation. **Do not run `docker compose down -v` unless you intend to delete that volume and the paper-trading records.**
 
-The current application has no authentication. Keep the default localhost binding or use a protected private access path. Do not publish port 3000 or expose a public reverse proxy before the authentication and deployment review is complete.
+Configure a visitor code of at least 12 characters and a separate session secret of at least 32 characters before opening the web interface. Prefer the read-only secret-file overlay in `ops/docker-compose.private-access.example.yml`. This shared viewer gate is not operator authentication: keep the API private and do not expose state-changing workflows until backend authorization is reviewed.
 
 After a verified release has been published, set EMERGENZIX_VERSION in .env to the desired version, then use `docker compose pull` followed by `docker compose up -d` to update the running containers.
 
@@ -134,7 +136,7 @@ npm run typecheck
 npm run build
 ```
 
-Use the observed output as evidence for the next iteration. The API currently has no authentication; keep it on localhost or protect it behind an approved private network/reverse proxy. Do not expose the backend or dashboard directly to the public internet without a reviewed deployment and authentication design.
+Use the observed output as evidence for the next iteration. The web tier has a viewer-only visitor gate, while the API intentionally remains private and has no per-user operator authorization. Do not expose the backend directly to the public internet.
 
 ## API surface
 
@@ -143,6 +145,7 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | GET | `/health` | Runtime health and safety mode |
 | GET | `/api/v1/overview` | Strategy, backtest, and paper-account summary |
 | GET | `/api/v1/market-data/ohlcv` | Fetch public OHLCV candles through CCXT; no exchange credentials required |
+| GET | `/api/v1/exchange/binance/account-summary` | Read a bounded Binance Spot USDT summary; signed GET only, withdrawals must be disabled |
 | POST | `/api/v1/scenarios/analyze` | Classify completed candles into four reviewable market scenarios; never places orders |
 | GET / POST | `/api/v1/datasets` | Register a validated OHLCV dataset by content hash or list saved dataset metadata |
 | POST | `/api/v1/datasets/import/binance-btc-4h` | Download and checksum-verify official BTCUSDT 4h archive files for a requested date range, then register the immutable dataset |
@@ -222,7 +225,7 @@ See [Codex Acceptance Checklist](docs/CODEX_DATE_RANGE_BACKTEST_ACCEPTANCE.md) f
 
 - The API only provides **PAPER** execution; the CCXT integration is read-only public market data, with no exchange order adapter or LIVE order endpoint.
 - Unknown or invalid requests are rejected; paper orders enforce notional limits and prohibit short selling.
-- API keys and exchange credentials are not required and must never be committed.
+- Optional exchange credentials must remain server-side, must never be committed, and are used only by the bounded read-only account-summary adapter.
 - The initial SQLite setup is for local/single-process development. Reassess storage, authentication, monitoring, and operational controls before multi-user or production deployment.
 - Backtests and simulated results do not guarantee future performance.
 
@@ -237,6 +240,7 @@ See [Codex Acceptance Checklist](docs/CODEX_DATE_RANGE_BACKTEST_ACCEPTANCE.md) f
 - [ADR-002: container and release pipeline](docs/adr/ADR-002-container-and-release-pipeline.md)
 - [ADR-003: quantitative platform domains and cloud runtime boundary](docs/adr/ADR-003-quant-platform-domain-and-cloud-runtime.md)
 - [ADR-005: venue-preserving multi-exchange market data](docs/adr/ADR-005-multi-venue-market-data.md)
+- [ADR-006: visitor access and read-only Binance account visibility](docs/adr/ADR-006-visitor-access-and-binance-account-visibility.md)
 - [Versioning, CI/CD, and container releases](docs/RELEASE.md)
 - [Strategy lifecycle](docs/STRATEGY_LIFECYCLE.md)
 - [Engineering rules](AGENTS.md)
