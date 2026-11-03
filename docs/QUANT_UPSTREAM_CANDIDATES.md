@@ -32,6 +32,8 @@ Emergenzix.
 | Hummingbot | `hummingbot/hummingbot` `9af100d6822da7d2d0291a906c730ef172284ee2` (`master`) | Apache-2.0 | crypto connector, order-book, market-making, and execution architecture reference | **Reference-only until TESTNET approval.** The product can place live orders and may report usage data. Do not install connectors, enable telemetry, import credentials, or run strategies; first extract a connector contract and paper-only simulator tests. |
 | Optuna | `optuna/optuna` `8c615f0404e4cd41dca763c6de235af7e36b75d5` (`master`) | MIT, with third-party notices | reproducible hyperparameter search and pruning for offline research | **Approved for isolated research evaluation.** Optimize training folds only, persist seeds and trial metadata, cap compute, and keep a locked holdout. A winning trial cannot promote a strategy or alter risk limits. |
 | MLflow | `mlflow/mlflow` `528eff9cc9d2cf285395414a7a1135640d477963` (`master`) | Apache-2.0 | experiment lineage, parameters, metrics, artifacts, and model evaluation | **Approved for isolated experiment tracking.** Use a pinned release with authenticated private storage. Never log secrets, exchange payloads, private datasets, or production account data; registry state grants no execution permission. |
+| Chronos | `amazon-science/chronos-forecasting` `0aba28e9360b6355d5a919596c90b16c25939f02` (`v2.3.2`) | Apache-2.0 for repository code; checkpoint terms must also be reviewed | zero-shot probabilistic time-series forecasting and forecast-baseline comparison | **Approved for isolated GPU research evaluation.** Forecasts are untrusted evidence, not price truth or order signals. Pin package and checkpoint revisions, use chronological origins, compare simple baselines, and record data fingerprints and inference costs. |
+| FinBERT | `ProsusAI/finBERT` `3b4bfed383a8bb6b013db2f1ce9c766ff5100d24` (`master`) | Apache-2.0 for repository code; checkpoint and source-data terms remain separate | deterministic three-class financial-language sentiment feature | **Approved for isolated GPU inference evaluation.** It was trained for English financial text rather than crypto-native language. Preserve publication time, deduplicate sources, evaluate calibration and drift, and never convert one text label directly into an order. |
 
 ## Integration order
 
@@ -51,7 +53,10 @@ Emergenzix.
    system to promote a strategy or authorize execution.
 7. Compare LEAN, Backtrader, and NautilusTrader only against immutable fixtures;
    keep Hummingbot connectors disabled until a separate TESTNET decision.
-8. Keep Qbot and vectorbt excluded until their licensing questions are resolved.
+8. Evaluate pinned Chronos checkpoints against naive, SMA, Qlib, and buy-and-hold
+   baselines using chronological origins; evaluate FinBERT only after a
+   point-in-time news dataset exists.
+9. Keep Qbot and vectorbt excluded until their licensing questions are resolved.
 
 ## Mandatory acceptance for every future adapter
 
@@ -85,3 +90,5 @@ Emergenzix.
 - https://github.com/hummingbot/hummingbot
 - https://github.com/optuna/optuna
 - https://github.com/mlflow/mlflow
+- https://github.com/amazon-science/chronos-forecasting
+- https://github.com/ProsusAI/finBERT
