@@ -1,0 +1,20 @@
+[Unit]
+Description=Emergenzix immutable Chronos and Qlib research schedule (GPU)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/emergenzix-research/current
+Environment=PYTHONUNBUFFERED=1
+Environment=HF_HUB_OFFLINE=1
+Environment=TRANSFORMERS_OFFLINE=1
+ExecStart=/opt/emergenzix-research/venvs/chronos/bin/python ops/research_compute_dispatcher.py --plan /etc/emergenzix/research-compute-plan.json --node-class gpu --job chronos-zero-shot --python /opt/emergenzix-research/venvs/chronos/bin/python --repo-root /opt/emergenzix-research/current --data-root /var/lib/emergenzix/research-data/current --run-root /var/lib/emergenzix/research-runs --model-cache /var/lib/emergenzix/model-cache --execute
+ExecStart=/opt/emergenzix-research/venvs/qlib/bin/python ops/research_compute_dispatcher.py --plan /etc/emergenzix/research-compute-plan.json --node-class gpu --job qlib-locked-models --python /opt/emergenzix-research/venvs/qlib/bin/python --repo-root /opt/emergenzix-research/current --data-root /var/lib/emergenzix/research-data/current --run-root /var/lib/emergenzix/research-runs --model-cache /var/lib/emergenzix/model-cache --execute
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+

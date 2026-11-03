@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the immutable classic-strategy matrix daily on CPU
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+Unit=emergenzix-research-cpu.service
+
+[Install]
+WantedBy=timers.target
+

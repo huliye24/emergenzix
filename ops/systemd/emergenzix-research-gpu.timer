@@ -1,0 +1,12 @@
+[Unit]
+Description=Run immutable Chronos and Qlib research weekly on GPU
+
+[Timer]
+OnCalendar=Sun *-*-* 03:15:00 UTC
+Persistent=true
+RandomizedDelaySec=15min
+Unit=emergenzix-research-gpu.service
+
+[Install]
+WantedBy=timers.target
+
