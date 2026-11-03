@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import MarketCandlestickChart, { type MarketCandle } from "../components/market/MarketCandlestickChart";
 import WorkspaceNavigation, { type WorkspaceView } from "../components/shell/WorkspaceNavigation";
+import { buildEquityPolyline, shadowReturnPct } from "../lib/shadowPresentation";
 
 type Overview = {
   mode: string;
@@ -146,6 +147,39 @@ type Position = {
   quantity: number;
   avg_entry_price: number;
   updated_at: string;
+};
+
+type ShadowDecision = {
+  id: string;
+  completed_at: string;
+  signal: "HOLD" | "ENTER" | "ADD" | "EXIT";
+  reason: string;
+  fill_side: "BUY" | "SELL" | null;
+  fill_quantity: number;
+  fill_price: number | null;
+  fee: number;
+  close_price: number;
+  cash: number;
+  position_quantity: number;
+  average_entry_price: number;
+  equity: number;
+};
+
+type ShadowSession = {
+  id: string;
+  source_backtest_id: string;
+  strategy_version_id: string;
+  strategy_sha256: string;
+  symbol: string;
+  timeframe: string;
+  initial_cash: number;
+  cash: number;
+  quantity: number;
+  average_entry_price: number;
+  units: number;
+  status: "ACTIVE" | "PAUSED";
+  last_completed_at: string | null;
+  decisions?: ShadowDecision[];
 };
 
 type OhlcvBar = {
@@ -314,8 +348,8 @@ const WORKSPACE_VIEW_META: Record<
   paper: {
     index: "04",
     kicker: "PAPER OPERATIONS",
-    title: "Simulated execution",
-    description: "Simulate orders at an entered reference price. No exchange is contacted and no real funds are used.",
+    title: "Shadow execution",
+    description: "Pinned strategies follow completed market candles and record simulated fills without exchange order permission.",
   },
   activity: {
     index: "05",
@@ -358,10 +392,10 @@ export default function DashboardPage() {
   const [marketSnapshot, setMarketSnapshot] = useState<MarketIntelligence | null>(null);
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState("");
-  const [shadowStrategyId, setShadowStrategyId] = useState("");
-  const [shadowSymbol, setShadowSymbol] = useState("BTCUSDT");
-  const [shadowTimeframe, setShadowTimeframe] = useState("4h");
-  const [shadowInitialCash, setShadowInitialCash] = useState("10000");
+  const [shadowSessions, setShadowSessions] = useState<ShadowSession[]>([]);
+  const [selectedShadowId, setSelectedShadowId] = useState("");
+  const [shadowLoading, setShadowLoading] = useState(false);
+  const [shadowError, setShadowError] = useState("");
 
   const [strategyName, setStrategyName] = useState("BTC trend baseline");
   const [strategySymbol, setStrategySymbol] = useState("BTCUSDT");
@@ -372,10 +406,16 @@ export default function DashboardPage() {
     () => strategies.find((strategy) => strategy.id === selectedStrategyId) ?? strategies[0],
     [strategies, selectedStrategyId],
   );
-  const shadowStrategy = useMemo(
-    () => strategies.find((strategy) => strategy.id === shadowStrategyId) ?? strategies[0],
-    [strategies, shadowStrategyId],
+  const selectedShadow = useMemo(
+    () => shadowSessions.find((session) => session.id === selectedShadowId) ?? shadowSessions[0] ?? null,
+    [shadowSessions, selectedShadowId],
   );
+  const selectedShadowDecisions = selectedShadow?.decisions ?? [];
+  const selectedShadowEquity = selectedShadowDecisions[0]?.equity ?? selectedShadow?.initial_cash ?? 0;
+  const selectedShadowReturn = selectedShadow
+    ? shadowReturnPct(selectedShadow.initial_cash, selectedShadowEquity)
+    : 0;
+  const selectedShadowPolyline = buildEquityPolyline(selectedShadowDecisions);
   const selectedBacktestStrategy = useMemo(
     () => {
       const [entryWindow, exitWindow] = backtestSystem.split("-").map(Number);
@@ -395,6 +435,29 @@ export default function DashboardPage() {
     () => backtests.filter((backtest) => backtest.strategy?.strategy_type === "turtle_breakout"),
     [backtests],
   );
+
+  const loadShadowSessions = useCallback(async () => {
+    setShadowLoading(true);
+    try {
+      const summaries = await apiRequest<ShadowSession[]>("/api/v1/shadow/sessions");
+      const details = await Promise.all(
+        summaries.map((session) => apiRequest<ShadowSession>(`/api/v1/shadow/sessions/${session.id}`)),
+      );
+      const order = new Map([["BTCUSDT", 0], ["BNBUSDT", 1], ["SOLUSDT", 2]]);
+      details.sort((left, right) =>
+        (order.get(left.symbol) ?? 99) - (order.get(right.symbol) ?? 99),
+      );
+      setShadowSessions(details);
+      setSelectedShadowId((current) =>
+        details.some((session) => session.id === current) ? current : details[0]?.id ?? "",
+      );
+      setShadowError("");
+    } catch (caught) {
+      setShadowError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setShadowLoading(false);
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -426,14 +489,14 @@ export default function DashboardPage() {
       setBinanceAccount(accountResult.account);
       setBinanceStatus(accountResult.error);
       setSelectedStrategyId((current) => current || nextStrategies[0]?.id || "");
-      setShadowStrategyId((current) => current || nextStrategies[0]?.id || "");
       setError("");
+      await loadShadowSessions();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadShadowSessions]);
 
   useEffect(() => {
     void refresh();
@@ -461,6 +524,13 @@ export default function DashboardPage() {
     const timer = window.setInterval(() => void loadMarketSnapshot(), 30_000);
     return () => window.clearInterval(timer);
   }, [activeView, loadMarketSnapshot]);
+
+  useEffect(() => {
+    if (activeView !== "paper") return;
+    void loadShadowSessions();
+    const timer = window.setInterval(() => void loadShadowSessions(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [activeView, loadShadowSessions]);
 
   async function handleCreateStrategy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1115,44 +1185,87 @@ export default function DashboardPage() {
 <article className={activeView === "paper" ? "shadow-workspace" : "panel"}>
           {activeView === "paper" ? (
           <>
-          <div className="shadow-command-bar">
-            <label>
-              <span>策略</span>
-              <select value={shadowStrategyId} onChange={(event) => setShadowStrategyId(event.target.value)}>
-                {strategies.map((strategy) => <option key={strategy.id} value={strategy.id}>{strategy.name} · v{strategy.current_version}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>品种</span>
-              <select value={shadowSymbol} onChange={(event) => setShadowSymbol(event.target.value)}>
-                <option value="BTCUSDT">BTCUSDT</option>
-                <option value="ETHUSDT">ETHUSDT</option>
-                <option value="BNBUSDT">BNBUSDT</option>
-              </select>
-            </label>
-            <label>
-              <span>周期</span>
-              <select value={shadowTimeframe} onChange={(event) => setShadowTimeframe(event.target.value)}>
-                <option value="1h">1h</option><option value="4h">4h</option><option value="1d">1d</option>
-              </select>
-            </label>
-            <label>
-              <span>初始资金</span>
-              <input type="number" min="100" step="100" value={shadowInitialCash} onChange={(event) => setShadowInitialCash(event.target.value)} />
-            </label>
-            <button type="button" className="shadow-start-button" disabled title="服务端影子运行器尚未启用">▶</button>
+          <div className="shadow-session-tabs" aria-label="运行中的影子账户">
+            {shadowSessions.map((session) => {
+              const equity = session.decisions?.[0]?.equity ?? session.initial_cash;
+              const returnPct = shadowReturnPct(session.initial_cash, equity);
+              return (
+                <button
+                  type="button"
+                  key={session.id}
+                  className={selectedShadow?.id === session.id ? "is-active" : ""}
+                  onClick={() => setSelectedShadowId(session.id)}
+                >
+                  <span><i />{session.symbol.replace("USDT", "")}</span>
+                  <strong>{formatMoney(equity)}</strong>
+                  <small className={returnPct >= 0 ? "positive" : "negative"}>{formatPercent(returnPct)} · {session.timeframe}</small>
+                </button>
+              );
+            })}
+            <button type="button" className="shadow-refresh" onClick={() => void loadShadowSessions()} disabled={shadowLoading} title="刷新影子账户" aria-label="刷新影子账户">
+              {shadowLoading ? "…" : "↻"}
+            </button>
           </div>
-          <div className="shadow-status-strip">
-            <div><span>VERSION</span><strong>{shadowStrategy ? `v${shadowStrategy.current_version}` : "—"}</strong></div>
-            <div><span>FINGERPRINT</span><strong>{shadowStrategy?.current_parameters_sha256.slice(0, 10) ?? "—"}</strong></div>
-            <div><span>CAPITAL</span><strong>{formatMoney(Number(shadowInitialCash) || 0)}</strong></div>
-            <div><span>STATE</span><strong className="negative">LOCKED</strong></div>
-          </div>
-          <div className="shadow-stage">
-            <span className="shadow-stage-icon">◇</span>
-            <strong>SERVER RUNNER</strong>
-            <small>NOT INSTALLED</small>
-          </div>
+          {shadowError ? <div className="notice notice-error" role="alert"><strong>SHADOW OFFLINE</strong><span>{shadowError}</span></div> : null}
+          {selectedShadow ? (
+            <>
+              <div className="shadow-status-strip">
+                <div><span>STATE</span><strong className={selectedShadow.status === "ACTIVE" ? "positive" : "negative"}>{selectedShadow.status}</strong></div>
+                <div><span>EQUITY</span><strong>{formatMoney(selectedShadowEquity)}</strong></div>
+                <div><span>RETURN</span><strong className={selectedShadowReturn >= 0 ? "positive" : "negative"}>{formatPercent(selectedShadowReturn)}</strong></div>
+                <div><span>POSITION</span><strong>{selectedShadow.quantity.toLocaleString(undefined, { maximumFractionDigits: 6 })}</strong></div>
+                <div><span>UNITS</span><strong>{selectedShadow.units} / 4</strong></div>
+                <div><span>VERSION</span><strong>{selectedShadow.strategy_sha256.slice(0, 10)}</strong></div>
+              </div>
+              <div className="shadow-monitor-grid">
+                <section className="shadow-equity-card" aria-label={`${selectedShadow.symbol} 净值曲线`}>
+                  <header>
+                    <div><span>{selectedShadow.symbol} · TURTLE 20/10</span><strong>{formatMoney(selectedShadowEquity)}</strong></div>
+                    <small>{selectedShadow.last_completed_at ? formatDate(selectedShadow.last_completed_at) : "WAITING"}</small>
+                  </header>
+                  {selectedShadowPolyline ? (
+                    <svg viewBox="0 0 720 220" role="img" aria-label="影子账户净值曲线" preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient id="shadow-equity-fill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#79e3a5" stopOpacity="0.22" />
+                          <stop offset="100%" stopColor="#79e3a5" stopOpacity="0" />
+                        </linearGradient>
+                      </defs>
+                      <line x1="12" y1="110" x2="708" y2="110" className="shadow-grid-line" />
+                      <polyline points={selectedShadowPolyline} className="shadow-equity-line" />
+                    </svg>
+                  ) : <div className="shadow-chart-empty">WAITING FOR FIRST COMPLETED CANDLE</div>}
+                  <footer><span>{selectedShadowDecisions.length} DECISIONS</span><span>PAPER · NEXT BAR OPEN</span></footer>
+                </section>
+                <aside className="shadow-account-metrics">
+                  <div><span>CASH</span><strong>{formatMoney(selectedShadow.cash)}</strong></div>
+                  <div><span>AVG ENTRY</span><strong>{selectedShadow.average_entry_price > 0 ? formatMoney(selectedShadow.average_entry_price) : "—"}</strong></div>
+                  <div><span>LAST SIGNAL</span><strong>{selectedShadowDecisions[0]?.signal ?? "WAIT"}</strong></div>
+                  <div><span>LAST FILL</span><strong>{selectedShadowDecisions[0]?.fill_side ?? "—"}</strong></div>
+                </aside>
+              </div>
+              <div className="shadow-decision-log">
+                <header><strong>SIGNAL HISTORY</strong><span>{selectedShadowDecisions.length.toString().padStart(2, "0")}</span></header>
+                {selectedShadowDecisions.length ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>TIME</th><th>SIGNAL</th><th>CLOSE</th><th>FILL</th><th>EQUITY</th><th>REASON</th></tr></thead>
+                      <tbody>{selectedShadowDecisions.map((decision) => (
+                        <tr key={decision.id}>
+                          <td>{formatDate(decision.completed_at)}</td>
+                          <td><span className={`shadow-signal shadow-signal-${decision.signal.toLowerCase()}`}>{decision.signal}</span></td>
+                          <td>{formatMoney(decision.close_price)}</td>
+                          <td>{decision.fill_side ? `${decision.fill_side} ${decision.fill_quantity.toFixed(4)}` : "—"}</td>
+                          <td>{formatMoney(decision.equity)}</td>
+                          <td><small>{decision.reason}</small></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                ) : <div className="empty-state">等待第一根已完成 K 线。</div>}
+              </div>
+            </>
+          ) : <div className="shadow-chart-empty">NO ACTIVE SHADOW SESSION</div>}
           </>
           ) : (
           <>
@@ -1165,6 +1278,7 @@ export default function DashboardPage() {
           </div>
           </>
           )}
+          {activeView !== "paper" ? <>
           <div className="subsection-heading"><span>Open positions</span><span>{positions.length.toString().padStart(2, "0")}</span></div>
           {positions.length ? (
             <div className="position-list">
@@ -1176,6 +1290,7 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : <div className="empty-state">No open paper positions.</div>}
+          </> : null}
         </article>
 ) : null}
 

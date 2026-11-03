@@ -358,22 +358,40 @@ td:last-child, th:last-child { text-align: right; }
 .position-row small { color: #7f8d9e; font-size: 10px; }
 .shadow-workspace { margin: 0 -34px; background: #0b1017; }
 .shadow-view-grid { grid-template-columns: minmax(0, 1fr); }
-.shadow-command-bar { display: grid; grid-template-columns: minmax(240px, 1.25fr) repeat(3, minmax(130px, .7fr)) 64px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-.shadow-command-bar label { min-width: 0; display: grid; align-content: center; gap: 3px; min-height: 66px; padding: 8px 14px; border-right: 1px solid var(--border); }
-.shadow-command-bar label span { color: #718093; font-size: 8px; font-weight: 800; letter-spacing: .1em; }
-.shadow-command-bar select, .shadow-command-bar input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #e0e7ee; font-size: 11px; font-weight: 750; }
-.shadow-start-button { border: 0; background: #171d25; color: #596675; font-size: 17px; }
-.shadow-start-button:disabled { cursor: not-allowed; opacity: 1; }
-.shadow-status-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--border); }
+.shadow-session-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) 56px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: #0e141c; }
+.shadow-session-tabs button { min-width: 0; min-height: 82px; display: grid; align-content: center; gap: 5px; padding: 13px 18px; border: 0; border-right: 1px solid var(--border); background: transparent; color: #7f8b99; text-align: left; transition: background .16s ease, color .16s ease; }
+.shadow-session-tabs button:hover { background: #121a23; color: #dfe7ef; }
+.shadow-session-tabs button.is-active { background: rgba(78,219,145,.075); box-shadow: inset 0 -2px var(--green-strong); color: #eef7f2; }
+.shadow-session-tabs button span { display: flex; align-items: center; gap: 7px; font-size: 9px; font-weight: 850; letter-spacing: .12em; }
+.shadow-session-tabs button span i { width: 6px; height: 6px; border-radius: 50%; background: var(--green-strong); box-shadow: 0 0 10px rgba(78,219,145,.35); }
+.shadow-session-tabs button strong { overflow: hidden; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.shadow-session-tabs button small { font-size: 9px; font-weight: 750; letter-spacing: .05em; }
+.shadow-session-tabs .shadow-refresh { min-height: 82px; display: grid; place-items: center; padding: 0; color: #8d99a7; font-size: 18px; text-align: center; }
+.shadow-status-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1px; background: var(--border); }
 .shadow-status-strip div { min-width: 0; display: grid; gap: 5px; padding: 12px 15px; background: #0e141c; }
 .shadow-status-strip span { color: #718093; font-size: 8px; font-weight: 800; letter-spacing: .1em; }
 .shadow-status-strip strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.shadow-stage { min-height: 430px; display: grid; place-content: center; justify-items: center; gap: 7px; border-bottom: 1px solid var(--border); color: #7c8999; }
-.shadow-stage-icon { width: 58px; height: 58px; display: grid; place-items: center; margin-bottom: 5px; border: 1px solid #2a3543; border-radius: 50%; color: var(--green); font-size: 24px; }
-.shadow-stage strong { color: #aab5c1; font-size: 10px; letter-spacing: .14em; }
-.shadow-stage small { font-size: 8px; letter-spacing: .12em; }
-.shadow-workspace .subsection-heading, .shadow-workspace .position-list, .shadow-workspace > .empty-state { margin-inline: 18px; }
-.shadow-workspace .subsection-heading { margin-top: 0; padding-top: 17px; }
+.shadow-monitor-grid { min-height: 390px; display: grid; grid-template-columns: minmax(0, 1fr) 230px; border-bottom: 1px solid var(--border); }
+.shadow-equity-card { min-width: 0; display: grid; grid-template-rows: auto 1fr auto; padding: 24px 26px 16px; border-right: 1px solid var(--border); background: radial-gradient(circle at 50% 55%, rgba(78,219,145,.035), transparent 48%); }
+.shadow-equity-card header, .shadow-equity-card footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.shadow-equity-card header div { display: grid; gap: 7px; }
+.shadow-equity-card header span, .shadow-equity-card header small, .shadow-equity-card footer { color: #718093; font-size: 8px; font-weight: 800; letter-spacing: .12em; }
+.shadow-equity-card header strong { font-size: clamp(28px, 4vw, 48px); letter-spacing: -.04em; }
+.shadow-equity-card svg { width: 100%; height: 240px; overflow: visible; }
+.shadow-grid-line { stroke: #202a35; stroke-width: 1; stroke-dasharray: 4 7; vector-effect: non-scaling-stroke; }
+.shadow-equity-line { fill: none; stroke: #79e3a5; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 6px rgba(78,219,145,.2)); }
+.shadow-account-metrics { display: grid; grid-template-rows: repeat(4, 1fr); }
+.shadow-account-metrics div { display: grid; align-content: center; gap: 8px; padding: 18px 22px; border-bottom: 1px solid var(--border); }
+.shadow-account-metrics div:last-child { border-bottom: 0; }
+.shadow-account-metrics span { color: #718093; font-size: 8px; font-weight: 800; letter-spacing: .12em; }
+.shadow-account-metrics strong { font-size: 16px; }
+.shadow-decision-log > header { display: flex; justify-content: space-between; padding: 17px 20px; border-bottom: 1px solid var(--border); color: #8290a0; font-size: 9px; letter-spacing: .12em; }
+.shadow-decision-log table { min-width: 780px; }
+.shadow-decision-log td:last-child { max-width: 280px; text-align: left; }
+.shadow-signal { display: inline-flex; min-width: 52px; justify-content: center; padding: 4px 7px; border-radius: 4px; background: #161e28; color: #9ca8b6; font-size: 8px; font-weight: 850; letter-spacing: .08em; }
+.shadow-signal-enter, .shadow-signal-add { background: rgba(78,219,145,.1); color: var(--green); }
+.shadow-signal-exit { background: rgba(255,139,139,.1); color: var(--red); }
+.shadow-chart-empty { min-height: 360px; display: grid; place-items: center; color: #697687; font-size: 9px; font-weight: 800; letter-spacing: .12em; }
 .side-label { display: inline-flex; margin-bottom: 4px; padding: 3px 5px; border-radius: 4px; font-size: 9px; font-weight: 800; }
 .buy-label { color: var(--green); background: rgba(78,219,145,0.1); }
 .sell-label { color: var(--red); background: rgba(255,139,139,0.1); }
@@ -395,8 +413,13 @@ td:last-child, th:last-child { text-align: right; }
   .content-grid { grid-template-columns: 1fr; }
   .backtest-workspace-panel { margin-inline: -22px; padding-inline: 22px; }
   .shadow-workspace { margin-inline: -22px; }
-  .shadow-command-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .shadow-start-button { min-height: 54px; }
+  .shadow-session-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)) 50px; }
+  .shadow-session-tabs button { padding-inline: 12px; }
+  .shadow-status-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .shadow-monitor-grid { grid-template-columns: minmax(0, 1fr); }
+  .shadow-equity-card { border-right: 0; border-bottom: 1px solid var(--border); }
+  .shadow-account-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: none; }
+  .shadow-account-metrics div { padding: 14px; border-right: 1px solid var(--border); border-bottom: 0; }
   .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace-nav { align-items: stretch; flex-direction: column; gap: 10px; }
   .workspace-nav-heading { flex-basis: auto; }
@@ -447,10 +470,12 @@ td:last-child, th:last-child { text-align: right; }
   .three-fields { grid-template-columns: 1fr; gap: 8px; }
   .backtest-workspace-panel { margin-inline: -14px; padding: 16px 14px; }
   .shadow-workspace { margin-inline: -14px; }
-  .shadow-command-bar { grid-template-columns: 1fr; }
-  .shadow-command-bar label { min-height: 56px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .shadow-session-tabs { grid-template-columns: 1fr; }
+  .shadow-session-tabs button, .shadow-session-tabs .shadow-refresh { min-height: 66px; border-right: 0; border-bottom: 1px solid var(--border); }
   .shadow-status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .shadow-stage { min-height: 320px; }
+  .shadow-account-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .shadow-account-metrics div { border-bottom: 1px solid var(--border); }
+  .shadow-equity-card { padding-inline: 16px; }
   .backtest-strategy-card { grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; padding: 16px; }
   .strategy-card-symbol { width: 50px; height: 50px; border-radius: 14px; font-size: 22px; }
   .strategy-card-meta { display: none; }
