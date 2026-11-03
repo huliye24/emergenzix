@@ -63,6 +63,10 @@ rows; partial groups were excluded.
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Chronos-Bolt Small | 61.11% | 0.3757% | 41 | 1.4142% | -10.8858% |
 | Chronos-2 | 52.78% | 0.3206% | 27 | 1.4199% | -6.6801% |
+| Qlib TRA | 50.00% | 0.2947% | 41 | 1.1195% | -11.1805% |
+| Qlib ALSTM | 43.06% | 0.3016% | 42 | -0.3348% | -12.9348% |
+| Qlib LSTM | 36.11% | 0.2977% | 39 | -3.1786% | -14.8786% |
+| Qlib Transformer | 36.11% | 0.2998% | 49 | -2.7923% | -17.4923% |
 | Buy and hold | 48.61% | n/a | 72 | 2.2595% | -19.3405% |
 | SMA 20/50 | 45.83% | n/a | 34 | 0.2249% | -9.9751% |
 
@@ -70,9 +74,7 @@ This is a sparse, one-step, zero-shot comparison, not a continuous portfolio
 backtest. Return sums are descriptive and are not compounded. The baseline
 rows emit direction signals rather than return forecasts, so reporting a
 forecast MAE for them would be misleading. All cost-adjusted results were
-negative; no method passed a strategy-promotion or execution gate. Qlib is not
-shown because its models have not yet been trained on the locked feature and
-label specification.
+negative; no method passed a strategy-promotion or execution gate.
 
 ## 2. Qlib CUDA model runtime
 
@@ -82,11 +84,10 @@ label specification.
 - PyTorch: `2.15.0+cu132`; pandas: `2.3.3`
 - Disk used: 6.6 GiB
 
-Transformer, LSTM, ALSTM, and TRA were instantiated with deterministic seeds.
-Their parameters were observed on `cuda:0`; the TRA predictor and router were
-both on `cuda:0`. Optional CatBoost and XGBoost imports were absent and are not
-part of this acceptance. No training score, saved model, or strategy result is
-claimed yet.
+Transformer, LSTM, ALSTM, and TRA were trained with seed `20261103`. Their
+parameters were observed on `cuda:0`; the TRA predictor and router were both
+on `cuda:0`. Optional CatBoost and XGBoost imports were absent and are not part
+of this acceptance.
 
 ### Locked Qlib dataset contract
 
@@ -108,10 +109,33 @@ close-to-close percentage return.
 - Test targets: the exact 72 Chronos origins, with no dense test-window rows
   added
 
-The GPU preparation smoke test produced 138,096 causal raw rows, 39,126 train
-sequences, 7,116 validation sequences, and 72 test sequences across the nine
-BTC/ETH/BNB and 15m/1h/4h instruments. Training and model-result acceptance
-remain pending.
+The GPU preparation produced 138,096 causal raw rows, 39,126 train sequences,
+7,116 validation sequences, and 72 test sequences across the nine BTC/ETH/BNB
+and 15m/1h/4h instruments. Every prepared index was checked for missing and
+duplicate timestamps. TRA used the same per-instrument training starts and a
+continuous later feature history for its memory router.
+
+### Qlib training evidence
+
+- Final implementation commit: `edf85be`
+- Combined report:
+  `/home/ubuntu/emergenzix-qlib-code-dbfb0b0/results/chronos-qlib-comparison-v1.json`
+- Combined report SHA-256:
+  `a4bbdc615d3d54736743720b204b2fa69bb582bdb1338b9063ee938b450eeb6d`
+- Transformer: 4 observed epochs; artifact SHA-256
+  `32451f046ffc541ace811f4b508d0ee067ce966f83e5afb60d20a4403da6824f`
+- LSTM: 5 observed epochs; artifact SHA-256
+  `01165dc4fe50bf56ceca941e74b37426baee7c958dd17cbe22657d163df4e8b0`
+- ALSTM: 5 observed epochs; artifact SHA-256
+  `44f0a8ecf6676c3bb8a398c9081277bb5680b337dcf993c9438280567c1474ec`
+- TRA: 7 observed epochs; artifact SHA-256
+  `920771d7d2b523e1caf036d39eebd15f76cb4a441edd91eb41d6f47f8248d61a`
+
+All four models produced exactly 72 finite predictions and were scored against
+the same targets and 30 bps active-long cost assumption as Chronos. CUDA
+reported that the Transformer's memory-efficient attention backward path can
+be nondeterministic; the dataset, seed, configuration, artifacts, and observed
+results are pinned, but bit-for-bit retraining is not claimed.
 
 ## 3. FinBERT sentiment runtime
 
@@ -128,11 +152,12 @@ not real-world accuracy, calibration, crypto relevance, or profitability.
 
 ## Known limitations and next acceptance
 
-- Chronos calibration and a Qlib comparison have not yet been completed. The
-  completed sparse walk-forward is too small to establish statistical or
-  economic significance and is not a replacement for a continuous backtest.
-- Qlib models have selected CUDA but have not yet been trained on a
-  point-in-time BTC/ETH/BNB feature dataset with locked holdouts.
+- Chronos calibration has not yet been completed. The completed sparse
+  Chronos/Qlib comparison is too small to establish statistical or economic
+  significance and is not a replacement for a continuous backtest.
+- Qlib hyperparameters have not been tuned. Repeated tuning against the locked
+  test origins is prohibited; a new untouched test period is required for a
+  later model-selection round.
 - No point-in-time news dataset, publication-time validation, source-license
   inventory, deduplication, or FinBERT calibration study exists yet.
 - FinGPT 7B/13B was deliberately not downloaded. The published 13B sentiment
