@@ -712,7 +712,7 @@ export default function DashboardPage() {
           <span>PAPER EXECUTION ONLY</span>
         </div>
       </section>
-      ) : activeView !== "market" ? (
+      ) : activeView !== "market" && activeView !== "backtests" ? (
       <section className="view-header">
         <div className="eyebrow"><span /> WORKSPACE <b>/</b> {WORKSPACE_VIEW_META[activeView].kicker}</div>
         <div className="view-header-row">
@@ -917,56 +917,36 @@ export default function DashboardPage() {
 <article className="panel backtest-workspace-panel">
           {backtestWorkspace === "catalog" ? (
             <>
-              <div className="panel-heading">
-                <div>
-                  <span className="section-index">02 / STRATEGY CATALOG</span>
-                  <h2>选择一个策略开始</h2>
-                </div>
-                <span className="panel-mark panel-mark-green">01</span>
+              <div className="backtest-terminal-head">
+                <strong>策略</strong>
+                <span>01</span>
               </div>
-              <p className="panel-description">
-                每个策略拥有独立参数、实验流程和历史记录。先进入策略，再决定品种、周期和成本。
-              </p>
               <div className="backtest-strategy-catalog">
                 <button className="backtest-strategy-card" type="button" onClick={() => setBacktestWorkspace("turtle")}>
                   <span className="strategy-card-symbol">T</span>
                   <span className="strategy-card-copy">
-                    <small>CLASSIC TREND FOLLOWING</small>
                     <strong>海龟交易法</strong>
-                    <span>Donchian 突破 · ATR 风险单位 · 金字塔加仓</span>
+                    <span>20/10 · 55/20</span>
                   </span>
                   <span className="strategy-card-meta">
-                    <b>2</b> 固定系统
-                    <b>{turtleBacktests.length}</b> 次实验
+                    <b>2</b> SYSTEMS
+                    <b>{turtleBacktests.length}</b> RUNS
                   </span>
                   <span className="strategy-card-arrow" aria-hidden="true">→</span>
                 </button>
               </div>
-              <p className="fine-print">当前先跑通海龟交易法。后续策略会以相同方式加入目录，但参数界面彼此独立。</p>
             </>
           ) : (
             <>
               <div className="strategy-detail-toolbar">
                 <button className="back-link" type="button" onClick={() => setBacktestWorkspace("catalog")}>
-                  ← 策略目录
+                  ← 策略
                 </button>
-                <span>{turtleBacktests.length} 次已保存实验</span>
+                <span>{turtleBacktests.length} RUNS</span>
               </div>
-              <div className="panel-heading strategy-detail-heading">
-                <div>
-                  <span className="section-index">TURTLE / FIXED WORKFLOW</span>
-                  <h2>海龟交易法</h2>
-                </div>
-                <span className="panel-mark panel-mark-green">T</span>
-              </div>
-              <p className="panel-description">
-                选择海龟系统与市场参数。系统冻结行情快照、固定策略版本并保存完整结果，供后续 AI 对照分析与模型升级。
-              </p>
-              <div className="experiment-steps" aria-label="固定实验流程">
-                <span><b>01</b> 固定系统</span>
-                <span><b>02</b> 市场样本</span>
-                <span><b>03</b> 交易成本</span>
-                <span><b>04</b> 永久回执</span>
+              <div className="strategy-terminal-title">
+                <span className="strategy-card-symbol">T</span>
+                <div><strong>海龟交易法</strong><small>TURTLE BREAKOUT</small></div>
               </div>
               <div className="turtle-workspace">
                 <div className="turtle-parameter-panel">
@@ -1029,7 +1009,7 @@ export default function DashboardPage() {
                 </div>
                 <aside className="turtle-run-summary">
                   <div className="selected-strategy">
-                    <span className="selected-label">FROZEN STRATEGY VERSION</span>
+                    <span className="selected-label">VERSION</span>
                     {selectedBacktestStrategy ? (
                       <>
                         <strong>{selectedBacktestStrategy.name}</strong>
@@ -1048,7 +1028,6 @@ export default function DashboardPage() {
                   <button className="button button-primary button-wide" onClick={() => operatorAuthenticated ? void handleRunBacktest() : window.location.assign("/operator")} disabled={busyAction !== "" || !selectedBacktestStrategy}>
                     {busyAction === "backtest" ? "冻结数据并计算…" : operatorAuthenticated ? "运行并保存实验" : "操作员登录后运行"}
                   </button>
-                  <p className="fine-print">只读取公开行情；不会创建 PAPER 或 LIVE 订单。</p>
                 </aside>
               </div>
 
