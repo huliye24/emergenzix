@@ -63,4 +63,3 @@ Emergenzix.
 - https://github.com/UFund-Me/Qbot
 - https://github.com/vnpy/vnpy
 - https://github.com/polakowo/vectorbt
-
