@@ -414,15 +414,14 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="app-shell">
+    <div className="dashboard-shell">
+      <WorkspaceNavigation activeView={activeView} onNavigate={setActiveView} />
+      <main className="app-shell">
       <header className="topbar">
-        <a className="brand" href="/" aria-label="Emergenzix home">
-          <span className="brand-mark">E</span>
-          <span className="brand-copy">
-            <strong>Emergenzix</strong>
-            <small>QUANTITATIVE WORKSPACE</small>
-          </span>
-        </a>
+        <div className="page-context">
+          <small>EMERGENZIX / {WORKSPACE_VIEW_META[activeView].kicker}</small>
+          <strong>{WORKSPACE_VIEW_META[activeView].title}</strong>
+        </div>
         <div className="exchange-balance" aria-live="polite">
           <span>BINANCE SPOT · READ ONLY</span>
           <strong>
@@ -443,8 +442,6 @@ export default function DashboardPage() {
           {loading ? "Refreshing…" : "Refresh data"}
         </button>
       </header>
-
-      <WorkspaceNavigation activeView={activeView} onNavigate={setActiveView} />
 
       {activeView === "overview" ? (
       <section className="hero">
@@ -750,6 +747,7 @@ export default function DashboardPage() {
         <span>Research first. Verify before promotion.</span>
         <span>{loading ? "SYNCING" : "LOCAL API"} <i className={error ? "footer-dot footer-dot-error" : "footer-dot"} /></span>
       </footer>
-    </main>
+      </main>
+    </div>
   );
 }

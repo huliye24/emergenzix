@@ -6,6 +6,8 @@ The ten-domain product model and the GitHub-to-cloud runtime boundary are
 recorded in [ADR-003](adr/ADR-003-quant-platform-domain-and-cloud-runtime.md).
 The versioned S3 market-data lake and canonical multi-timeframe rules are
 recorded in [ADR-004](adr/ADR-004-market-data-lake.md).
+The product dashboard shell source and adaptation boundary are recorded in
+[ADR-007](adr/ADR-007-dashboard-shell-source.md).
 
 ## 1. Current implementation
 
