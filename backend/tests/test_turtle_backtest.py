@@ -51,6 +51,32 @@ def test_turtle_uses_next_open_atr_units_and_channel_exit() -> None:
     assert result["assumptions"]["positioning"].startswith("long-only")
 
 
+def test_turtle_warmup_cannot_trade_before_oos_boundary() -> None:
+    bars = [
+        _bar(i, open_price=100.0, high=101.0, low=99.0, close=100.0)
+        for i in range(70)
+    ]
+    # This in-sample breakout would trade in a normal backtest, but must be
+    # ignored when the evaluation boundary starts at bar 40.
+    bars[20] = _bar(20, open_price=100.0, high=103.0, low=99.0, close=102.0)
+    bars[21] = _bar(21, open_price=103.0, high=104.0, low=101.0, close=103.0)
+
+    result = run_turtle_breakout(
+        bars,
+        entry_window=20,
+        exit_window=10,
+        initial_cash=10_000.0,
+        fee_bps=10.0,
+        slippage_bps=5.0,
+        evaluation_start_index=40,
+    )
+
+    assert result["number_of_trades"] == 0
+    assert result["bars_count"] == 30
+    assert result["equity_curve"][0]["timestamp"] == bars[39].timestamp.isoformat()
+    assert result["assumptions"]["evaluation_start_index"] == 40
+
+
 def test_builtin_turtle_candidates_are_opt_in_and_idempotent(tmp_path) -> None:
     path = tmp_path / "builtins.db"
     Database(str(path), seed_builtin_strategies=True)

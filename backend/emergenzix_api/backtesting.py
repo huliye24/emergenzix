@@ -345,6 +345,7 @@ def run_turtle_breakout(
     atr_window: int = 20,
     risk_fraction: float = 0.01,
     max_units: int = 4,
+    evaluation_start_index: int = 0,
 ) -> dict[str, Any]:
     """Run a long-only Turtle System 1 baseline on completed candles.
 
@@ -352,6 +353,10 @@ def run_turtle_breakout(
     percent of current equity per ATR unit, and up to four units are added at
     half-ATR intervals. Signals execute at the next candle open. This is a
     single-instrument research baseline, not the original futures portfolio.
+
+    When evaluation_start_index is positive, preceding candles are indicator
+    warm-up only. The portfolio starts flat at the evaluation boundary and all
+    reported metrics cover the requested out-of-sample candles only.
     """
     if entry_window < 2 or exit_window < 2 or exit_window >= entry_window:
         raise ValueError("Turtle exit_window must be smaller than entry_window")
@@ -364,6 +369,10 @@ def run_turtle_breakout(
     warmup = max(entry_window, exit_window, atr_window)
     if len(bars) < warmup + 2:
         raise ValueError(f"at least {warmup + 2} bars are required")
+    if not 0 <= evaluation_start_index < len(bars):
+        raise ValueError("evaluation_start_index must point to an existing bar")
+    if evaluation_start_index and evaluation_start_index <= warmup:
+        raise ValueError("evaluation_start_index must follow the indicator warm-up")
 
     highs = [float(bar.high) for bar in bars]
     lows = [float(bar.low) for bar in bars]
@@ -390,11 +399,15 @@ def run_turtle_breakout(
     trades: list[dict[str, Any]] = []
     fee_rate = fee_bps / 10_000.0
     slippage_rate = slippage_bps / 10_000.0
+    execution_start_index = max(warmup + 1, evaluation_start_index)
     equity_curve: list[dict[str, Any]] = [
-        {"timestamp": bars[warmup - 1].timestamp.isoformat(), "equity": round(cash, 8)}
+        {
+            "timestamp": bars[execution_start_index - 1].timestamp.isoformat(),
+            "equity": round(cash, 8),
+        }
     ]
 
-    for execution_index in range(warmup + 1, len(bars)):
+    for execution_index in range(execution_start_index, len(bars)):
         signal_index = execution_index - 1
         atr = sum(true_ranges[signal_index - atr_window + 1 : signal_index + 1]) / atr_window
         entry_channel = max(highs[signal_index - entry_window : signal_index])
@@ -487,9 +500,14 @@ def run_turtle_breakout(
         if peak > 0:
             max_drawdown_pct = max(max_drawdown_pct, (peak - equity) / peak * 100.0)
     wins = sum(1 for trade in trades if trade["net_pnl"] > 0)
-    first_close = closes[warmup - 1]
+    first_close = closes[execution_start_index - 1]
+    evaluated_bars_count = (
+        len(bars)
+        if evaluation_start_index == 0
+        else len(bars) - evaluation_start_index
+    )
     return {
-        "bars_count": len(bars),
+        "bars_count": evaluated_bars_count,
         "initial_cash": round(initial_cash, 8),
         "final_equity": round(cash, 8),
         "total_return_pct": round((cash / initial_cash - 1.0) * 100.0, 6),
@@ -501,8 +519,14 @@ def run_turtle_breakout(
         "trades": trades,
         "assumptions": {
             "execution": "signal at completed close; fill at next bar open",
-            "positioning": "long-only; ATR risk units; no leverage; maximum 4 units",
-            "signal": "20-bar breakout entry; 10-bar channel exit; ATR(20)",
+            "positioning": (
+                f"long-only; ATR risk units; no leverage; maximum {max_units} units"
+            ),
+            "signal": (
+                f"{entry_window}-bar breakout entry; {exit_window}-bar channel exit; "
+                f"ATR({atr_window})"
+            ),
+            "evaluation_start_index": evaluation_start_index,
             "risk_fraction_per_unit": risk_fraction,
             "fee_bps_per_side": fee_bps,
             "slippage_bps_per_side": slippage_bps,
