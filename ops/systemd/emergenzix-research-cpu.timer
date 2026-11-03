@@ -9,4 +9,3 @@ Unit=emergenzix-research-cpu.service
 
 [Install]
 WantedBy=timers.target
-

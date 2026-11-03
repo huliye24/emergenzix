@@ -9,4 +9,3 @@ Unit=emergenzix-research-gpu.service
 
 [Install]
 WantedBy=timers.target
-
