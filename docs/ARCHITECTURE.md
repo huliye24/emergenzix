@@ -92,6 +92,7 @@ A result that lacks sufficient provenance must not be treated as production-read
 
 - **DEMO:** synthetic or isolated demonstration behavior; a dedicated market-data demo feed is not yet implemented.
 - **PAPER:** the only execution mode in the current backend.
+- **Shadow PAPER:** an isolated server worker may poll public completed candles for a human-selected backtest and pinned strategy version. Signals are delayed to the next candle open, decisions are append-only, and this path has no exchange-order adapter.
 - **TESTNET:** not implemented.
 - **LIVE:** no endpoint exists; real-money order placement is intentionally unavailable.
 

@@ -67,6 +67,7 @@ Useful commands:
 docker compose ps
 docker compose logs -f api web
 docker compose logs -f watch
+docker compose logs -f shadow
 docker compose down
 ```
 
@@ -186,6 +187,8 @@ request with the same key returns the original simulated fill without changing
 cash or positions again; reusing the key for a different request is rejected.
 
 The `watch` Compose service evaluates public OHLCV continuously and writes JSON-line events only for its initial snapshot, a scenario transition, a risk failure, or a new paper-review trigger. It discards the newest exchange candle because it may still be forming, persists its last state in the data volume, and has no order-placement capability. When Telegram is configured, scenario events include a server-rendered candlestick and volume chart annotated with the same support, resistance, scenario, and completed-candle data used by the evaluator. Run one local cycle with `cd backend && python -m emergenzix_api.watch_agent --once`.
+
+The separate `shadow` Compose service runs explicitly selected, immutable Turtle strategy versions in isolated PAPER portfolios. A session must cite an existing backtest with the exact same strategy version; no ranking automatically promotes a strategy. The worker ignores the newest forming candle, records one immutable decision per completed candle, executes any prior signal at the next candle open with configured fees/slippage, and persists cash, position, and marked equity. It uses public Binance candles only and has no private exchange or LIVE order adapter. Create and inspect sessions through `POST /api/v1/shadow/sessions` and `GET /api/v1/shadow/sessions/{id}` on the internal API.
 
 Optional Telegram delivery is enabled only when both `EMERGENZIX_TELEGRAM_BOT_TOKEN` and `EMERGENZIX_TELEGRAM_CHAT_ID` are present in the server environment. Keep both values out of source control. Telegram delivery failures are reported with sanitized metadata and do not stop the watcher or create an order.
 

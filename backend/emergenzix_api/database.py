@@ -92,6 +92,66 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS shadow_sessions (
+                    id TEXT PRIMARY KEY,
+                    source_backtest_id TEXT NOT NULL REFERENCES backtests(id),
+                    strategy_id TEXT NOT NULL REFERENCES strategies(id),
+                    strategy_version_id TEXT NOT NULL REFERENCES strategy_versions(id),
+                    strategy_sha256 TEXT NOT NULL CHECK (length(strategy_sha256) = 64),
+                    symbol TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    initial_cash REAL NOT NULL CHECK (initial_cash > 0),
+                    fee_bps REAL NOT NULL CHECK (fee_bps >= 0),
+                    slippage_bps REAL NOT NULL CHECK (slippage_bps >= 0),
+                    cash REAL NOT NULL CHECK (cash >= 0),
+                    quantity REAL NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+                    average_entry_price REAL NOT NULL DEFAULT 0 CHECK (average_entry_price >= 0),
+                    units INTEGER NOT NULL DEFAULT 0 CHECK (units BETWEEN 0 AND 4),
+                    last_add_price REAL NOT NULL DEFAULT 0 CHECK (last_add_price >= 0),
+                    pending_action TEXT CHECK (pending_action IN ('ENTER', 'ADD', 'EXIT')),
+                    pending_signal_at TEXT,
+                    pending_atr REAL CHECK (pending_atr IS NULL OR pending_atr > 0),
+                    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'PAUSED')),
+                    last_completed_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS shadow_decisions (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL REFERENCES shadow_sessions(id) ON DELETE CASCADE,
+                    completed_at TEXT NOT NULL,
+                    signal TEXT NOT NULL CHECK (signal IN ('HOLD', 'ENTER', 'ADD', 'EXIT')),
+                    reason TEXT NOT NULL,
+                    fill_side TEXT CHECK (fill_side IN ('BUY', 'SELL')),
+                    fill_quantity REAL NOT NULL DEFAULT 0 CHECK (fill_quantity >= 0),
+                    fill_price REAL CHECK (fill_price IS NULL OR fill_price > 0),
+                    fee REAL NOT NULL DEFAULT 0 CHECK (fee >= 0),
+                    close_price REAL NOT NULL CHECK (close_price > 0),
+                    cash REAL NOT NULL CHECK (cash >= 0),
+                    position_quantity REAL NOT NULL CHECK (position_quantity >= 0),
+                    average_entry_price REAL NOT NULL CHECK (average_entry_price >= 0),
+                    equity REAL NOT NULL CHECK (equity >= 0),
+                    input_sha256 TEXT NOT NULL CHECK (length(input_sha256) = 64),
+                    created_at TEXT NOT NULL,
+                    UNIQUE (session_id, completed_at)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_shadow_decisions_session_time
+                    ON shadow_decisions(session_id, completed_at DESC);
+
+                CREATE TRIGGER IF NOT EXISTS shadow_decisions_no_update
+                BEFORE UPDATE ON shadow_decisions
+                BEGIN
+                    SELECT RAISE(ABORT, 'shadow decisions are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS shadow_decisions_no_delete
+                BEFORE DELETE ON shadow_decisions
+                BEGIN
+                    SELECT RAISE(ABORT, 'shadow decisions are immutable');
+                END;
+
                 CREATE TABLE IF NOT EXISTS market_datasets (
                     id TEXT PRIMARY KEY,
                     content_sha256 TEXT NOT NULL UNIQUE,

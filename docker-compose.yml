@@ -87,6 +87,25 @@ services:
     healthcheck:
       disable: true
 
+  shadow:
+    image: ghcr.io/huliye24/emergenzix-api:${EMERGENZIX_VERSION:-0.1.0}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["python", "-m", "emergenzix_api.shadow_worker"]
+    environment:
+      EMERGENZIX_DB_PATH: /data/emergenzix.db
+      EMERGENZIX_INITIAL_PAPER_CASH: "${EMERGENZIX_INITIAL_PAPER_CASH:-100000}"
+      EMERGENZIX_SEED_BUILTIN_STRATEGIES: "${EMERGENZIX_SEED_BUILTIN_STRATEGIES:-true}"
+      EMERGENZIX_SHADOW_INTERVAL_SECONDS: "${EMERGENZIX_SHADOW_INTERVAL_SECONDS:-30}"
+    volumes:
+      - emergenzix-data:/data
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      disable: true
+
   telegram-bot:
     image: ghcr.io/huliye24/emergenzix-api:${EMERGENZIX_VERSION:-0.1.0}
     build:
