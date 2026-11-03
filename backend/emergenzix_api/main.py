@@ -32,6 +32,7 @@ from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_sy
 from .market_data_cache import TTLCache
 from .market_intelligence import build_market_intelligence
 from .market_ai import attach_deepseek_market_analysis
+from .market_ai_notifications import queue_market_ai_advisory
 from .operational_status_api import router as operational_status_router
 from .strategy_api import router as strategy_router
 from .shadow_api import router as shadow_router
@@ -173,7 +174,17 @@ def create_app(
                 market_data,
                 model_signal_artifact_path=request.app.state.model_signal_artifact_path,
             )
-            return attach_deepseek_market_analysis(snapshot)
+            snapshot = attach_deepseek_market_analysis(snapshot)
+            try:
+                snapshot["notification"] = queue_market_ai_advisory(
+                    request.app.state.notification_outbox_path, snapshot
+                )
+            except (OSError, sqlite3.Error):
+                snapshot["notification"] = {
+                    "status": "not_queued",
+                    "reason": "notification_outbox_unavailable",
+                }
+            return snapshot
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except MarketDataUnavailable as exc:

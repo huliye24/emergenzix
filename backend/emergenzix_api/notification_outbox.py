@@ -124,15 +124,18 @@ class NotificationOutbox:
             or details.get("last_completed_at")
             or event.occurred_at
         )
-        identity = {
+        identity: dict[str, Any] = {
             "event_type": event.event_type,
             "exchange": event.exchange,
             "symbol": event.symbol,
             "timeframe": event.timeframe,
             "source_time": source_time,
-            "message": event.message,
-            "details": details,
         }
+        # Model wording can vary across retries. The immutable completed candle,
+        # symbol and timeframe are the notification identity for AI advisories.
+        if event.event_type != "ai_market_analysis":
+            identity["message"] = event.message
+            identity["details"] = details
         encoded = json.dumps(
             identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         ).encode("utf-8")

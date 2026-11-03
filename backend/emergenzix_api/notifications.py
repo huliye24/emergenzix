@@ -29,6 +29,7 @@ EVENT_LABELS = {
     "operational_recovery": "运维恢复",
     "watcher_startup": "监控服务启动",
     "paper_execution_alert": "PAPER执行风控告警",
+    "ai_market_analysis": "AI 市场分析",
 }
 
 SEVERITY_LABELS = {"info": "信息", "warning": "警告", "error": "错误"}
@@ -70,6 +71,22 @@ def format_watch_event(event: WatchEvent) -> str:
         f"Emergenzix · {event_label}",
         f"{event.symbol} · {event.timeframe} · {severity_label}",
     ]
+    if event.event_type == "ai_market_analysis":
+        model = str(details.get("model", "DeepSeek"))
+        completed_at = str(details.get("last_completed_at", "-"))
+        summary = str(details.get("summary", event.message))
+        risks = details.get("risks", [])
+        lines.extend(
+            [
+                f"模型：{model}",
+                f"完成K线：{completed_at}",
+                f"摘要：{summary}",
+            ]
+        )
+        if isinstance(risks, list) and risks:
+            lines.append("风险：" + "；".join(str(item) for item in risks[:3]))
+        lines.append("模式：仅市场研究；本通知不会创建任何订单。")
+        return "\n".join(lines)
     if scenario_label:
         lines.append(f"当前场景：{scenario_label}")
     if isinstance(levels, dict) and levels:
