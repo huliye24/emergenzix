@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
-from .schemas import Bar
+
+class Bar(Protocol):
+    timestamp: Any
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
 
 
 def _sma(values: list[float], window: int, end_index: int) -> float:
