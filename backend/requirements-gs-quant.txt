@@ -1,0 +1,3 @@
+# Optional, offline research analytics. Keep out of the API runtime image until
+# its dependency and startup-cost impact has been accepted.
+gs-quant==2.2.3

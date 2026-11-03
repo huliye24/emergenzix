@@ -123,6 +123,33 @@ research evidence and no relative-performance conclusion may be drawn.
 7. Which third-party notices are required for any selected source files, UI assets, or package dependencies beyond the repositories' GPL-3.0 licenses?
 8. Should LIVE trading exist at all? This inventory does not authorize it.
 
+## 2026-11-03 GS Quant optional analytics addendum
+
+- **Upstream:** `goldmansachs/gs-quant` release `2.2.3`, inspected at commit
+  `ae7eb6b3fd1f50ce3f5128a4c935e9adf885a74f`.
+- **License:** Apache-2.0. Emergenzix uses the published package and does not
+  copy upstream source files.
+- **Adopted scope:** offline `gs_quant.timeseries` diagnostics only:
+  realized volatility, maximum drawdown, z-score, Bollinger bands, RSI, and
+  rolling beta against an explicitly supplied benchmark.
+- **Excluded scope:** Marquee sessions and datasets, Goldman Sachs credentials,
+  instrument pricing, swaps/options, transaction-cost APIs, backtest DSL,
+  portfolio mutation, strategy promotion, and every order/execution path.
+- **Dependency decision:** `gs-quant` is pinned in the separate optional
+  `backend/requirements-gs-quant.txt`, not the production runtime manifest.
+  Its substantial scientific/telemetry dependency tree and import cost require
+  a separate acceptance decision before inclusion in an API image.
+- **Safety boundary:** callers supply already-approved price observations. The
+  adapter performs no network access, requires timezone-aware timestamps and
+  positive finite values, and returns diagnostics that cannot authorize an
+  order.
+- **Agent guidance:** the upstream `gs-quant-overview` skill is vendored
+  unchanged under `.claude/skills/gs-quant-overview` using the official
+  project installer. Its bundled `LICENSE` and `NOTICE` are retained. The
+  skill's Marquee examples remain documentation only: they do not provide
+  credentials, authorize external API access, or relax Emergenzix's PAPER-only
+  and fail-closed rules.
+
 ## Verification notes
 
 - Every table path was confirmed in the NEMT source tree at the evidence snapshot.
