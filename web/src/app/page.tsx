@@ -102,6 +102,8 @@ type OhlcvBar = {
   volume: number;
 };
 
+type OperatorStatus = { authenticated: boolean; role: "research_operator" | null };
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -213,6 +215,7 @@ export default function DashboardPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [binanceAccount, setBinanceAccount] = useState<BinanceAccountSummary | null>(null);
   const [binanceStatus, setBinanceStatus] = useState("正在连接…");
+  const [operatorAuthenticated, setOperatorAuthenticated] = useState(false);
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [backtests, setBacktests] = useState<BacktestResult[]>([]);
   const [orders, setOrders] = useState<PaperOrder[]>([]);
@@ -259,13 +262,14 @@ export default function DashboardPage() {
       )
         .then((account) => ({ account, error: "" }))
         .catch(() => ({ account: null, error: "账户不可用" }));
-      const [nextOverview, nextStrategies, nextBacktests, nextOrders, nextPositions] =
+      const [nextOverview, nextStrategies, nextBacktests, nextOrders, nextPositions, operatorStatus] =
         await Promise.all([
           apiRequest<Overview>("/api/v1/overview"),
           apiRequest<Strategy[]>("/api/v1/strategies"),
           apiRequest<BacktestResult[]>("/api/v1/backtests?limit=8"),
           apiRequest<PaperOrder[]>("/api/v1/paper/orders?limit=8"),
           apiRequest<Position[]>("/api/v1/paper/positions"),
+          apiRequest<OperatorStatus>("/api/operator"),
         ]);
       const accountResult = await accountRequest;
       setOverview(nextOverview);
@@ -273,6 +277,7 @@ export default function DashboardPage() {
       setBacktests(nextBacktests);
       setOrders(nextOrders);
       setPositions(nextPositions);
+      setOperatorAuthenticated(operatorStatus.authenticated);
       setBinanceAccount(accountResult.account);
       setBinanceStatus(accountResult.error);
       setSelectedStrategyId((current) => current || nextStrategies[0]?.id || "");
@@ -456,7 +461,7 @@ export default function DashboardPage() {
         </div>
         <div className="topbar-status">
           <span className="status-dot" />
-          <span>VISITOR · VIEW ONLY</span>
+          <span>{operatorAuthenticated ? "OPERATOR · BACKTEST" : "VISITOR · VIEW ONLY"}</span>
           <span className="status-divider" />
           <span className="muted">LIVE DISABLED</span>
         </div>
@@ -666,8 +671,12 @@ export default function DashboardPage() {
             <div><span>Slippage / side</span><strong>5 bps</strong></div>
             <div><span>Execution</span><strong>Next bar open</strong></div>
           </div>
-          <button className="button button-primary button-wide" onClick={() => void handleRunBacktest()} disabled={busyAction !== "" || !selectedBacktestStrategy}>
-            {busyAction === "backtest" ? "读取数据并计算…" : "运行海龟回测"}
+          <button
+            className="button button-primary button-wide"
+            onClick={() => operatorAuthenticated ? void handleRunBacktest() : window.location.assign("/operator")}
+            disabled={busyAction !== "" || !selectedBacktestStrategy}
+          >
+            {busyAction === "backtest" ? "读取数据并计算…" : operatorAuthenticated ? "运行海龟回测" : "操作员登录后运行"}
           </button>
           <button className="button button-quiet button-wide" onClick={() => void handleRunSyntheticBacktest()} disabled={busyAction !== "" || !selectedStrategy}>
             Run synthetic demo instead

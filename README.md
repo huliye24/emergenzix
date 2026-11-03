@@ -84,6 +84,8 @@ SQLite data is stored in the named volume emergenzix-data and survives container
 
 Configure a visitor code of at least 12 characters and a separate session secret of at least 32 characters before opening the web interface. Prefer the read-only secret-file overlay in `ops/docker-compose.private-access.example.yml`. This shared viewer gate is not operator authentication: keep the API private and do not expose state-changing workflows until backend authorization is reviewed.
 
+An optional, separate research-operator code (minimum 16 characters) and signing secret (minimum 32 characters) may authorize only historical `POST /api/v1/backtests` requests through the Web proxy. The operator session lasts 30 days, is independent from visitor access, and still cannot modify strategies, create PAPER orders, or reach any LIVE execution path. Configure it only through the secret-file variables documented in `.env.example`; never reuse the visitor code.
+
 After a verified release has been published, set EMERGENZIX_VERSION in .env to the desired version, then use `docker compose pull` followed by `docker compose up -d` to update the running containers.
 
 ## Run the backend
