@@ -31,6 +31,7 @@ A research result must carry provenance and pass review before it informs a prod
 - Freqtrade source pinned as a Git submodule for evaluation as the mature strategy/backtesting/dry-run engine; its adapter is not yet wired into the current backtest endpoint
 - Dataset source, exchange, symbol, and timeframe persisted with backtest results
 - Deterministic completed-candle scenario analysis for downside continuation, false breakdown, range, and upside reversal
+- Optional DeepSeek JSON analysis of bounded research evidence through a separately authenticated internal route; all output is advisory and every order/promotion permission is forced false by server code
 - Automated backend tests, frontend type-check/build, Docker image build CI, and tag-triggered GHCR release workflow
 
 The backtest is a baseline implementation, not evidence of profitability. Paper orders use caller-supplied reference prices and do not represent exchange market fills.
@@ -156,6 +157,7 @@ Use the observed output as evidence for the next iteration. The API currently ha
 | GET | `/api/v1/research/date-range-comparisons?record_ids=...` | Compare 2–10 saved historical backtests via read-only, integrity-verified observations; no winner is selected |
 | GET | `/api/v1/research/date-range-backtests/{record_id}/evidence` | Read-only v4 research evidence diagnostics; never authorizes strategy promotion or orders |
 | GET | `/api/v1/research/date-range-statistics?limit=30` | Summarize latest verified saved experiments; distinguish record counts from independent trading weeks |
+| POST | `/api/v1/research/ai-analysis` | Ask DeepSeek to review bounded, non-secret research evidence; requires a separate internal token and never authorizes orders |
 | GET / POST | `/api/v1/strategies` | List or create strategies |
 | GET | `/api/v1/strategies/{id}` | Inspect a strategy and its current version |
 | GET / POST | `/api/v1/strategies/{id}/versions` | List immutable parameter snapshots or create a new version |
@@ -180,6 +182,15 @@ cash or positions again; reusing the key for a different request is rejected.
 The `watch` Compose service evaluates public OHLCV continuously and writes JSON-line events only for its initial snapshot, a scenario transition, a risk failure, or a new paper-review trigger. It discards the newest exchange candle because it may still be forming, persists its last state in the data volume, and has no order-placement capability. When Telegram is configured, scenario events include a server-rendered candlestick and volume chart annotated with the same support, resistance, scenario, and completed-candle data used by the evaluator. Run one local cycle with `cd backend && python -m emergenzix_api.watch_agent --once`.
 
 Optional Telegram delivery is enabled only when both `EMERGENZIX_TELEGRAM_BOT_TOKEN` and `EMERGENZIX_TELEGRAM_CHAT_ID` are present in the server environment. Keep both values out of source control. Telegram delivery failures are reported with sanitized metadata and do not stop the watcher or create an order.
+
+The optional AI analysis route is disabled unless both
+`EMERGENZIX_DEEPSEEK_API_KEY` and a separate high-entropy
+`EMERGENZIX_AI_ANALYSIS_ACCESS_TOKEN` are configured on the server. Callers send
+the latter in `X-Emergenzix-AI-Token`; neither secret belongs in the browser or
+source control. Requests are size-bounded and reject secret-bearing field
+names. Provider failures, truncated output, malformed JSON, and any model-added
+permission fields fail closed. The model receives no tools and cannot create
+paper, TESTNET, or LIVE orders or promote a strategy.
 
 The read-only dataset quality endpoint reports timeframe-aligned candle gaps, irregular intervals, estimated coverage when spacing is consistent, and latest-candle freshness. It does not mutate datasets or automatically block historical backtests; freshness is a diagnostic heuristic.
 
