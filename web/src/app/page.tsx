@@ -856,7 +856,7 @@ export default function DashboardPage() {
 
             <aside className="market-decision-rail">
               <article className="decision-card">
-                <span className="decision-step">市场</span>
+                <span className="decision-step">分析报告</span>
                 <strong>{marketSnapshot.market_state.regime.replaceAll("_", " ")}</strong>
                 <small>DCI {marketSnapshot.observers.nemt.dci.toFixed(2)}</small>
               </article>
