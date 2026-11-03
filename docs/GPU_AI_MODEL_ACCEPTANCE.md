@@ -44,6 +44,36 @@ Every accepted source row was marked closed. One-hour and four-hour counts
 were derived deterministically from complete groups of four and sixteen 15m
 rows; partial groups were excluded.
 
+### Zero-shot walk-forward evidence
+
+- Benchmark implementation: commit
+  `39abd5fbb7ffc5406b5e95efa73e422b600256bb`
+- GPU source copy SHA-256:
+  `24d69d8a67eb364c22187c19072d5960bda58e5de6f6e7a8c8b9fd9bff641e29`
+- Context: 512 observations; forecast horizon: one bar
+- Origins: eight per symbol and timeframe, spaced seven days apart
+- Total observations per method: 72
+- Assumed round-trip cost: 30 bps for each active long sample
+- Report:
+  `/home/ubuntu/emergenzix-chronos-code-39abd5f/results/chronos-walk-forward-v1.json`
+- Report SHA-256:
+  `3dfe27202c9effe682e4866678f06c725ccf27a349f70b7f6d27b89d1bd7bac2`
+
+| Method | Direction accuracy | Forecast-return MAE | Active long samples | Gross sampled return sum | Cost-adjusted sampled return sum |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Chronos-Bolt Small | 61.11% | 0.3757% | 41 | 1.4142% | -10.8858% |
+| Chronos-2 | 52.78% | 0.3206% | 27 | 1.4199% | -6.6801% |
+| Buy and hold | 48.61% | n/a | 72 | 2.2595% | -19.3405% |
+| SMA 20/50 | 45.83% | n/a | 34 | 0.2249% | -9.9751% |
+
+This is a sparse, one-step, zero-shot comparison, not a continuous portfolio
+backtest. Return sums are descriptive and are not compounded. The baseline
+rows emit direction signals rather than return forecasts, so reporting a
+forecast MAE for them would be misleading. All cost-adjusted results were
+negative; no method passed a strategy-promotion or execution gate. Qlib is not
+shown because its models have not yet been trained on the locked feature and
+label specification.
+
 ## 2. Qlib CUDA model runtime
 
 - Environment: `/home/ubuntu/emergenzix-qlib-gpu-0.9.8/.venv`
@@ -73,8 +103,9 @@ not real-world accuracy, calibration, crypto relevance, or profitability.
 
 ## Known limitations and next acceptance
 
-- Chronos batch walk-forward, costs, forecast calibration, naive/SMA/Qlib
-  comparisons, and buy-and-hold comparison have not yet been completed.
+- Chronos calibration and a Qlib comparison have not yet been completed. The
+  completed sparse walk-forward is too small to establish statistical or
+  economic significance and is not a replacement for a continuous backtest.
 - Qlib models have selected CUDA but have not yet been trained on a
   point-in-time BTC/ETH/BNB feature dataset with locked holdouts.
 - No point-in-time news dataset, publication-time validation, source-license
