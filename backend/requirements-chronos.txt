@@ -1,3 +1,4 @@
 # Isolated GPU research environment only; do not install into the API runtime.
 chronos-forecasting==2.3.2
 pyarrow==26.0.0
+pydantic>=2.10,<3.0

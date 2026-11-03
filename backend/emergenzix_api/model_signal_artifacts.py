@@ -46,6 +46,45 @@ def signal_record_sha256(record: Mapping[str, Any]) -> str:
     return _canonical_sha256(payload)
 
 
+def build_signal_record(
+    *, family: str, name: str, version: str, source_revision: str,
+    artifact_sha256: str, bars: Sequence[Bar], symbol: str, timeframe: str,
+    generated_at: datetime, direction: str, score: float, target_at: datetime,
+    prediction_details: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a self-hashed advisory record for an offline model runner."""
+    prediction = {
+        "target_at": target_at.isoformat(),
+        "direction": direction,
+        "score": score,
+        "calibrated_probability": False,
+        **dict(prediction_details or {}),
+    }
+    record: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "generated_at": generated_at.isoformat(),
+        "model": {
+            "family": family,
+            "name": name,
+            "version": version,
+            "source_revision": source_revision,
+            "artifact_sha256": artifact_sha256,
+        },
+        "input": {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "bars_count": len(bars),
+            "bars_sha256": bars_sha256(bars),
+            "start_at": bars[0].timestamp.isoformat(),
+            "end_at": bars[-1].timestamp.isoformat(),
+        },
+        "prediction": prediction,
+        "order_permission": False,
+    }
+    record["record_sha256"] = signal_record_sha256(record)
+    return record
+
+
 def _timestamp(value: object, field: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
@@ -86,6 +125,9 @@ def verify_signal_record(
         raise ValueError("model signal input bar count mismatch")
     if input_data.get("bars_sha256") != bars_sha256(bars):
         raise ValueError("model signal input snapshot hash mismatch")
+    input_start = _timestamp(input_data.get("start_at"), "input.start_at")
+    if input_start != bars[0].timestamp.astimezone(timezone.utc):
+        raise ValueError("model signal input start timestamp mismatch")
     input_end = _timestamp(input_data.get("end_at"), "input.end_at")
     if input_end != bars[-1].timestamp.astimezone(timezone.utc):
         raise ValueError("model signal input end timestamp mismatch")
@@ -103,6 +145,8 @@ def verify_signal_record(
         raise ValueError("model signal target timestamp is not the next bar")
     if prediction.get("direction") not in {"UP", "DOWN", "NEUTRAL"}:
         raise ValueError("model signal direction is invalid")
+    if prediction.get("calibrated_probability") is not False:
+        raise ValueError("model signal must not claim calibrated probability")
     score = float(prediction.get("score"))
     if not math.isfinite(score) or not 0.0 <= score <= 1.0:
         raise ValueError("model signal score must be finite and between zero and one")

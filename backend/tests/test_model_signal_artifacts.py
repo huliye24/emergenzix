@@ -6,6 +6,7 @@ import pytest
 
 from emergenzix_api.model_signal_artifacts import (
     bars_sha256,
+    build_signal_record,
     load_verified_model_signals,
     signal_record_sha256,
     verify_signal_record,
@@ -33,11 +34,12 @@ def _record(bars: list[Bar]) -> dict[str, object]:
         },
         "input": {
             "symbol": "BTC/USDT", "timeframe": "1h", "bars_count": len(bars),
-            "bars_sha256": bars_sha256(bars), "end_at": end_at.isoformat(),
+            "bars_sha256": bars_sha256(bars),
+            "start_at": bars[0].timestamp.isoformat(), "end_at": end_at.isoformat(),
         },
         "prediction": {
             "target_at": (end_at + timedelta(hours=1)).isoformat(),
-            "direction": "UP", "score": 0.61,
+            "direction": "UP", "score": 0.61, "calibrated_probability": False,
         },
         "order_permission": False,
     }
@@ -54,6 +56,26 @@ def test_verified_model_signal_requires_exact_snapshot_and_next_timestamp() -> N
     assert result["status"] == "verified"
     assert result["direction"] == "UP"
     assert result["order_permission"] is False
+
+
+def test_builder_emits_a_self_verifying_advisory_record() -> None:
+    bars = _bars()
+    generated_at = bars[-1].timestamp + timedelta(minutes=5)
+    record = build_signal_record(
+        family="Qlib", name="Transformer", version="0.9.8",
+        source_revision="5435523", artifact_sha256="c" * 64,
+        bars=bars, symbol="BTC/USDT", timeframe="1h",
+        generated_at=generated_at, direction="DOWN", score=0.5,
+        target_at=bars[-1].timestamp + timedelta(hours=1),
+        prediction_details={"predicted_return": -0.001},
+    )
+
+    result = verify_signal_record(
+        record, bars=bars, symbol="BTC/USDT", timeframe="1h",
+        now=generated_at + timedelta(minutes=1),
+    )
+    assert result["family"] == "Qlib"
+    assert result["direction"] == "DOWN"
 
 
 @pytest.mark.parametrize("mutation", ["snapshot", "target", "permission"])

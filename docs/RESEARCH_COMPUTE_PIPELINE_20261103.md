@@ -109,3 +109,45 @@ idempotency through the installed production paths.
 
 No exchange credentials were read, no order endpoint was called, and every
 receipt records `orders_created=false` and `live_order_permission=false`.
+
+## Advisory inference artifact acceptance
+
+Commit `3abf9d6` adds a read-only model-signal contract. A Chronos or Qlib
+record is accepted only when its family, version, source revision, model-file
+SHA-256, exact OHLCV window SHA-256, input start/end timestamps, generation
+timestamp, next-bar target, and self-hash all verify. Stale, future-dated,
+malformed, mismatched, or permission-bearing records fail closed. A verified
+record remains advisory and cannot authorize PAPER, TESTNET, or LIVE orders.
+
+An A10G smoke run used `amazon/chronos-bolt-small` from the pinned Chronos
+2.3.2 cache over 199 completed public BTC/USDT 1h bars. The independently
+loaded artifact verified with model-file SHA-256
+`06a6a19bbe74bc10a9cd193bd4bf2bf638ae07f7e0d51653ae7ab8ea968a21dd`
+and returned `order_permission=false`. Its score is deliberately fixed at 0.5
+because the point forecast is not a calibrated probability. This was a
+one-shot smoke artifact, not a continuously published production signal.
+
+The existing Qlib checkpoints are not exported as current signals yet. Their
+locked feature contract includes taker-buy volume and training-only
+normalization statistics, while the current live CCXT view exposes basic
+OHLCV. Substituting missing features would violate the exact-snapshot contract,
+so Qlib correctly remains `artifact_unavailable` until a compatible immutable
+feature snapshot and inference adapter are added.
+
+## THUML Timer isolated smoke evaluation
+
+The official THUML repository was pinned at
+`thuml/Large-Time-Series-Model@1ff8d1afc073182e6d46022069ff32470ab47945`
+(MIT). The `thuml/timer-base-84m` checkpoint was pinned at
+`70077a71acce1b4c00d98332fcaabc694255d8e5` (Apache-2.0 card), with
+model-file SHA-256
+`9c3d18f12ffe1ea7d4fa70eb3304b26e3841164a6a265fbae4f7a05cd213aa3d`.
+Its remote Python files were inspected before execution; the focused scan found
+no subprocess, shell, network, or filesystem mutation calls.
+
+Timer was loaded offline in a separate environment using Transformers 4.40.1
+and Torch 2.15.0+cu132, then completed one GPU forecast over the latest 192
+completed BTC/USDT 1h closes. This proves only runtime compatibility. It does
+not establish accuracy, calibration, cost-adjusted value, strategy promotion,
+or execution permission. Timer is not installed in the API runtime and is not
+yet an allowlisted product signal family.
