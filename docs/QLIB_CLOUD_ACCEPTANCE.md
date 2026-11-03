@@ -88,4 +88,3 @@ Artifacts remain on the research host under
    signal generation, data-provider behavior, or general backtest equivalence.
 4. No automatic scheduler, API endpoint, model service, TESTNET gateway, or
    LIVE integration was installed.
-
