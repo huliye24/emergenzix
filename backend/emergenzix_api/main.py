@@ -12,7 +12,7 @@ from typing import Any, Literal
 from fastapi import FastAPI, HTTPException, Query, Request, status
 
 from . import __version__
-from .backtesting import run_sma_crossover
+from .backtesting import run_sma_crossover, run_turtle_breakout
 from .api_common import _now, _row_to_dict
 from .binance_account import BinanceReadOnlyAccount, BinanceReadOnlyCredentials
 from .binance_account_api import router as binance_account_router
@@ -65,6 +65,7 @@ def create_app(
     database = Database(
         str(db_path if db_path is not None else settings.db_path),
         initial_paper_cash=starting_cash,
+        seed_builtin_strategies=settings.seed_builtin_strategies,
     )
 
     app = FastAPI(
@@ -277,14 +278,24 @@ def create_app(
             )
 
         try:
-            result = run_sma_crossover(
-                bars,
-                fast_window=fast_window,
-                slow_window=slow_window,
-                initial_cash=payload.initial_cash,
-                fee_bps=payload.fee_bps,
-                slippage_bps=payload.slippage_bps,
-            )
+            if strategy_version["strategy_type"] == "turtle_breakout":
+                result = run_turtle_breakout(
+                    bars,
+                    entry_window=slow_window,
+                    exit_window=fast_window,
+                    initial_cash=payload.initial_cash,
+                    fee_bps=payload.fee_bps,
+                    slippage_bps=payload.slippage_bps,
+                )
+            else:
+                result = run_sma_crossover(
+                    bars,
+                    fast_window=fast_window,
+                    slow_window=slow_window,
+                    initial_cash=payload.initial_cash,
+                    fee_bps=payload.fee_bps,
+                    slippage_bps=payload.slippage_bps,
+                )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 

@@ -16,8 +16,8 @@ A research result must carry provenance and pass review before it informs a prod
 ## Current implementation
 
 - FastAPI backend with health and product overview endpoints
-- Strategy creation and listing for the initial SMA-crossover strategy type
-- Deterministic backtesting using completed-bar signals and next-bar-open execution
+- Strategy creation and listing for SMA crossover plus opt-in, versioned BTC/ETH/BNB Turtle 20/10 research candidates
+- Deterministic backtesting using completed-bar signals and next-bar-open execution, including a long-only Turtle baseline with ATR risk units and bounded pyramiding
 - Fee and slippage assumptions recorded with each backtest
 - Persisted backtest results, equity curve, and closed-trade records
 - SQLite-backed paper account, positions, and simulated order history

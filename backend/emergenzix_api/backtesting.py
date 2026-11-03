@@ -327,6 +327,183 @@ def run_donchian_breakout(
     }
 
 
+def run_turtle_breakout(
+    bars: list[Bar],
+    *,
+    entry_window: int,
+    exit_window: int,
+    initial_cash: float,
+    fee_bps: float,
+    slippage_bps: float,
+    atr_window: int = 20,
+    risk_fraction: float = 0.01,
+    max_units: int = 4,
+) -> dict[str, Any]:
+    """Run a long-only Turtle System 1 baseline on completed candles.
+
+    Entry uses a prior-candle Donchian breakout. Position size risks one
+    percent of current equity per ATR unit, and up to four units are added at
+    half-ATR intervals. Signals execute at the next candle open. This is a
+    single-instrument research baseline, not the original futures portfolio.
+    """
+    if entry_window < 2 or exit_window < 2 or exit_window >= entry_window:
+        raise ValueError("Turtle exit_window must be smaller than entry_window")
+    if atr_window < 2:
+        raise ValueError("Turtle atr_window must be at least 2")
+    if not 0 < risk_fraction <= 0.05:
+        raise ValueError("Turtle risk_fraction must be between 0 and 0.05")
+    if not 1 <= max_units <= 8:
+        raise ValueError("Turtle max_units must be between 1 and 8")
+    warmup = max(entry_window, exit_window, atr_window)
+    if len(bars) < warmup + 2:
+        raise ValueError(f"at least {warmup + 2} bars are required")
+
+    highs = [float(bar.high) for bar in bars]
+    lows = [float(bar.low) for bar in bars]
+    closes = [float(bar.close) for bar in bars]
+    true_ranges: list[float] = []
+    for index, bar in enumerate(bars):
+        previous_close = closes[index - 1] if index else float(bar.open)
+        true_ranges.append(
+            max(
+                float(bar.high) - float(bar.low),
+                abs(float(bar.high) - previous_close),
+                abs(float(bar.low) - previous_close),
+            )
+        )
+
+    cash = float(initial_cash)
+    quantity = 0.0
+    average_entry_price = 0.0
+    total_entry_cost = 0.0
+    entry_fee = 0.0
+    entry_timestamp: str | None = None
+    units = 0
+    last_add_price = 0.0
+    trades: list[dict[str, Any]] = []
+    fee_rate = fee_bps / 10_000.0
+    slippage_rate = slippage_bps / 10_000.0
+    equity_curve: list[dict[str, Any]] = [
+        {"timestamp": bars[warmup - 1].timestamp.isoformat(), "equity": round(cash, 8)}
+    ]
+
+    for execution_index in range(warmup + 1, len(bars)):
+        signal_index = execution_index - 1
+        atr = sum(true_ranges[signal_index - atr_window + 1 : signal_index + 1]) / atr_window
+        entry_channel = max(highs[signal_index - entry_window : signal_index])
+        exit_channel = min(lows[signal_index - exit_window : signal_index])
+        execution_bar = bars[execution_index]
+        marked_equity = cash + quantity * closes[signal_index]
+
+        should_enter = quantity <= 0 and closes[signal_index] > entry_channel
+        should_add = (
+            quantity > 0
+            and units < max_units
+            and closes[signal_index] >= last_add_price + 0.5 * atr
+        )
+        should_exit = quantity > 0 and closes[signal_index] < exit_channel
+
+        if should_exit:
+            exit_price = float(execution_bar.open) * (1.0 - slippage_rate)
+            notional = quantity * exit_price
+            exit_fee = notional * fee_rate
+            cash += notional - exit_fee
+            trades.append(
+                _trade_record(
+                    entry_timestamp=entry_timestamp,
+                    exit_timestamp=execution_bar.timestamp.isoformat(),
+                    entry_price=average_entry_price,
+                    exit_price=exit_price,
+                    quantity=quantity,
+                    entry_fee=entry_fee,
+                    exit_fee=exit_fee,
+                    net_pnl=(notional - exit_fee) - total_entry_cost,
+                )
+            )
+            quantity = average_entry_price = total_entry_cost = entry_fee = 0.0
+            entry_timestamp = None
+            units = 0
+            last_add_price = 0.0
+        elif should_enter or should_add:
+            fill_price = float(execution_bar.open) * (1.0 + slippage_rate)
+            risk_quantity = (marked_equity * risk_fraction) / atr
+            affordable_quantity = cash / (fill_price * (1.0 + fee_rate))
+            fill_quantity = min(risk_quantity, affordable_quantity)
+            if fill_quantity > 0:
+                fill_notional = fill_quantity * fill_price
+                fill_fee = fill_notional * fee_rate
+                cash -= fill_notional + fill_fee
+                previous_quantity = quantity
+                quantity += fill_quantity
+                average_entry_price = (
+                    (average_entry_price * previous_quantity + fill_price * fill_quantity)
+                    / quantity
+                )
+                total_entry_cost += fill_notional + fill_fee
+                entry_fee += fill_fee
+                entry_timestamp = entry_timestamp or execution_bar.timestamp.isoformat()
+                units += 1
+                last_add_price = fill_price
+
+        equity_curve.append(
+            {
+                "timestamp": execution_bar.timestamp.isoformat(),
+                "equity": round(cash + quantity * float(execution_bar.close), 8),
+            }
+        )
+
+    if quantity > 0:
+        final_bar = bars[-1]
+        exit_price = float(final_bar.close) * (1.0 - slippage_rate)
+        notional = quantity * exit_price
+        exit_fee = notional * fee_rate
+        cash += notional - exit_fee
+        trades.append(
+            _trade_record(
+                entry_timestamp=entry_timestamp,
+                exit_timestamp=final_bar.timestamp.isoformat(),
+                entry_price=average_entry_price,
+                exit_price=exit_price,
+                quantity=quantity,
+                entry_fee=entry_fee,
+                exit_fee=exit_fee,
+                net_pnl=(notional - exit_fee) - total_entry_cost,
+            )
+        )
+        equity_curve[-1]["equity"] = round(cash, 8)
+
+    peak = 0.0
+    max_drawdown_pct = 0.0
+    for point in equity_curve:
+        equity = float(point["equity"])
+        peak = max(peak, equity)
+        if peak > 0:
+            max_drawdown_pct = max(max_drawdown_pct, (peak - equity) / peak * 100.0)
+    wins = sum(1 for trade in trades if trade["net_pnl"] > 0)
+    first_close = closes[warmup - 1]
+    return {
+        "bars_count": len(bars),
+        "initial_cash": round(initial_cash, 8),
+        "final_equity": round(cash, 8),
+        "total_return_pct": round((cash / initial_cash - 1.0) * 100.0, 6),
+        "max_drawdown_pct": round(max_drawdown_pct, 6),
+        "number_of_trades": len(trades),
+        "win_rate_pct": round((wins / len(trades)) * 100.0, 6) if trades else 0.0,
+        "benchmark_return_pct": round((closes[-1] / first_close - 1.0) * 100.0, 6),
+        "equity_curve": equity_curve,
+        "trades": trades,
+        "assumptions": {
+            "execution": "signal at completed close; fill at next bar open",
+            "positioning": "long-only; ATR risk units; no leverage; maximum 4 units",
+            "signal": "20-bar breakout entry; 10-bar channel exit; ATR(20)",
+            "risk_fraction_per_unit": risk_fraction,
+            "fee_bps_per_side": fee_bps,
+            "slippage_bps_per_side": slippage_bps,
+            "open_position": "closed at final close if still open",
+        },
+    }
+
+
 def _trade_record(
     *,
     entry_timestamp: str | None,

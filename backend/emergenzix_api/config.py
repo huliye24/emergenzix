@@ -21,6 +21,7 @@ class Settings:
     market_data_cache_ttl_seconds: int = 30
     market_data_cache_max_entries: int = 256
     notification_db_path: str | None = None
+    seed_builtin_strategies: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -46,6 +47,9 @@ class Settings:
             ),
             market_data_cache_max_entries=_positive_int(
                 "EMERGENZIX_MARKET_DATA_CACHE_MAX_ENTRIES", 256
+            ),
+            seed_builtin_strategies=_bool_value(
+                "EMERGENZIX_SEED_BUILTIN_STRATEGIES", False
             ),
         )
 
@@ -77,3 +81,15 @@ def _positive_int(name: str, default: int) -> int:
     if value < 1:
         raise ValueError(f"{name} must be at least one")
     return value
+
+
+def _bool_value(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean")

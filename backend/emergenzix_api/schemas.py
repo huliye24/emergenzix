@@ -18,7 +18,7 @@ class StrictModel(BaseModel):
 class StrategyCreate(StrictModel):
     name: str = Field(min_length=1, max_length=80)
     symbol: str = Field(pattern=SYMBOL_PATTERN)
-    strategy_type: Literal["sma_crossover"] = "sma_crossover"
+    strategy_type: Literal["sma_crossover", "turtle_breakout"] = "sma_crossover"
     fast_window: int = Field(ge=2, le=200)
     slow_window: int = Field(ge=3, le=500)
 

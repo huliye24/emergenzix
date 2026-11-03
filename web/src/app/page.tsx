@@ -140,6 +140,14 @@ function formatDate(value: string): string {
   });
 }
 
+function formatBacktestSpan(timeframe: string, bars: number): string {
+  const hours = bars * ({ "1h": 1, "4h": 4, "1d": 24 }[timeframe] ?? 1);
+  if (hours < 24) return `约 ${hours} 小时`;
+  const days = Math.round(hours / 24);
+  if (days < 365) return `约 ${days} 天`;
+  return `约 ${(days / 365).toFixed(1)} 年`;
+}
+
 function buildSyntheticBars(): OhlcvBar[] {
   const bars: OhlcvBar[] = [];
   let previousClose = 100;
@@ -210,6 +218,10 @@ export default function DashboardPage() {
   const [orders, setOrders] = useState<PaperOrder[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [selectedStrategyId, setSelectedStrategyId] = useState("");
+  const [backtestSymbol, setBacktestSymbol] = useState("BTCUSDT");
+  const [backtestTimeframe, setBacktestTimeframe] = useState("4h");
+  const [backtestBars, setBacktestBars] = useState("500");
+  const [backtestInitialCash, setBacktestInitialCash] = useState("10000");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
@@ -228,6 +240,15 @@ export default function DashboardPage() {
   const selectedStrategy = useMemo(
     () => strategies.find((strategy) => strategy.id === selectedStrategyId) ?? strategies[0],
     [strategies, selectedStrategyId],
+  );
+  const selectedBacktestStrategy = useMemo(
+    () =>
+      strategies.find(
+        (strategy) =>
+          strategy.strategy_type === "turtle_breakout" &&
+          strategy.symbol === backtestSymbol,
+      ) ?? null,
+    [strategies, backtestSymbol],
   );
 
   const refresh = useCallback(async () => {
@@ -294,8 +315,8 @@ export default function DashboardPage() {
   }
 
   async function handleRunBacktest() {
-    if (!selectedStrategy) {
-      setError("Create or select a strategy before running a backtest.");
+    if (!selectedBacktestStrategy) {
+      setError("The selected Turtle baseline is not available.");
       return;
     }
     setBusyAction("backtest");
@@ -309,15 +330,16 @@ export default function DashboardPage() {
         bars: OhlcvBar[];
       }>(
         "/api/v1/market-data/ohlcv?exchange=binance&symbol=" +
-          encodeURIComponent(selectedStrategy.symbol) +
-          "&timeframe=1h&limit=120",
+          encodeURIComponent(backtestSymbol) +
+          "&timeframe=" + encodeURIComponent(backtestTimeframe) +
+          "&limit=" + encodeURIComponent(backtestBars),
       );
       const result = await apiRequest<BacktestResult>("/api/v1/backtests", {
         method: "POST",
         body: JSON.stringify({
-          strategy_id: selectedStrategy.id,
+          strategy_id: selectedBacktestStrategy.id,
           bars: marketData.bars,
-          initial_cash: 10000,
+          initial_cash: Number(backtestInitialCash),
           fee_bps: 10,
           slippage_bps: 5,
           data_source: "ccxt_public_ohlcv",
@@ -579,27 +601,73 @@ export default function DashboardPage() {
             <span className="panel-mark panel-mark-green">BT</span>
           </div>
           <p className="panel-description">
-            Fetch public OHLCV candles through CCXT and evaluate the selected strategy. A synthetic demo remains available when you do not want to call an exchange data endpoint.
+            使用公开市场 K 线评估海龟 20/10 基线。信号只读取已完成 K 线，并在下一根开盘模拟成交。
           </p>
+          <div className="backtest-controls form-stack">
+            <div className="two-fields">
+              <label>
+                币种
+                <select value={backtestSymbol} onChange={(event) => setBacktestSymbol(event.target.value)}>
+                  <option value="BTCUSDT">BTC / USDT</option>
+                  <option value="ETHUSDT">ETH / USDT</option>
+                  <option value="BNBUSDT">BNB / USDT</option>
+                </select>
+              </label>
+              <label>
+                K 线周期
+                <select value={backtestTimeframe} onChange={(event) => setBacktestTimeframe(event.target.value)}>
+                  <option value="1h">1 小时</option>
+                  <option value="4h">4 小时</option>
+                  <option value="1d">1 天</option>
+                </select>
+              </label>
+            </div>
+            <div className="two-fields">
+              <label>
+                测试长度
+                <select value={backtestBars} onChange={(event) => setBacktestBars(event.target.value)}>
+                  <option value="120">120 根</option>
+                  <option value="250">250 根</option>
+                  <option value="500">500 根</option>
+                  <option value="1000">1000 根</option>
+                </select>
+              </label>
+              <label>
+                初始资金（USDT）
+                <input
+                  type="number"
+                  min={100}
+                  max={1000000000}
+                  step={100}
+                  value={backtestInitialCash}
+                  onChange={(event) => setBacktestInitialCash(event.target.value)}
+                />
+              </label>
+            </div>
+            <div className="duration-readout">
+              <span>{backtestBars} 根 {backtestTimeframe} K 线</span>
+              <strong>{formatBacktestSpan(backtestTimeframe, Number(backtestBars))}</strong>
+            </div>
+          </div>
           <div className="selected-strategy">
             <span className="selected-label">SELECTED STRATEGY</span>
-            {selectedStrategy ? (
+            {selectedBacktestStrategy ? (
               <>
-                <strong>{selectedStrategy.name}</strong>
-                <span>{selectedStrategy.symbol} · fast {selectedStrategy.fast_window} / slow {selectedStrategy.slow_window}</span>
+                <strong>{selectedBacktestStrategy.name}</strong>
+                <span>20 根突破 · 10 根退出 · ATR(20) · 1% 风险单位 · 最多 4 次加仓</span>
               </>
             ) : (
-              <strong>Create a strategy first</strong>
+              <strong>海龟基线尚未加载</strong>
             )}
           </div>
           <div className="assumption-grid">
-            <div><span>Initial cash</span><strong>$10,000</strong></div>
+            <div><span>Initial cash</span><strong>{formatMoney(Number(backtestInitialCash) || 0)}</strong></div>
             <div><span>Fee / side</span><strong>10 bps</strong></div>
             <div><span>Slippage / side</span><strong>5 bps</strong></div>
             <div><span>Execution</span><strong>Next bar open</strong></div>
           </div>
-          <button className="button button-primary button-wide" onClick={() => void handleRunBacktest()} disabled={busyAction !== "" || !selectedStrategy}>
-            {busyAction === "backtest" ? "Fetching candles…" : "Fetch public candles & backtest"}
+          <button className="button button-primary button-wide" onClick={() => void handleRunBacktest()} disabled={busyAction !== "" || !selectedBacktestStrategy}>
+            {busyAction === "backtest" ? "读取数据并计算…" : "运行海龟回测"}
           </button>
           <button className="button button-quiet button-wide" onClick={() => void handleRunSyntheticBacktest()} disabled={busyAction !== "" || !selectedStrategy}>
             Run synthetic demo instead
