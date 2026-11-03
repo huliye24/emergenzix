@@ -32,6 +32,7 @@ from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_sy
 from .market_data_cache import TTLCache
 from .operational_status_api import router as operational_status_router
 from .strategy_api import router as strategy_router
+from .turtle_matrix_api import router as turtle_matrix_router
 from .scenarios import analyze_scenarios
 from .schemas import (
     Bar,
@@ -83,6 +84,7 @@ def create_app(
     app.include_router(operational_status_router)
     app.include_router(dataset_router)
     app.include_router(strategy_router)
+    app.include_router(turtle_matrix_router)
     app.include_router(backtest_read_router)
     app.include_router(date_range_comparison_router)
     app.include_router(date_range_statistics_router)

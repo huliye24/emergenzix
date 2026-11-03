@@ -221,6 +221,25 @@ class Database:
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS turtle_matrix_runs (
+                    id TEXT PRIMARY KEY,
+                    protocol_version TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TRIGGER IF NOT EXISTS turtle_matrix_runs_no_update
+                BEFORE UPDATE ON turtle_matrix_runs
+                BEGIN
+                    SELECT RAISE(ABORT, 'turtle matrix runs are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS turtle_matrix_runs_no_delete
+                BEFORE DELETE ON turtle_matrix_runs
+                BEGIN
+                    SELECT RAISE(ABORT, 'turtle matrix runs are immutable');
+                END;
+
                 CREATE TABLE IF NOT EXISTS paper_account (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     cash REAL NOT NULL,
@@ -396,6 +415,8 @@ class Database:
                     ON strategy_comparisons(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_strategy_validations_created_at
                     ON strategy_validations(created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_turtle_matrix_runs_created_at
+                    ON turtle_matrix_runs(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_paper_orders_created_at
                     ON paper_orders(created_at DESC);
                 """

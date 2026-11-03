@@ -20,6 +20,7 @@ test("operator session remains valid for 30 days and expires closed", () => {
 test("operator can register datasets and create backtests but cannot trade", () => {
   assert.equal(canMutateApi("/api/v1/backtests", "POST", true), true);
   assert.equal(canMutateApi("/api/v1/datasets", "POST", true), true);
+  assert.equal(canMutateApi("/api/v1/turtle-matrices", "POST", true), true);
   assert.equal(canMutateApi("/api/v1/strategies", "POST", true), false);
   assert.equal(canMutateApi("/api/v1/paper/orders", "POST", true), false);
 });

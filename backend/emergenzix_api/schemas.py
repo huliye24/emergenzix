@@ -189,6 +189,36 @@ class StrategyValidationCreate(StrictModel):
     slippage_bps: float = Field(default=5.0, ge=0, le=1_000, allow_inf_nan=False)
 
 
+class TurtleMatrixDataset(StrictModel):
+    symbol: Literal["BTCUSDT", "ETHUSDT", "BNBUSDT"]
+    timeframe: Literal["1h", "4h", "1d"]
+    dataset_id: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
+class TurtleMatrixCreate(StrictModel):
+    """Run the fixed 3-asset x 3-timeframe x 2-system Turtle matrix."""
+
+    datasets: list[TurtleMatrixDataset] = Field(min_length=9, max_length=9)
+    train_fraction: float = Field(default=0.7, ge=0.6, le=0.8, allow_inf_nan=False)
+    initial_cash: float = Field(default=10_000.0, gt=0, le=1_000_000_000)
+    fee_bps: float = Field(default=10.0, ge=0, le=1_000, allow_inf_nan=False)
+    slippage_bps: float = Field(default=5.0, ge=0, le=1_000, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_complete_grid(self) -> "TurtleMatrixCreate":
+        expected = {
+            (symbol, timeframe)
+            for symbol in ("BTCUSDT", "ETHUSDT", "BNBUSDT")
+            for timeframe in ("1h", "4h", "1d")
+        }
+        actual = {(item.symbol, item.timeframe) for item in self.datasets}
+        if actual != expected or len(actual) != len(self.datasets):
+            raise ValueError(
+                "datasets must contain each BTCUSDT/ETHUSDT/BNBUSDT x 1h/4h/1d pair exactly once"
+            )
+        return self
+
+
 class ScenarioAnalyzeCreate(StrictModel):
     """Completed candles and a structural lookback for scenario classification."""
 
