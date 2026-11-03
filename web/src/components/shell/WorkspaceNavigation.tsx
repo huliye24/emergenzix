@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 
 export type WorkspaceView =
   | "overview"
+  | "market"
   | "strategies"
   | "backtests"
   | "paper"
@@ -25,6 +26,12 @@ const NAV_ITEMS: {
     label: "实盘",
     description: "LIVE MONITOR",
     icon: <><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M15 10h6v4h-6a2 2 0 0 1 0-4Z" /></>,
+  },
+  {
+    id: "market",
+    label: "市场观测",
+    description: "PREDICT / SIGNAL",
+    icon: <><path d="M3 17l5-5 4 3 7-8" /><path d="M15 7h4v4" /><path d="M3 21h18" /></>,
   },
   {
     id: "backtests",

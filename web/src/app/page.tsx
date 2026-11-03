@@ -158,6 +158,45 @@ type OhlcvBar = {
 
 type OperatorStatus = { authenticated: boolean; role: "research_operator" | null };
 
+type MarketIntelligence = {
+  symbol: string;
+  timeframe: "15m" | "1h" | "4h";
+  observed_at: string;
+  price: { latest: number; latest_bar_timestamp: string; change_24_bars_pct: number };
+  freshness: { latest_completed_at: string; age_seconds: number; stale: boolean; forming_bar_excluded: boolean };
+  market_state: {
+    regime: string;
+    scenario: string;
+    confidence: number;
+    atr_pct: number;
+    support: number;
+    resistance: number;
+  };
+  prediction: {
+    method: string;
+    direction: "UP" | "DOWN" | "NEUTRAL";
+    score: number;
+    horizon_bars: number;
+    calibrated_probability: false;
+  };
+  signal: {
+    research_signal: string;
+    strategy_candidate: string | null;
+    reason: string;
+    invalidation: string;
+    order_permission: false;
+  };
+  models: Array<{ name: string; status: string }>;
+  series: Array<{ timestamp: string; close: number }>;
+  safety: {
+    advisory_only: true;
+    execution_decision: "NO_ACTION";
+    paper_order_permission: false;
+    live_order_permission: false;
+    live_trading_enabled: false;
+  };
+};
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -238,26 +277,32 @@ const WORKSPACE_VIEW_META: Record<
     title: "Turn hypotheses into evidence.",
     description: "Strategy development, evaluation, and paper-only operations in one place.",
   },
-  strategies: {
+  market: {
     index: "01",
+    kicker: "MARKET INTELLIGENCE",
+    title: "市场观测与信号",
+    description: "用已完成 K 线识别市场状态，展示可审计的预测基线与策略候选。信号仅供研究，不授权下单。",
+  },
+  strategies: {
+    index: "02",
     kicker: "STRATEGY LAB",
     title: "Strategy definitions",
     description: "Create and inspect strategy definitions. A saved strategy is a research artifact, not approval to trade.",
   },
   backtests: {
-    index: "02",
+    index: "03",
     kicker: "EVALUATION",
     title: "Backtest evidence",
     description: "Evaluate strategies against public exchange candles or clearly labeled synthetic demo data, with assumptions recorded.",
   },
   paper: {
-    index: "03",
+    index: "04",
     kicker: "PAPER OPERATIONS",
     title: "Simulated execution",
     description: "Simulate orders at an entered reference price. No exchange is contacted and no real funds are used.",
   },
   activity: {
-    index: "04",
+    index: "05",
     kicker: "ACTIVITY LOG",
     title: "Recorded paper activity",
     description: "Review simulated fills, positions, and realized profit or loss. These records are not exchange execution history.",
@@ -292,6 +337,11 @@ export default function DashboardPage() {
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [marketSymbol, setMarketSymbol] = useState("BTCUSDT");
+  const [marketTimeframe, setMarketTimeframe] = useState<"15m" | "1h" | "4h">("1h");
+  const [marketSnapshot, setMarketSnapshot] = useState<MarketIntelligence | null>(null);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketError, setMarketError] = useState("");
 
   const [strategyName, setStrategyName] = useState("BTC trend baseline");
   const [strategySymbol, setStrategySymbol] = useState("BTCUSDT");
@@ -368,6 +418,42 @@ export default function DashboardPage() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const loadMarketSnapshot = useCallback(async () => {
+    setMarketLoading(true);
+    try {
+      const snapshot = await apiRequest<MarketIntelligence>(
+        "/api/v1/market-intelligence?symbol=" + encodeURIComponent(marketSymbol) +
+          "&timeframe=" + encodeURIComponent(marketTimeframe),
+      );
+      setMarketSnapshot(snapshot);
+      setMarketError("");
+    } catch (caught) {
+      setMarketError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setMarketLoading(false);
+    }
+  }, [marketSymbol, marketTimeframe]);
+
+  useEffect(() => {
+    if (activeView !== "market") return;
+    void loadMarketSnapshot();
+    const timer = window.setInterval(() => void loadMarketSnapshot(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [activeView, loadMarketSnapshot]);
+
+  const marketChartPoints = useMemo(() => {
+    const values = marketSnapshot?.series.map((point) => point.close) ?? [];
+    if (values.length < 2) return "";
+    const minimum = Math.min(...values);
+    const maximum = Math.max(...values);
+    const span = maximum - minimum || 1;
+    return values.map((value, index) => {
+      const x = (index / (values.length - 1)) * 1000;
+      const y = 270 - ((value - minimum) / span) * 230;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+  }, [marketSnapshot]);
 
   async function handleCreateStrategy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -638,6 +724,97 @@ export default function DashboardPage() {
 
       {error ? <div className="notice notice-error" role="alert"><strong>Action needed</strong><span>{error}</span></div> : null}
       {message ? <div className="notice notice-success" role="status"><strong>Completed</strong><span>{message}</span></div> : null}
+
+      {activeView === "market" ? (
+      <section className="market-observer" aria-label="市场实时观测与信号">
+        <div className="market-command-bar">
+          <label>
+            <span>交易品种</span>
+            <select value={marketSymbol} onChange={(event) => setMarketSymbol(event.target.value)}>
+              <option value="BTCUSDT">BTC / USDT</option>
+              <option value="ETHUSDT">ETH / USDT</option>
+              <option value="BNBUSDT">BNB / USDT</option>
+            </select>
+          </label>
+          <fieldset>
+            <legend>观测周期</legend>
+            {(["15m", "1h", "4h"] as const).map((timeframe) => (
+              <button key={timeframe} type="button" className={marketTimeframe === timeframe ? "is-active" : ""} onClick={() => setMarketTimeframe(timeframe)}>{timeframe}</button>
+            ))}
+          </fieldset>
+          <div className="market-poll-status">
+            <span className={marketSnapshot?.freshness.stale ? "signal-dot stale" : "signal-dot"} />
+            <span>{marketSnapshot?.freshness.stale ? "数据已过期" : "30 秒轮询"}</span>
+          </div>
+          <button className="button button-quiet" type="button" onClick={() => void loadMarketSnapshot()} disabled={marketLoading}>
+            {marketLoading ? "更新中…" : "立即更新"}
+          </button>
+        </div>
+
+        {marketError ? <div className="notice notice-error" role="alert"><strong>行情不可用</strong><span>{marketError}</span></div> : null}
+        {marketSnapshot ? (
+          <div className="market-observer-grid">
+            <article className="market-chart-card">
+              <div className="market-price-row">
+                <div>
+                  <span>{marketSnapshot.symbol} · BINANCE SPOT</span>
+                  <strong>{new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(marketSnapshot.price.latest)}</strong>
+                </div>
+                <span className={marketSnapshot.price.change_24_bars_pct >= 0 ? "positive" : "negative"}>
+                  {formatPercent(marketSnapshot.price.change_24_bars_pct)} / 24 bars
+                </span>
+              </div>
+              <svg className="market-line-chart" viewBox="0 0 1000 310" preserveAspectRatio="none" role="img" aria-label={`${marketSnapshot.symbol} 最近价格走势`}>
+                <defs><linearGradient id="marketArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#9be5b4" stopOpacity=".26" /><stop offset="100%" stopColor="#9be5b4" stopOpacity="0" /></linearGradient></defs>
+                <line x1="0" y1="270" x2="1000" y2="270" />
+                <polygon points={`0,300 ${marketChartPoints} 1000,300`} fill="url(#marketArea)" />
+                <polyline points={marketChartPoints} />
+              </svg>
+              <div className="market-chart-footer">
+                <span>支撑 <strong>{marketSnapshot.market_state.support.toLocaleString()}</strong></span>
+                <span>阻力 <strong>{marketSnapshot.market_state.resistance.toLocaleString()}</strong></span>
+                <span>ATR <strong>{marketSnapshot.market_state.atr_pct.toFixed(2)}%</strong></span>
+                <span>完成 K 线 <strong>{formatDate(marketSnapshot.freshness.latest_completed_at)}</strong></span>
+              </div>
+            </article>
+
+            <aside className="market-decision-rail">
+              <article className="decision-card">
+                <span className="decision-step">01 · MARKET STATE</span>
+                <strong>{marketSnapshot.market_state.regime.replaceAll("_", " ")}</strong>
+                <small>{marketSnapshot.market_state.scenario} · {(marketSnapshot.market_state.confidence * 100).toFixed(1)}% 启发式权重</small>
+              </article>
+              <article className="decision-card">
+                <span className="decision-step">02 · BASELINE</span>
+                <strong className={`direction-${marketSnapshot.prediction.direction.toLowerCase()}`}>{marketSnapshot.prediction.direction}</strong>
+                <small>下一根 K 线方向基线 · 非校准概率</small>
+              </article>
+              <article className="decision-card decision-card-signal">
+                <span className="decision-step">03 · RESEARCH SIGNAL</span>
+                <strong>{marketSnapshot.signal.research_signal.replaceAll("_", " ")}</strong>
+                <small>{marketSnapshot.signal.strategy_candidate ?? "暂无策略候选"}</small>
+              </article>
+              <article className="decision-card decision-card-safe">
+                <span className="decision-step">04 · EXECUTION</span>
+                <strong>{marketSnapshot.safety.execution_decision.replaceAll("_", " ")}</strong>
+                <small>PAPER / LIVE 权限均关闭</small>
+              </article>
+            </aside>
+
+            <div className="market-model-strip">
+              {marketSnapshot.models.map((model) => (
+                <div key={model.name}><span>{model.name}</span><strong>{model.status.replaceAll("_", " ")}</strong></div>
+              ))}
+              <div><span>策略候选</span><strong>{marketSnapshot.signal.strategy_candidate ?? "等待有效状态"}</strong></div>
+            </div>
+            <div className="market-safety-banner">
+              <strong>研究信号 ≠ 交易许可</strong>
+              <span>当前页面只做观测与候选策略选择。数据过期、模型制品缺失或风险检查未完成时一律 NO ACTION。</span>
+            </div>
+          </div>
+        ) : <div className="market-loading-state">{marketLoading ? "正在读取公开行情并计算市场状态…" : "等待行情快照"}</div>}
+      </section>
+      ) : null}
 
       {activeView === "overview" ? (
       <section className="metrics-grid" aria-label="Product overview">
