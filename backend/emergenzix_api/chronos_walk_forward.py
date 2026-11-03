@@ -97,12 +97,9 @@ def _collection_sha256(root: Path) -> str:
     files = sorted(root.glob("*.parquet"), key=lambda path: path.name)
     if not files:
         raise ValueError("no Parquet inputs found")
-    hash_lines = []
     for path in files:
         file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
-        hash_lines.append(f"{file_hash}  {path.name}\n")
-    for line in sorted(hash_lines):
-        digest.update(line.encode("utf-8"))
+        digest.update(f"{file_hash}  {path.name}\n".encode("utf-8"))
     return digest.hexdigest()
 
 

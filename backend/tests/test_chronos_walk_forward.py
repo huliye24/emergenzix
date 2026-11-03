@@ -3,10 +3,12 @@ from __future__ import annotations
 import pytest
 
 from emergenzix_api.chronos_walk_forward import (
+    _collection_sha256,
     chronological_origins,
     local_model_snapshot,
     summarize_predictions,
 )
+from emergenzix_api.research_compute_routing import collection_sha256
 
 
 def test_chronological_origins_keep_context_before_every_target() -> None:
@@ -67,3 +69,10 @@ def test_offline_model_resolution_pins_cache_revision(tmp_path) -> None:
     assert local_model_snapshot("amazon/chronos-2", tmp_path) == str(snapshot)
     with pytest.raises(ValueError, match="allowlisted"):
         local_model_snapshot("example/unreviewed", tmp_path)
+
+
+def test_model_and_dispatcher_use_same_collection_hash(tmp_path) -> None:
+    (tmp_path / "btcusdt-2026-02.parquet").write_bytes(b"second")
+    (tmp_path / "btcusdt-2026-01.parquet").write_bytes(b"first")
+
+    assert _collection_sha256(tmp_path) == collection_sha256(tmp_path)

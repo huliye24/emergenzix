@@ -181,14 +181,13 @@ def flatten_feature_sequence(frame: pd.DataFrame) -> np.ndarray:
 
 
 def _collection_sha256(root: Path) -> str:
-    lines = []
-    for path in root.glob("*.parquet"):
-        lines.append(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n")
-    if not lines:
+    files = sorted(root.glob("*.parquet"), key=lambda path: path.name)
+    if not files:
         raise ValueError("no Parquet inputs found")
     digest = hashlib.sha256()
-    for line in sorted(lines):
-        digest.update(line.encode("utf-8"))
+    for path in files:
+        file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        digest.update(f"{file_hash}  {path.name}\n".encode("utf-8"))
     return digest.hexdigest()
 
 
