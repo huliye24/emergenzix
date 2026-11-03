@@ -13,6 +13,8 @@ from fastapi import FastAPI, HTTPException, Query, Request, status
 from . import __version__
 from .backtesting import run_sma_crossover
 from .api_common import _now, _row_to_dict
+from .binance_account import BinanceReadOnlyAccount, BinanceReadOnlyCredentials
+from .binance_account_api import router as binance_account_router
 from .config import Settings
 from .database import Database
 from .dataset_store import DatasetIntegrityError, verify_stored_dataset
@@ -81,6 +83,7 @@ def create_app(
     app.include_router(backtest_read_router)
     app.include_router(date_range_comparison_router)
     app.include_router(date_range_statistics_router)
+    app.include_router(binance_account_router)
     app.state.database = database
     app.state.notification_outbox_path = str(
         notification_db_path
@@ -99,6 +102,9 @@ def create_app(
     )
     app.state.paper_fee_bps = (
         paper_fee_bps if paper_fee_bps is not None else settings.paper_fee_bps
+    )
+    app.state.binance_account_reader = BinanceReadOnlyAccount(
+        BinanceReadOnlyCredentials.from_env()
     )
 
     @app.get("/api/v1/market-data/ohlcv")
