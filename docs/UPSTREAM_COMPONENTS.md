@@ -80,3 +80,6 @@ tracked in [the quantitative upstream candidate inventory](QUANT_UPSTREAM_CANDID
 Cataloging a project does not install it or authorize its data, credentials,
 models, gateways, or execution paths. Qbot and vectorbt currently have license
 conditions that block direct product integration pending separate review.
+
+The first isolated Qlib deployment and BTC 4-hour execution-accounting fixture
+are recorded in [Qlib Ningxia CPU acceptance](QLIB_CLOUD_ACCEPTANCE.md).
