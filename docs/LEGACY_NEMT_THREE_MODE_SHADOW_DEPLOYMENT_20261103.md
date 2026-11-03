@@ -58,3 +58,20 @@ The deployed legacy application is not a Git checkout. This repository records t
 ## Follow-up boundary
 
 A durable 24/7 shadow executor is separate work. It requires server-side lifecycle management, reconciliation, idempotency, stale-data blocking, audit logs, risk limits, and explicit acceptance tests before it can be considered for unattended operation. LIVE order placement remains disabled.
+
+## Top mode-navigation refinement
+
+The same-day visual follow-up moved the three primary modes from the narrow left rail into the top bar:
+
+- desktop mode icons increased from 18 px to 26 px;
+- each icon now has a short Chinese label and a larger hit target;
+- the selected mode uses the violet surface and underline;
+- the left mode rail and duplicate mobile bottom navigation were removed;
+- mobile renders the same three modes as equal-width top buttons.
+
+Verification was repeated after the refinement: TypeScript passed, the focused ESLint run had no errors and retained the same pre-existing unused-parameter warning, the production build passed, both services were active, and the public route returned HTTP 200.
+
+Recovery for this refinement:
+
+- Source backup: `/opt/nemt-app/backups/top-mode-nav-before-20261103-201500`
+- Previous build: `/opt/nemt-app/backups/.next-before-top-mode-nav-20261103-201500`
