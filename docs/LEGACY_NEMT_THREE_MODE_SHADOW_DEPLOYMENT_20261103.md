@@ -1,7 +1,9 @@
 # Legacy NEMT three-mode navigation and shadow session deployment
 
-Date: 2026-11-03  
-Target: `https://postyouth.club/trade`  
+Date: 2026-11-03
+
+Target: `https://postyouth.club/trade`
+
 Status: deployed and verified
 
 ## Objective
