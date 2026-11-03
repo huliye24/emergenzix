@@ -400,9 +400,12 @@ def run_turtle_breakout(
     fee_rate = fee_bps / 10_000.0
     slippage_rate = slippage_bps / 10_000.0
     execution_start_index = max(warmup + 1, evaluation_start_index)
+    metric_start_index = (
+        evaluation_start_index - 1 if evaluation_start_index else warmup - 1
+    )
     equity_curve: list[dict[str, Any]] = [
         {
-            "timestamp": bars[execution_start_index - 1].timestamp.isoformat(),
+            "timestamp": bars[metric_start_index].timestamp.isoformat(),
             "equity": round(cash, 8),
         }
     ]
@@ -500,7 +503,7 @@ def run_turtle_breakout(
         if peak > 0:
             max_drawdown_pct = max(max_drawdown_pct, (peak - equity) / peak * 100.0)
     wins = sum(1 for trade in trades if trade["net_pnl"] > 0)
-    first_close = closes[execution_start_index - 1]
+    first_close = closes[metric_start_index]
     evaluated_bars_count = (
         len(bars)
         if evaluation_start_index == 0
