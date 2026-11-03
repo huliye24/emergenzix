@@ -72,3 +72,11 @@ Before adding another source repository or copying files into Emergenzix:
 ## 5. Do not import everything blindly
 
 Freqtrade includes a complete bot, configuration system, database, API server, strategy lifecycle, and UI. Emergenzix should reuse the engine and data capabilities while retaining a distinct product boundary. Avoid duplicating Freqtrade's internals in the Emergenzix API or maintaining a long-lived fork unless a specific, documented change requires it.
+
+## 6. Quantitative and AI candidate catalog
+
+Qlib, TradingAgents, OpenBB, FinGPT, FinRL, Qbot, vn.py, and vectorbt are
+tracked in [the quantitative upstream candidate inventory](QUANT_UPSTREAM_CANDIDATES.md).
+Cataloging a project does not install it or authorize its data, credentials,
+models, gateways, or execution paths. Qbot and vectorbt currently have license
+conditions that block direct product integration pending separate review.
