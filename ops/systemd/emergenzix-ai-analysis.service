@@ -1,0 +1,28 @@
+[Unit]
+Description=Emergenzix internal read-only AI research analysis
+Wants=network-online.target
+After=network-online.target mihomo.service
+
+[Service]
+Type=exec
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/emergenzix-ai-current
+ExecStart=/home/ubuntu/emergenzix-ai-current/ops/run_ai_analysis.sh
+Environment=EMERGENZIX_DEEPSEEK_MODEL=deepseek-flash
+Environment=EMERGENZIX_DB_PATH=/home/ubuntu/.local/share/emergenzix-ai/emergenzix.db
+Environment=EMERGENZIX_AI_PORT=18765
+Environment=HTTP_PROXY=http://127.0.0.1:7890
+Environment=HTTPS_PROXY=http://127.0.0.1:7890
+Environment=ALL_PROXY=http://127.0.0.1:7890
+Environment=NO_PROXY=127.0.0.1,localhost
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/.local/share/emergenzix-ai
+
+[Install]
+WantedBy=multi-user.target
