@@ -55,9 +55,8 @@ class PreparedFrames:
 
 
 def _utc_naive(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
-    if index.tz is None:
-        return index
-    return index.tz_convert("UTC").tz_localize(None)
+    result = index if index.tz is None else index.tz_convert("UTC").tz_localize(None)
+    return result.as_unit("ns")
 
 
 def _validate_candles(candles: pd.DataFrame) -> pd.DataFrame:
@@ -323,6 +322,9 @@ def prepare_frames(
         numeric = frame.to_numpy(dtype=float)
         if not np.isfinite(numeric).all():
             raise ValueError("prepared Qlib frames must be finite")
+        timestamps = frame.index.get_level_values("datetime")
+        if timestamps.isna().any() or frame.index.duplicated().any():
+            raise ValueError("prepared Qlib indexes must be complete and unique")
     if not (train.index.get_level_values("datetime").max() <= TRAIN_END):
         raise ValueError("train boundary violation")
     valid_times = valid.index.get_level_values("datetime")

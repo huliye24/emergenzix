@@ -15,6 +15,7 @@ from emergenzix_api.qlib_gpu_benchmark import (
     flatten_feature_sequence,
     supervised_rows,
     validate_prediction_values,
+    _utc_naive,
 )
 
 
@@ -79,4 +80,12 @@ def test_flattening_is_feature_major_for_qlib_models() -> None:
 def test_prediction_validation_fails_closed() -> None:
     with pytest.raises(ValueError, match="expected finite"):
         validate_prediction_values([0.1, float("nan")], expected=2)
+
+
+def test_utc_naive_normalizes_datetime_precision() -> None:
+    source = pd.date_range("2026-01-01", periods=2, freq="15min", tz="UTC").as_unit("us")
+    result = _utc_naive(source)
+
+    assert result.tz is None
+    assert result.dtype == "datetime64[ns]"
 
