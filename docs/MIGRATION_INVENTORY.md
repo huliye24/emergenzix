@@ -1,11 +1,27 @@
 # NEMT Application Migration Inventory
 
-- **Status:** scoped inventory complete; no application code was copied or changed
+- **Status:** scoped inventory complete; focused adapters are recorded below
 - **Source repository:** [huliye24/NEMT-Simulator2](https://github.com/huliye24/NEMT-Simulator2)
 - **Evidence snapshot:** `8582b66f3bff4b2aa6d2433399c6d3c4452761c9` (`origin/main`, inspected 2026-10-24)
 - **Scope:** product-facing `web/`, `backend/trade_app/`, entry point, app tests, CI, and baseline acceptance documents
 
 This inventory supports [ADR-001](adr/ADR-001-product-baseline-and-migration.md). It is not a full audit of NEMT and does not approve any source transfer, dependency, credential, or exchange integration.
+
+## 2026-11-03 price-only phase adapter
+
+- **Source:** `nemt_signals.py` at
+  `huliye24/NEMT-Simulator2@8582b66f3bff4b2aa6d2433399c6d3c4452761c9`.
+- **File-level license:** Apache-2.0 header; the upstream repository is
+  GPL-3.0-only. Emergenzix remains GPL-3.0.
+- **Adapted product boundary:** only the DCI direction ratio and the A/D phase
+  thresholds are independently wrapped in
+  `backend/emergenzix_api/nemt_phase_observer.py`.
+- **Explicitly excluded:** upstream position, leverage, execution, funding,
+  open-interest, on-chain, and resonance instructions. Price-only OHLCV cannot
+  establish B/Vortex or C/Resonance, and the adapter always returns
+  `order_permission: false`.
+- **Verification:** focused deterministic trend/noise tests; this is an
+  advisory observer, not a strategy promotion or execution path.
 
 ## Verified product-facing inventory
 

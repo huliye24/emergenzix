@@ -22,6 +22,7 @@ class Settings:
     market_data_cache_max_entries: int = 256
     notification_db_path: str | None = None
     seed_builtin_strategies: bool = False
+    model_signal_artifact_path: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -50,6 +51,9 @@ class Settings:
             ),
             seed_builtin_strategies=_bool_value(
                 "EMERGENZIX_SEED_BUILTIN_STRATEGIES", False
+            ),
+            model_signal_artifact_path=os.environ.get(
+                "EMERGENZIX_MODEL_SIGNAL_ARTIFACT_PATH"
             ),
         )
 

@@ -39,6 +39,12 @@ def test_snapshot_excludes_forming_bar_and_never_grants_execution() -> None:
     assert result["freshness"]["forming_bar_excluded"] is True
     assert result["freshness"]["latest_completed_at"] == payload["bars"][-2]["timestamp"]
     assert result["prediction"]["calibrated_probability"] is False
+    assert result["prediction"]["verified_model_count"] == 0
+    assert result["prediction"]["model_consensus"] == "UNAVAILABLE"
+    assert result["observers"]["nemt"]["order_permission"] is False
+    assert [item["status"] for item in result["models"][:2]] == [
+        "artifact_unavailable", "artifact_unavailable"
+    ]
     assert result["safety"] == {
         "advisory_only": True,
         "execution_decision": "NO_ACTION",

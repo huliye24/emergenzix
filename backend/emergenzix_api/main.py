@@ -113,6 +113,7 @@ def create_app(
     app.state.binance_account_reader = BinanceReadOnlyAccount(
         BinanceReadOnlyCredentials.from_env()
     )
+    app.state.model_signal_artifact_path = settings.model_signal_artifact_path
 
     @app.get("/api/v1/market-data/ohlcv")
     def market_data_ohlcv(
@@ -163,7 +164,10 @@ def create_app(
                     limit=200,
                 ),
             )
-            return build_market_intelligence(market_data)
+            return build_market_intelligence(
+                market_data,
+                model_signal_artifact_path=request.app.state.model_signal_artifact_path,
+            )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except MarketDataUnavailable as exc:
