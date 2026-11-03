@@ -36,6 +36,7 @@ def _transport(content: dict[str, object], *, finish_reason: str = "stop") -> ht
         assert request.headers["authorization"] == "Bearer test-key"
         body = json.loads(request.content)
         assert body["response_format"] == {"type": "json_object"}
+        assert body["thinking"] == {"type": "disabled"}
         assert body["stream"] is False
         return httpx.Response(
             200,

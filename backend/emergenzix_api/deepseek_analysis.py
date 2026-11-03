@@ -139,6 +139,10 @@ def analyze_research_evidence(
             },
         ],
         "response_format": {"type": "json_object"},
+        # Market/research advisories require a short complete JSON object. The
+        # V4 API otherwise defaults to high-effort thinking, which can consume
+        # the bounded output budget before the final JSON is completed.
+        "thinking": {"type": "disabled"},
         "temperature": 0.1,
         "max_tokens": active_config.max_tokens,
         "stream": False,
