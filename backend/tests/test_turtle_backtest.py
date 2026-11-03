@@ -86,17 +86,21 @@ def test_builtin_turtle_candidates_are_opt_in_and_idempotent(tmp_path) -> None:
     with database.connection() as connection:
         strategies = connection.execute(
             "SELECT symbol, strategy_type, fast_window, slow_window, status "
-            "FROM strategies ORDER BY symbol"
+            "FROM strategies ORDER BY symbol, slow_window"
         ).fetchall()
         versions = connection.execute(
             "SELECT COUNT(*) FROM strategy_versions"
         ).fetchone()[0]
 
-    assert [row["symbol"] for row in strategies] == ["BNBUSDT", "BTCUSDT", "ETHUSDT"]
+    assert [row["symbol"] for row in strategies] == [
+        "BNBUSDT", "BNBUSDT", "BTCUSDT", "BTCUSDT", "ETHUSDT", "ETHUSDT"
+    ]
     assert all(row["strategy_type"] == "turtle_breakout" for row in strategies)
-    assert all((row["fast_window"], row["slow_window"]) == (10, 20) for row in strategies)
+    assert {
+        (row["fast_window"], row["slow_window"]) for row in strategies
+    } == {(10, 20), (20, 55)}
     assert all(row["status"] == "candidate" for row in strategies)
-    assert versions == 3
+    assert versions == 6
 
 
 @pytest.mark.asyncio

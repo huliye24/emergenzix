@@ -17,7 +17,7 @@ Please include the affected component, impact, reproduction steps using a safe e
 - LIVE trading is disabled by default and requires separate documented approval.
 - Authentication, authorization, risk checks, and order validation are enforced server-side.
 - Shared visitor sessions are viewer-only and must not authorize state changes; future operator actions require separate backend authorization.
-- Research-operator sessions are separately signed and may authorize only historical backtest creation at the Web proxy; they never authorize strategy mutation, PAPER orders, TESTNET, or LIVE execution.
+- Research-operator sessions are separately signed and may authorize only immutable historical dataset registration and historical backtest creation at the Web proxy; they never authorize strategy mutation, PAPER orders, TESTNET, or LIVE execution.
 - Unknown mode, stale data, failed risk checks, and uncertain order state fail closed.
 - Logs, screenshots, test fixtures, and issue reports must redact sensitive data.
 - Dependencies must be reviewed for known vulnerabilities and license compatibility.

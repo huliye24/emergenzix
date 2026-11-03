@@ -37,6 +37,9 @@ type Strategy = {
   slow_window: number;
   status: string;
   created_at: string;
+  current_version_id: string;
+  current_version: number;
+  current_parameters_sha256: string;
 };
 
 type BacktestResult = {
@@ -48,6 +51,9 @@ type BacktestResult = {
     strategy_type: string;
     fast_window: number;
     slow_window: number;
+    version: number;
+    version_id: string;
+    parameters_sha256: string;
   };
   created_at: string;
   bars_count: number;
@@ -70,7 +76,23 @@ type BacktestResult = {
     exchange: string | null;
     symbol: string | null;
     timeframe: string | null;
+    dataset_id?: string;
+    dataset_sha256?: string;
+    start_at?: string;
+    end_at?: string;
   };
+};
+
+type MarketDataset = {
+  id: string;
+  sha256: string;
+  source: string;
+  exchange: string;
+  symbol: string;
+  timeframe: string;
+  start_at: string;
+  end_at: string;
+  bars_count: number;
 };
 
 type PaperOrder = {
@@ -225,6 +247,10 @@ export default function DashboardPage() {
   const [backtestTimeframe, setBacktestTimeframe] = useState("4h");
   const [backtestBars, setBacktestBars] = useState("500");
   const [backtestInitialCash, setBacktestInitialCash] = useState("10000");
+  const [backtestSystem, setBacktestSystem] = useState("20-10");
+  const [backtestFeeBps, setBacktestFeeBps] = useState("10");
+  const [backtestSlippageBps, setBacktestSlippageBps] = useState("5");
+  const [lastBacktestReceipt, setLastBacktestReceipt] = useState<BacktestResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
@@ -245,13 +271,19 @@ export default function DashboardPage() {
     [strategies, selectedStrategyId],
   );
   const selectedBacktestStrategy = useMemo(
-    () =>
+    () => {
+      const [entryWindow, exitWindow] = backtestSystem.split("-").map(Number);
+      return (
       strategies.find(
         (strategy) =>
           strategy.strategy_type === "turtle_breakout" &&
-          strategy.symbol === backtestSymbol,
-      ) ?? null,
-    [strategies, backtestSymbol],
+          strategy.symbol === backtestSymbol &&
+          strategy.slow_window === entryWindow &&
+          strategy.fast_window === exitWindow,
+      ) ?? null
+      );
+    },
+    [strategies, backtestSymbol, backtestSystem],
   );
 
   const refresh = useCallback(async () => {
@@ -339,32 +371,31 @@ export default function DashboardPage() {
           "&timeframe=" + encodeURIComponent(backtestTimeframe) +
           "&limit=" + encodeURIComponent(backtestBars),
       );
+      const dataset = await apiRequest<MarketDataset>("/api/v1/datasets", {
+        method: "POST",
+        body: JSON.stringify({
+          source: "ccxt_public_ohlcv",
+          exchange: marketData.exchange,
+          symbol: marketData.symbol,
+          timeframe: marketData.timeframe,
+          bars: marketData.bars,
+        }),
+      });
       const result = await apiRequest<BacktestResult>("/api/v1/backtests", {
         method: "POST",
         body: JSON.stringify({
           strategy_id: selectedBacktestStrategy.id,
-          bars: marketData.bars,
+          strategy_version_id: selectedBacktestStrategy.current_version_id,
+          dataset_id: dataset.id,
           initial_cash: Number(backtestInitialCash),
-          fee_bps: 10,
-          slippage_bps: 5,
-          data_source: "ccxt_public_ohlcv",
-          data_exchange: marketData.exchange,
-          data_symbol: marketData.symbol,
-          data_timeframe: marketData.timeframe,
+          fee_bps: Number(backtestFeeBps),
+          slippage_bps: Number(backtestSlippageBps),
         }),
       });
+      setLastBacktestReceipt(result);
       setMessage(
-        "Backtest saved using " +
-          marketData.bars.length +
-          " public " +
-          marketData.timeframe +
-          " candles from " +
-          marketData.exchange +
-          " (" +
-          marketData.symbol +
-          "). " +
-          result.number_of_trades +
-          " closed trades. The newest candle may still be forming.",
+        `实验已保存：${dataset.bars_count} 根 ${dataset.timeframe} K 线，` +
+          `${result.number_of_trades} 笔已平仓交易。数据 ${dataset.sha256.slice(0, 12)}…`,
       );
       await refresh();
     } catch (caught) {
@@ -606,10 +637,23 @@ export default function DashboardPage() {
             <span className="panel-mark panel-mark-green">BT</span>
           </div>
           <p className="panel-description">
-            使用公开市场 K 线评估海龟 20/10 基线。信号只读取已完成 K 线，并在下一根开盘模拟成交。
+            选择固定策略和实验参数。系统先冻结市场数据，再使用同一份不可变快照运行回测。
           </p>
+          <div className="experiment-steps" aria-label="固定实验流程">
+            <span><b>01</b> 策略</span>
+            <span><b>02</b> 市场</span>
+            <span><b>03</b> 成本</span>
+            <span><b>04</b> 回执</span>
+          </div>
           <div className="backtest-controls form-stack">
             <div className="two-fields">
+              <label>
+                策略版本
+                <select value={backtestSystem} onChange={(event) => setBacktestSystem(event.target.value)}>
+                  <option value="20-10">海龟 20 / 10 · 短周期</option>
+                  <option value="55-20">海龟 55 / 20 · 长周期</option>
+                </select>
+              </label>
               <label>
                 币种
                 <select value={backtestSymbol} onChange={(event) => setBacktestSymbol(event.target.value)}>
@@ -618,6 +662,8 @@ export default function DashboardPage() {
                   <option value="BNBUSDT">BNB / USDT</option>
                 </select>
               </label>
+            </div>
+            <div className="two-fields">
               <label>
                 K 线周期
                 <select value={backtestTimeframe} onChange={(event) => setBacktestTimeframe(event.target.value)}>
@@ -626,10 +672,8 @@ export default function DashboardPage() {
                   <option value="1d">1 天</option>
                 </select>
               </label>
-            </div>
-            <div className="two-fields">
               <label>
-                测试长度
+                样本长度
                 <select value={backtestBars} onChange={(event) => setBacktestBars(event.target.value)}>
                   <option value="120">120 根</option>
                   <option value="250">250 根</option>
@@ -649,6 +693,16 @@ export default function DashboardPage() {
                 />
               </label>
             </div>
+            <div className="two-fields">
+              <label>
+                手续费 / 单边（bps）
+                <input type="number" min={0} max={1000} step={1} value={backtestFeeBps} onChange={(event) => setBacktestFeeBps(event.target.value)} />
+              </label>
+              <label>
+                滑点 / 单边（bps）
+                <input type="number" min={0} max={1000} step={1} value={backtestSlippageBps} onChange={(event) => setBacktestSlippageBps(event.target.value)} />
+              </label>
+            </div>
             <div className="duration-readout">
               <span>{backtestBars} 根 {backtestTimeframe} K 线</span>
               <strong>{formatBacktestSpan(backtestTimeframe, Number(backtestBars))}</strong>
@@ -659,29 +713,38 @@ export default function DashboardPage() {
             {selectedBacktestStrategy ? (
               <>
                 <strong>{selectedBacktestStrategy.name}</strong>
-                <span>20 根突破 · 10 根退出 · ATR(20) · 1% 风险单位 · 最多 4 次加仓</span>
+                <span>
+                  {selectedBacktestStrategy.slow_window} 根突破 · {selectedBacktestStrategy.fast_window} 根退出 · ATR(20) · 1% 风险单位 · 最多 4 次加仓
+                </span>
+                <code>{selectedBacktestStrategy.current_parameters_sha256}</code>
               </>
             ) : (
-              <strong>海龟基线尚未加载</strong>
+              <strong>所选海龟策略尚未加载</strong>
             )}
           </div>
           <div className="assumption-grid">
-            <div><span>Initial cash</span><strong>{formatMoney(Number(backtestInitialCash) || 0)}</strong></div>
-            <div><span>Fee / side</span><strong>10 bps</strong></div>
-            <div><span>Slippage / side</span><strong>5 bps</strong></div>
-            <div><span>Execution</span><strong>Next bar open</strong></div>
+            <div><span>初始资金</span><strong>{formatMoney(Number(backtestInitialCash) || 0)}</strong></div>
+            <div><span>总摩擦 / 往返</span><strong>{2 * (Number(backtestFeeBps) + Number(backtestSlippageBps)) || 0} bps</strong></div>
+            <div><span>信号</span><strong>已完成 K 线</strong></div>
+            <div><span>成交</span><strong>下一根开盘</strong></div>
           </div>
           <button
             className="button button-primary button-wide"
             onClick={() => operatorAuthenticated ? void handleRunBacktest() : window.location.assign("/operator")}
             disabled={busyAction !== "" || !selectedBacktestStrategy}
           >
-            {busyAction === "backtest" ? "读取数据并计算…" : operatorAuthenticated ? "运行海龟回测" : "操作员登录后运行"}
+            {busyAction === "backtest" ? "冻结数据并计算…" : operatorAuthenticated ? "冻结快照并运行" : "操作员登录后运行"}
           </button>
-          <button className="button button-quiet button-wide" onClick={() => void handleRunSyntheticBacktest()} disabled={busyAction !== "" || !selectedStrategy}>
-            Run synthetic demo instead
-          </button>
-          <p className="fine-print">Public market data is read-only and requires exchange API availability. The newest candle may still be forming; synthetic demo data is not historical market performance.</p>
+          <p className="fine-print">只读取公开市场数据。每次运行先生成内容寻址的数据集，再固定策略版本、资金和成本；任何结果都不会自动获得 PAPER 或 LIVE 权限。</p>
+
+          {lastBacktestReceipt ? (
+            <div className="experiment-receipt" aria-live="polite">
+              <div><span>实验 ID</span><code>{lastBacktestReceipt.id}</code></div>
+              <div><span>数据 SHA</span><code>{lastBacktestReceipt.data_provenance?.dataset_sha256}</code></div>
+              <div><span>策略 SHA</span><code>{lastBacktestReceipt.strategy.parameters_sha256}</code></div>
+              <div><span>区间</span><strong>{lastBacktestReceipt.data_provenance?.start_at?.slice(0, 10)} → {lastBacktestReceipt.data_provenance?.end_at?.slice(0, 10)}</strong></div>
+            </div>
+          ) : null}
 
           <div className="subsection-heading">
             <span>Recent backtests</span>

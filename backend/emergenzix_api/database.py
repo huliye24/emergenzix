@@ -563,43 +563,67 @@ class Database:
                 else ()
             )
             for symbol in builtin_symbols:
-                strategy_id = str(
-                    uuid.uuid5(uuid.NAMESPACE_URL, f"emergenzix:builtin:turtle-20-10:{symbol}")
-                )
-                version_id = str(
-                    uuid.uuid5(uuid.NAMESPACE_URL, f"emergenzix:builtin:turtle-20-10:{symbol}:v1")
-                )
-                parameters = {
-                    "strategy_type": "turtle_breakout",
-                    "fast_window": 10,
-                    "slow_window": 20,
-                }
-                parameters_json = json.dumps(
-                    parameters, sort_keys=True, separators=(",", ":")
-                )
-                parameters_sha256 = hashlib.sha256(
-                    parameters_json.encode("utf-8")
-                ).hexdigest()
-                created_at = "2026-11-03T00:00:00+00:00"
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO strategies
-                        (id, name, symbol, strategy_type, fast_window, slow_window,
-                         status, created_at, updated_at)
-                    VALUES (?, ?, ?, 'turtle_breakout', 10, 20,
-                            'candidate', ?, ?)
-                    """,
-                    (strategy_id, f"{symbol.removesuffix('USDT')} Turtle 20/10", symbol, created_at, created_at),
-                )
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO strategy_versions
-                        (id, strategy_id, version, strategy_type, fast_window,
-                         slow_window, parameters_json, parameters_sha256, created_at)
-                    VALUES (?, ?, 1, 'turtle_breakout', 10, 20, ?, ?, ?)
-                    """,
-                    (version_id, strategy_id, parameters_json, parameters_sha256, created_at),
-                )
+                for entry_window, exit_window in ((20, 10), (55, 20)):
+                    system = f"{entry_window}-{exit_window}"
+                    strategy_id = str(
+                        uuid.uuid5(
+                            uuid.NAMESPACE_URL,
+                            f"emergenzix:builtin:turtle-{system}:{symbol}",
+                        )
+                    )
+                    version_id = str(
+                        uuid.uuid5(
+                            uuid.NAMESPACE_URL,
+                            f"emergenzix:builtin:turtle-{system}:{symbol}:v1",
+                        )
+                    )
+                    parameters = {
+                        "strategy_type": "turtle_breakout",
+                        "fast_window": exit_window,
+                        "slow_window": entry_window,
+                    }
+                    parameters_json = json.dumps(
+                        parameters, sort_keys=True, separators=(",", ":")
+                    )
+                    parameters_sha256 = hashlib.sha256(
+                        parameters_json.encode("utf-8")
+                    ).hexdigest()
+                    created_at = "2026-11-03T00:00:00+00:00"
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO strategies
+                            (id, name, symbol, strategy_type, fast_window, slow_window,
+                             status, created_at, updated_at)
+                        VALUES (?, ?, ?, 'turtle_breakout', ?, ?,
+                                'candidate', ?, ?)
+                        """,
+                        (
+                            strategy_id,
+                            f"{symbol.removesuffix('USDT')} Turtle {entry_window}/{exit_window}",
+                            symbol,
+                            exit_window,
+                            entry_window,
+                            created_at,
+                            created_at,
+                        ),
+                    )
+                    connection.execute(
+                        """
+                        INSERT OR IGNORE INTO strategy_versions
+                            (id, strategy_id, version, strategy_type, fast_window,
+                             slow_window, parameters_json, parameters_sha256, created_at)
+                        VALUES (?, ?, 1, 'turtle_breakout', ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            version_id,
+                            strategy_id,
+                            exit_window,
+                            entry_window,
+                            parameters_json,
+                            parameters_sha256,
+                            created_at,
+                        ),
+                    )
 
             connection.execute(
                 """
