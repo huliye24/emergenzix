@@ -250,6 +250,7 @@ export default function DashboardPage() {
   const [backtestSystem, setBacktestSystem] = useState("20-10");
   const [backtestFeeBps, setBacktestFeeBps] = useState("10");
   const [backtestSlippageBps, setBacktestSlippageBps] = useState("5");
+  const [backtestWorkspace, setBacktestWorkspace] = useState<"catalog" | "turtle">("catalog");
   const [lastBacktestReceipt, setLastBacktestReceipt] = useState<BacktestResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
@@ -285,6 +286,10 @@ export default function DashboardPage() {
     },
     [strategies, backtestSymbol, backtestSystem],
   );
+  const turtleBacktests = useMemo(
+    () => backtests.filter((backtest) => backtest.strategy?.strategy_type === "turtle_breakout"),
+    [backtests],
+  );
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -298,7 +303,7 @@ export default function DashboardPage() {
         await Promise.all([
           apiRequest<Overview>("/api/v1/overview"),
           apiRequest<Strategy[]>("/api/v1/strategies"),
-          apiRequest<BacktestResult[]>("/api/v1/backtests?limit=8"),
+          apiRequest<BacktestResult[]>("/api/v1/backtests?limit=50"),
           apiRequest<PaperOrder[]>("/api/v1/paper/orders?limit=8"),
           apiRequest<Position[]>("/api/v1/paper/positions"),
           apiRequest<OperatorStatus>("/api/operator"),
@@ -559,7 +564,7 @@ export default function DashboardPage() {
       ) : null}
 
       {activeView === "overview" || activeView === "strategies" || activeView === "backtests" ? (
-<section className={"content-grid" + (activeView === "overview" ? "" : " single-view-grid")}>
+<section className={"content-grid" + (activeView === "overview" ? "" : " single-view-grid") + (activeView === "backtests" ? " backtest-view-grid" : "")}>
 
         {activeView !== "backtests" ? (
 <article className="panel">
@@ -628,146 +633,178 @@ export default function DashboardPage() {
 
         
 {activeView !== "strategies" ? (
-<article className="panel">
-          <div className="panel-heading">
-            <div>
-              <span className="section-index">02 / EVALUATION</span>
-              <h2>Run a backtest</h2>
-            </div>
-            <span className="panel-mark panel-mark-green">BT</span>
-          </div>
-          <p className="panel-description">
-            选择固定策略和实验参数。系统先冻结市场数据，再使用同一份不可变快照运行回测。
-          </p>
-          <div className="experiment-steps" aria-label="固定实验流程">
-            <span><b>01</b> 策略</span>
-            <span><b>02</b> 市场</span>
-            <span><b>03</b> 成本</span>
-            <span><b>04</b> 回执</span>
-          </div>
-          <div className="backtest-controls form-stack">
-            <div className="two-fields">
-              <label>
-                策略版本
-                <select value={backtestSystem} onChange={(event) => setBacktestSystem(event.target.value)}>
-                  <option value="20-10">海龟 20 / 10 · 短周期</option>
-                  <option value="55-20">海龟 55 / 20 · 长周期</option>
-                </select>
-              </label>
-              <label>
-                币种
-                <select value={backtestSymbol} onChange={(event) => setBacktestSymbol(event.target.value)}>
-                  <option value="BTCUSDT">BTC / USDT</option>
-                  <option value="ETHUSDT">ETH / USDT</option>
-                  <option value="BNBUSDT">BNB / USDT</option>
-                </select>
-              </label>
-            </div>
-            <div className="two-fields">
-              <label>
-                K 线周期
-                <select value={backtestTimeframe} onChange={(event) => setBacktestTimeframe(event.target.value)}>
-                  <option value="1h">1 小时</option>
-                  <option value="4h">4 小时</option>
-                  <option value="1d">1 天</option>
-                </select>
-              </label>
-              <label>
-                样本长度
-                <select value={backtestBars} onChange={(event) => setBacktestBars(event.target.value)}>
-                  <option value="120">120 根</option>
-                  <option value="250">250 根</option>
-                  <option value="500">500 根</option>
-                  <option value="1000">1000 根</option>
-                </select>
-              </label>
-              <label>
-                初始资金（USDT）
-                <input
-                  type="number"
-                  min={100}
-                  max={1000000000}
-                  step={100}
-                  value={backtestInitialCash}
-                  onChange={(event) => setBacktestInitialCash(event.target.value)}
-                />
-              </label>
-            </div>
-            <div className="two-fields">
-              <label>
-                手续费 / 单边（bps）
-                <input type="number" min={0} max={1000} step={1} value={backtestFeeBps} onChange={(event) => setBacktestFeeBps(event.target.value)} />
-              </label>
-              <label>
-                滑点 / 单边（bps）
-                <input type="number" min={0} max={1000} step={1} value={backtestSlippageBps} onChange={(event) => setBacktestSlippageBps(event.target.value)} />
-              </label>
-            </div>
-            <div className="duration-readout">
-              <span>{backtestBars} 根 {backtestTimeframe} K 线</span>
-              <strong>{formatBacktestSpan(backtestTimeframe, Number(backtestBars))}</strong>
-            </div>
-          </div>
-          <div className="selected-strategy">
-            <span className="selected-label">SELECTED STRATEGY</span>
-            {selectedBacktestStrategy ? (
-              <>
-                <strong>{selectedBacktestStrategy.name}</strong>
-                <span>
-                  {selectedBacktestStrategy.slow_window} 根突破 · {selectedBacktestStrategy.fast_window} 根退出 · ATR(20) · 1% 风险单位 · 最多 4 次加仓
-                </span>
-                <code>{selectedBacktestStrategy.current_parameters_sha256}</code>
-              </>
-            ) : (
-              <strong>所选海龟策略尚未加载</strong>
-            )}
-          </div>
-          <div className="assumption-grid">
-            <div><span>初始资金</span><strong>{formatMoney(Number(backtestInitialCash) || 0)}</strong></div>
-            <div><span>总摩擦 / 往返</span><strong>{2 * (Number(backtestFeeBps) + Number(backtestSlippageBps)) || 0} bps</strong></div>
-            <div><span>信号</span><strong>已完成 K 线</strong></div>
-            <div><span>成交</span><strong>下一根开盘</strong></div>
-          </div>
-          <button
-            className="button button-primary button-wide"
-            onClick={() => operatorAuthenticated ? void handleRunBacktest() : window.location.assign("/operator")}
-            disabled={busyAction !== "" || !selectedBacktestStrategy}
-          >
-            {busyAction === "backtest" ? "冻结数据并计算…" : operatorAuthenticated ? "冻结快照并运行" : "操作员登录后运行"}
-          </button>
-          <p className="fine-print">只读取公开市场数据。每次运行先生成内容寻址的数据集，再固定策略版本、资金和成本；任何结果都不会自动获得 PAPER 或 LIVE 权限。</p>
-
-          {lastBacktestReceipt ? (
-            <div className="experiment-receipt" aria-live="polite">
-              <div><span>实验 ID</span><code>{lastBacktestReceipt.id}</code></div>
-              <div><span>数据 SHA</span><code>{lastBacktestReceipt.data_provenance?.dataset_sha256}</code></div>
-              <div><span>策略 SHA</span><code>{lastBacktestReceipt.strategy.parameters_sha256}</code></div>
-              <div><span>区间</span><strong>{lastBacktestReceipt.data_provenance?.start_at?.slice(0, 10)} → {lastBacktestReceipt.data_provenance?.end_at?.slice(0, 10)}</strong></div>
-            </div>
-          ) : null}
-
-          <div className="subsection-heading">
-            <span>Recent backtests</span>
-            <span>{backtests.length.toString().padStart(2, "0")}</span>
-          </div>
-          {backtests.length ? (
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>STRATEGY</th><th>RETURN</th><th>DRAWDOWN</th><th>TRADES</th></tr></thead>
-                <tbody>
-                  {backtests.map((backtest) => (
-                    <tr key={backtest.id}>
-                      <td><strong>{backtest.strategy?.name ?? backtest.symbol}</strong><small>{formatDate(backtest.created_at)} · {backtest.data_provenance?.source ?? "user_supplied"}</small></td>
-                      <td className={backtest.total_return_pct >= 0 ? "positive" : "negative"}>{formatPercent(backtest.total_return_pct)}</td>
-                      <td className="negative">-{backtest.max_drawdown_pct.toFixed(2)}%</td>
-                      <td>{backtest.number_of_trades}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+<article className="panel backtest-workspace-panel">
+          {backtestWorkspace === "catalog" ? (
+            <>
+              <div className="panel-heading">
+                <div>
+                  <span className="section-index">02 / STRATEGY CATALOG</span>
+                  <h2>选择一个策略开始</h2>
+                </div>
+                <span className="panel-mark panel-mark-green">01</span>
+              </div>
+              <p className="panel-description">
+                每个策略拥有独立参数、实验流程和历史记录。先进入策略，再决定品种、周期和成本。
+              </p>
+              <div className="backtest-strategy-catalog">
+                <button className="backtest-strategy-card" type="button" onClick={() => setBacktestWorkspace("turtle")}>
+                  <span className="strategy-card-symbol">T</span>
+                  <span className="strategy-card-copy">
+                    <small>CLASSIC TREND FOLLOWING</small>
+                    <strong>海龟交易法</strong>
+                    <span>Donchian 突破 · ATR 风险单位 · 金字塔加仓</span>
+                  </span>
+                  <span className="strategy-card-meta">
+                    <b>2</b> 固定系统
+                    <b>{turtleBacktests.length}</b> 次实验
+                  </span>
+                  <span className="strategy-card-arrow" aria-hidden="true">→</span>
+                </button>
+              </div>
+              <p className="fine-print">当前先跑通海龟交易法。后续策略会以相同方式加入目录，但参数界面彼此独立。</p>
+            </>
           ) : (
-            <div className="empty-state">Backtest results will appear here.</div>
+            <>
+              <div className="strategy-detail-toolbar">
+                <button className="back-link" type="button" onClick={() => setBacktestWorkspace("catalog")}>
+                  ← 策略目录
+                </button>
+                <span>{turtleBacktests.length} 次已保存实验</span>
+              </div>
+              <div className="panel-heading strategy-detail-heading">
+                <div>
+                  <span className="section-index">TURTLE / FIXED WORKFLOW</span>
+                  <h2>海龟交易法</h2>
+                </div>
+                <span className="panel-mark panel-mark-green">T</span>
+              </div>
+              <p className="panel-description">
+                选择海龟系统与市场参数。系统冻结行情快照、固定策略版本并保存完整结果，供后续 AI 对照分析与模型升级。
+              </p>
+              <div className="experiment-steps" aria-label="固定实验流程">
+                <span><b>01</b> 固定系统</span>
+                <span><b>02</b> 市场样本</span>
+                <span><b>03</b> 交易成本</span>
+                <span><b>04</b> 永久回执</span>
+              </div>
+              <div className="turtle-workspace">
+                <div className="turtle-parameter-panel">
+                  <div className="backtest-controls form-stack">
+                    <div className="two-fields">
+                      <label>
+                        海龟系统
+                        <select value={backtestSystem} onChange={(event) => setBacktestSystem(event.target.value)}>
+                          <option value="20-10">系统一 · 20 日突破 / 10 日退出</option>
+                          <option value="55-20">系统二 · 55 日突破 / 20 日退出</option>
+                        </select>
+                      </label>
+                      <label>
+                        交易品种
+                        <select value={backtestSymbol} onChange={(event) => setBacktestSymbol(event.target.value)}>
+                          <option value="BTCUSDT">BTC / USDT</option>
+                          <option value="ETHUSDT">ETH / USDT</option>
+                          <option value="BNBUSDT">BNB / USDT</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div className="three-fields">
+                      <label>
+                        K 线周期
+                        <select value={backtestTimeframe} onChange={(event) => setBacktestTimeframe(event.target.value)}>
+                          <option value="1h">1 小时</option>
+                          <option value="4h">4 小时</option>
+                          <option value="1d">1 天</option>
+                        </select>
+                      </label>
+                      <label>
+                        样本长度
+                        <select value={backtestBars} onChange={(event) => setBacktestBars(event.target.value)}>
+                          <option value="120">120 根</option>
+                          <option value="250">250 根</option>
+                          <option value="500">500 根</option>
+                          <option value="1000">1000 根</option>
+                        </select>
+                      </label>
+                      <label>
+                        初始资金（USDT）
+                        <input type="number" min={100} max={1000000000} step={100} value={backtestInitialCash} onChange={(event) => setBacktestInitialCash(event.target.value)} />
+                      </label>
+                    </div>
+                    <div className="two-fields">
+                      <label>
+                        手续费 / 单边（bps）
+                        <input type="number" min={0} max={1000} step={1} value={backtestFeeBps} onChange={(event) => setBacktestFeeBps(event.target.value)} />
+                      </label>
+                      <label>
+                        滑点 / 单边（bps）
+                        <input type="number" min={0} max={1000} step={1} value={backtestSlippageBps} onChange={(event) => setBacktestSlippageBps(event.target.value)} />
+                      </label>
+                    </div>
+                    <div className="duration-readout">
+                      <span>{backtestBars} 根 {backtestTimeframe} K 线</span>
+                      <strong>{formatBacktestSpan(backtestTimeframe, Number(backtestBars))}</strong>
+                    </div>
+                  </div>
+                </div>
+                <aside className="turtle-run-summary">
+                  <div className="selected-strategy">
+                    <span className="selected-label">FROZEN STRATEGY VERSION</span>
+                    {selectedBacktestStrategy ? (
+                      <>
+                        <strong>{selectedBacktestStrategy.name}</strong>
+                        <span>{selectedBacktestStrategy.slow_window} 根突破 · {selectedBacktestStrategy.fast_window} 根退出</span>
+                        <span>ATR(20) · 1% 风险单位 · 最多 4 次加仓</span>
+                        <code>{selectedBacktestStrategy.current_parameters_sha256}</code>
+                      </>
+                    ) : <strong>所选海龟策略尚未加载</strong>}
+                  </div>
+                  <div className="assumption-grid">
+                    <div><span>初始资金</span><strong>{formatMoney(Number(backtestInitialCash) || 0)}</strong></div>
+                    <div><span>往返摩擦</span><strong>{2 * (Number(backtestFeeBps) + Number(backtestSlippageBps)) || 0} bps</strong></div>
+                    <div><span>信号</span><strong>完成 K 线</strong></div>
+                    <div><span>成交</span><strong>下一根开盘</strong></div>
+                  </div>
+                  <button className="button button-primary button-wide" onClick={() => operatorAuthenticated ? void handleRunBacktest() : window.location.assign("/operator")} disabled={busyAction !== "" || !selectedBacktestStrategy}>
+                    {busyAction === "backtest" ? "冻结数据并计算…" : operatorAuthenticated ? "运行并保存实验" : "操作员登录后运行"}
+                  </button>
+                  <p className="fine-print">只读取公开行情；不会创建 PAPER 或 LIVE 订单。</p>
+                </aside>
+              </div>
+
+              {lastBacktestReceipt ? (
+                <div className="experiment-receipt" aria-live="polite">
+                  <div><span>实验 ID</span><code>{lastBacktestReceipt.id}</code></div>
+                  <div><span>数据 SHA</span><code>{lastBacktestReceipt.data_provenance?.dataset_sha256}</code></div>
+                  <div><span>策略 SHA</span><code>{lastBacktestReceipt.strategy.parameters_sha256}</code></div>
+                  <div><span>区间</span><strong>{lastBacktestReceipt.data_provenance?.start_at?.slice(0, 10)} → {lastBacktestReceipt.data_provenance?.end_at?.slice(0, 10)}</strong></div>
+                </div>
+              ) : null}
+
+              <div className="subsection-heading">
+                <span>海龟实验历史</span>
+                <span>{turtleBacktests.length.toString().padStart(2, "0")} / 50</span>
+              </div>
+              {turtleBacktests.length ? (
+                <div className="table-wrap">
+                  <table className="experiment-history-table">
+                    <thead><tr><th>实验</th><th>市场</th><th>资金</th><th>收益</th><th>回撤</th><th>交易</th><th>数据指纹</th></tr></thead>
+                    <tbody>
+                      {turtleBacktests.map((backtest) => (
+                        <tr key={backtest.id}>
+                          <td><strong>海龟 {backtest.strategy.slow_window}/{backtest.strategy.fast_window}</strong><small>{formatDate(backtest.created_at)}</small></td>
+                          <td><strong>{backtest.symbol}</strong><small>{backtest.data_provenance?.timeframe ?? "—"} · {backtest.bars_count} 根</small></td>
+                          <td>{formatMoney(backtest.initial_cash)}</td>
+                          <td className={backtest.total_return_pct >= 0 ? "positive" : "negative"}>{formatPercent(backtest.total_return_pct)}</td>
+                          <td className="negative">-{backtest.max_drawdown_pct.toFixed(2)}%</td>
+                          <td>{backtest.number_of_trades}</td>
+                          <td><code>{backtest.data_provenance?.dataset_sha256?.slice(0, 12) ?? "legacy"}</code></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : <div className="empty-state">还没有海龟实验。设置参数后运行第一次固定回测。</div>}
+            </>
           )}
         </article>
 ) : null}

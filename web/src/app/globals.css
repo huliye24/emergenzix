@@ -186,6 +186,34 @@ a { color: inherit; text-decoration: none; }
 .assumption-grid span { color: #8290a0; font-size: 10px; }
 .assumption-grid strong { font-size: 12px; }
 .backtest-controls { margin-bottom: 14px; }
+.backtest-view-grid { grid-template-columns: minmax(0, 1180px); }
+.backtest-workspace-panel { padding: 26px; }
+.backtest-strategy-catalog { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+.backtest-strategy-card {
+  width: 100%; min-height: 150px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center; gap: 18px; padding: 22px; border: 1px solid #304033; border-radius: 12px;
+  background: linear-gradient(135deg, rgba(34, 66, 49, 0.28), rgba(13, 20, 28, 0.96)); color: var(--text); text-align: left;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+.backtest-strategy-card:hover { transform: translateY(-2px); border-color: rgba(155,229,180,0.62); background: linear-gradient(135deg, rgba(43, 83, 61, 0.35), rgba(15, 23, 31, 0.98)); }
+.backtest-strategy-card:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.strategy-card-symbol { width: 64px; height: 64px; display: grid; place-items: center; border: 1px solid rgba(155,229,180,0.35); border-radius: 18px; background: rgba(78,219,145,0.08); color: var(--green); font-size: 29px; font-weight: 800; }
+.strategy-card-copy { display: grid; gap: 5px; min-width: 0; }
+.strategy-card-copy small { color: var(--green); font-size: 8px; font-weight: 800; letter-spacing: 0.15em; }
+.strategy-card-copy strong { font-size: 22px; letter-spacing: -0.04em; }
+.strategy-card-copy span { color: #8795a5; font-size: 11px; }
+.strategy-card-meta { display: grid; grid-template-columns: auto auto; gap: 3px 7px; color: #8390a0; font-size: 9px; }
+.strategy-card-meta b { color: #dce4ec; font-size: 13px; text-align: right; }
+.strategy-card-arrow { color: var(--green); font-size: 24px; }
+.strategy-detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid rgba(126,145,166,0.15); color: #778698; font-size: 10px; }
+.back-link { border: 0; padding: 0; background: transparent; color: var(--green); font-size: 11px; font-weight: 750; }
+.back-link:hover { color: #c0f4d0; }
+.strategy-detail-heading { margin-top: 2px; }
+.turtle-workspace { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.65fr); gap: 14px; align-items: start; }
+.turtle-parameter-panel, .turtle-run-summary { padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: #0d131b; }
+.turtle-run-summary { position: sticky; top: 18px; }
+.three-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.experiment-history-table code { color: #8796a6; font-size: 9px; }
 .experiment-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: 0 0 18px; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--border); }
 .experiment-steps span { display: flex; align-items: center; gap: 7px; min-height: 42px; padding: 0 10px; background: #0c1219; color: #a3afbd; font-size: 10px; font-weight: 700; }
 .experiment-steps b { color: var(--green); font-size: 9px; letter-spacing: 0.08em; }
@@ -243,6 +271,8 @@ td:last-child, th:last-child { text-align: right; }
   .workspace-nav-items { overflow-x: auto; grid-template-columns: repeat(5, minmax(140px, 1fr)); padding: 1px 1px 5px; }
   .view-header { padding-top: 34px; }
   .hero { padding-top: 42px; }
+  .turtle-workspace { grid-template-columns: 1fr; }
+  .turtle-run-summary { position: static; }
 }
 
 @media (max-width: 560px) {
@@ -274,6 +304,11 @@ td:last-child, th:last-child { text-align: right; }
   .panel { padding: 16px; }
   .panel h2 { font-size: 20px; }
   .two-fields { gap: 8px; }
+  .three-fields { grid-template-columns: 1fr; gap: 8px; }
+  .backtest-workspace-panel { padding: 16px; }
+  .backtest-strategy-card { grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; padding: 16px; }
+  .strategy-card-symbol { width: 50px; height: 50px; border-radius: 14px; font-size: 22px; }
+  .strategy-card-meta { display: none; }
   .experiment-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .footer { flex-direction: column; gap: 8px; }
   .notice { flex-direction: column; gap: 3px; }

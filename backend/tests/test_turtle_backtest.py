@@ -146,3 +146,10 @@ async def test_backtest_api_dispatches_turtle_strategy(tmp_path) -> None:
         assert result["strategy"]["strategy_type"] == "turtle_breakout"
         assert result["initial_cash"] == 25_000
         assert result["assumptions"]["signal"].startswith("20-bar breakout")
+
+        history = await client.get("/api/v1/backtests?limit=50")
+        assert history.status_code == 200, history.text
+        saved = history.json()
+        assert [item["id"] for item in saved] == [result["id"]]
+        assert saved[0]["strategy"]["parameters_sha256"] == result["strategy"]["parameters_sha256"]
+        assert saved[0]["initial_cash"] == 25_000
