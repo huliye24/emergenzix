@@ -34,6 +34,7 @@ from .market_intelligence import build_market_intelligence
 from .operational_status_api import router as operational_status_router
 from .strategy_api import router as strategy_router
 from .shadow_api import router as shadow_router
+from .short_shadow_api import router as short_shadow_router
 from .turtle_matrix_api import router as turtle_matrix_router
 from .scenarios import analyze_scenarios
 from .schemas import (
@@ -87,6 +88,7 @@ def create_app(
     app.include_router(dataset_router)
     app.include_router(strategy_router)
     app.include_router(shadow_router)
+    app.include_router(short_shadow_router)
     app.include_router(turtle_matrix_router)
     app.include_router(backtest_read_router)
     app.include_router(date_range_comparison_router)

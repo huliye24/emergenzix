@@ -152,6 +152,73 @@ class Database:
                     SELECT RAISE(ABORT, 'shadow decisions are immutable');
                 END;
 
+                CREATE TABLE IF NOT EXISTS short_shadow_sessions (
+                    id TEXT PRIMARY KEY,
+                    fleet_id TEXT NOT NULL,
+                    strategy_key TEXT NOT NULL CHECK (strategy_key IN (
+                        'donchian_breakdown_20_10',
+                        'ema_bear_trend_20_50',
+                        'bollinger_breakdown_20_2'
+                    )),
+                    strategy_version TEXT NOT NULL,
+                    strategy_sha256 TEXT NOT NULL CHECK (length(strategy_sha256) = 64),
+                    parameters_json TEXT NOT NULL,
+                    symbol TEXT NOT NULL CHECK (symbol = 'BTCUSDT'),
+                    timeframe TEXT NOT NULL,
+                    initial_cash REAL NOT NULL CHECK (initial_cash > 0),
+                    fee_bps REAL NOT NULL CHECK (fee_bps >= 0),
+                    slippage_bps REAL NOT NULL CHECK (slippage_bps >= 0),
+                    cash REAL NOT NULL CHECK (cash >= 0),
+                    short_quantity REAL NOT NULL DEFAULT 0 CHECK (short_quantity >= 0),
+                    average_entry_price REAL NOT NULL DEFAULT 0 CHECK (average_entry_price >= 0),
+                    stop_price REAL NOT NULL DEFAULT 0 CHECK (stop_price >= 0),
+                    pending_action TEXT CHECK (pending_action IN ('SHORT', 'COVER')),
+                    pending_signal_at TEXT,
+                    pending_atr REAL CHECK (pending_atr IS NULL OR pending_atr > 0),
+                    status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'PAUSED')),
+                    last_completed_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_short_shadow_sessions_fleet
+                    ON short_shadow_sessions(fleet_id, strategy_key);
+
+                CREATE TABLE IF NOT EXISTS short_shadow_decisions (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL REFERENCES short_shadow_sessions(id) ON DELETE CASCADE,
+                    completed_at TEXT NOT NULL,
+                    signal TEXT NOT NULL CHECK (signal IN ('HOLD', 'SHORT', 'COVER')),
+                    reason TEXT NOT NULL,
+                    fill_side TEXT CHECK (fill_side IN ('SHORT', 'COVER')),
+                    fill_quantity REAL NOT NULL DEFAULT 0 CHECK (fill_quantity >= 0),
+                    fill_price REAL CHECK (fill_price IS NULL OR fill_price > 0),
+                    fee REAL NOT NULL DEFAULT 0 CHECK (fee >= 0),
+                    close_price REAL NOT NULL CHECK (close_price > 0),
+                    cash REAL NOT NULL CHECK (cash >= 0),
+                    short_quantity REAL NOT NULL CHECK (short_quantity >= 0),
+                    average_entry_price REAL NOT NULL CHECK (average_entry_price >= 0),
+                    equity REAL NOT NULL CHECK (equity >= 0),
+                    input_sha256 TEXT NOT NULL CHECK (length(input_sha256) = 64),
+                    created_at TEXT NOT NULL,
+                    UNIQUE (session_id, completed_at)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_short_shadow_decisions_session_time
+                    ON short_shadow_decisions(session_id, completed_at DESC);
+
+                CREATE TRIGGER IF NOT EXISTS short_shadow_decisions_no_update
+                BEFORE UPDATE ON short_shadow_decisions
+                BEGIN
+                    SELECT RAISE(ABORT, 'short shadow decisions are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS short_shadow_decisions_no_delete
+                BEFORE DELETE ON short_shadow_decisions
+                BEGIN
+                    SELECT RAISE(ABORT, 'short shadow decisions are immutable');
+                END;
+
                 CREATE TABLE IF NOT EXISTS market_datasets (
                     id TEXT PRIMARY KEY,
                     content_sha256 TEXT NOT NULL UNIQUE,
