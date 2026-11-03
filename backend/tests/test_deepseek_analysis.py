@@ -104,6 +104,24 @@ def test_secret_bearing_evidence_is_rejected_before_network() -> None:
         )
 
 
+def test_missing_proxy_runtime_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MissingProxyClient:
+        def __init__(self, **kwargs: object) -> None:
+            raise ImportError("SOCKS proxy support is unavailable")
+
+    monkeypatch.setattr("emergenzix_api.deepseek_analysis.httpx.Client", MissingProxyClient)
+
+    with pytest.raises(DeepSeekAnalysisError, match="upstream_unavailable"):
+        analyze_research_evidence(
+            title="Proxy failure",
+            question="Review",
+            evidence={"metric": 1},
+            config=DeepSeekConfig(api_key="test-key"),
+        )
+
+
 def test_missing_api_key_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("EMERGENZIX_DEEPSEEK_API_KEY", raising=False)
 

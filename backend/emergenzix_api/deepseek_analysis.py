@@ -142,7 +142,7 @@ def analyze_research_evidence(
             )
             response.raise_for_status()
             upstream = response.json()
-    except (httpx.HTTPError, ValueError) as exc:
+    except (httpx.HTTPError, ImportError, ValueError) as exc:
         raise DeepSeekAnalysisError("upstream_unavailable") from exc
 
     try:
