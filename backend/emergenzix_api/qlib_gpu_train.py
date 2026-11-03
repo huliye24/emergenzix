@@ -111,6 +111,7 @@ def _standard_model(name: str):
             nhead=4,
             num_layers=2,
             dropout=0.1,
+            n_jobs=0,
             **common,
         )
     if name == "lstm":
