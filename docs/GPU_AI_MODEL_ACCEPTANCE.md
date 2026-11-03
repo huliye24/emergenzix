@@ -88,6 +88,31 @@ both on `cuda:0`. Optional CatBoost and XGBoost imports were absent and are not
 part of this acceptance. No training score, saved model, or strategy result is
 claimed yet.
 
+### Locked Qlib dataset contract
+
+The training contract uses the same accepted Parquet collection and does not
+download or extend market history. Each feature row uses only a completed
+candle available before the label candle. The label is the following candle's
+close-to-close percentage return.
+
+- Sequence length: 60 completed feature rows
+- Features: 1/4/16-period log returns, candle body, high-low range, log volume
+  change, 16-period realized volatility, SMA 20/50 spread, and taker-buy share
+- Normalization: mean and standard deviation fitted only on rows at or before
+  the training boundary
+- Train targets: through `2026-06-30 23:59:59` UTC; deterministic cap of 6,000
+  latest sequences per symbol/timeframe
+- Validation targets: `2026-07-01 00:00:00` through
+  `2026-08-31 23:59:59` UTC; cap of 1,000 latest sequences per
+  symbol/timeframe
+- Test targets: the exact 72 Chronos origins, with no dense test-window rows
+  added
+
+The GPU preparation smoke test produced 138,096 causal raw rows, 39,126 train
+sequences, 7,116 validation sequences, and 72 test sequences across the nine
+BTC/ETH/BNB and 15m/1h/4h instruments. Training and model-result acceptance
+remain pending.
+
 ## 3. FinBERT sentiment runtime
 
 - Environment: `/home/ubuntu/emergenzix-finbert-prosus/.venv`

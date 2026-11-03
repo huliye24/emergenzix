@@ -1,0 +1,3 @@
+# Isolated GPU research environment only; Qlib itself is installed from the
+# pinned source commit recorded in docs/GPU_AI_MODEL_ACCEPTANCE.md.
+pyarrow==23.0.1
