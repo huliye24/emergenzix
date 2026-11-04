@@ -33,7 +33,7 @@ EVENT_LABELS = {
     "shadow_signal": "PAPER 策略信号",
     "shadow_fill": "PAPER 模拟成交",
     "shadow_data_failure": "PAPER 数据失败",
-    "ai_research_report": "DeepSeek 六小时研究报告",
+    "ai_research_report": "六小时策略判断报告",
 }
 
 SEVERITY_LABELS = {"info": "信息", "warning": "警告", "error": "错误"}
@@ -120,27 +120,39 @@ def format_watch_event(event: WatchEvent) -> str:
         )
         return "\n".join(lines)
     if event.event_type == "ai_research_report":
-        observations = details.get("observations", [])
+        prediction = details.get("prediction", {})
+        portfolio = details.get("portfolio", {})
+        risk = details.get("risk", {})
+        evaluation = details.get("evaluation", {})
         risks = details.get("risks", [])
         limitations = details.get("limitations", [])
         lines.extend(
             [
-                f"完成K线：{details.get('latest_completed_at', '-')}",
-                f"模型：{details.get('model', '-')}",
-                f"摘要：{details.get('summary', '-')}",
+                f"完成K线：{details.get('completed_at', '-')}",
+                f"策略：{details.get('strategy_name', '-')} · {details.get('strategy_version', '-')}",
+                f"策略动作：{details.get('decision', '-')}",
+                f"策略理由：{details.get('decision_reason', '-')}",
+                f"模型预测：{prediction.get('direction', '-')} · 周期 {prediction.get('horizon', '-')}",
+                f"当前持仓：{portfolio.get('position', '-')} · 敞口 {portfolio.get('exposure_pct', '-')}%",
+                f"风险状态：{risk.get('status', '-')}",
+                f"PAPER/回测偏差：{evaluation.get('paper_vs_backtest_deviation', '-')}",
+                "独立决策：{current}/{minimum}".format(
+                    current=evaluation.get("independent_decisions", "-"),
+                    minimum=evaluation.get("minimum_decisions_before_change", "-"),
+                ),
+                f"DeepSeek二次判断：{details.get('summary', '-')}",
             ]
         )
-        if isinstance(observations, list) and observations:
-            lines.append("观察：" + "；".join(str(item) for item in observations))
         if isinstance(risks, list) and risks:
-            lines.append("风险：" + "；".join(str(item) for item in risks))
+            lines.append("复核风险：" + "；".join(str(item) for item in risks))
         if isinstance(limitations, list) and limitations:
-            lines.append("限制：" + "；".join(str(item) for item in limitations))
+            lines.append("复核限制：" + "；".join(str(item) for item in limitations))
         lines.extend(
             [
+                "DeepSeek角色：二次判断与模板化汇报",
                 f"报告ID：{details.get('report_id', '-')}",
-                "权限：仅研究建议；不能修改策略或创建 PAPER/TESTNET/LIVE 订单。",
-                "状态：自动研究报告；不构成投资建议，不保证收益。",
+                "权限：不能生成或修改策略信号，不能创建 PAPER/TESTNET/LIVE 订单。",
+                "状态：上游 AWS 计算结果的自动汇报；不构成投资建议，不保证收益。",
             ]
         )
         return "\n".join(lines)

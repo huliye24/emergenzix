@@ -1,5 +1,5 @@
 [Unit]
-Description=Run Emergenzix DeepSeek research report every six hours
+Description=Compile AWS strategy evidence every six hours
 
 [Timer]
 OnCalendar=*-*-* 00,06,12,18:10:00 UTC

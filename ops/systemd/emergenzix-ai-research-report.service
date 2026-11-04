@@ -1,5 +1,5 @@
 [Unit]
-Description=Emergenzix six-hour DeepSeek market research report
+Description=Emergenzix six-hour strategy evidence briefing
 Wants=network-online.target
 After=network-online.target mihomo.service
 
