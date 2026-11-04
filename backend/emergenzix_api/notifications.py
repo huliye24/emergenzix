@@ -124,6 +124,10 @@ def format_watch_event(event: WatchEvent) -> str:
         portfolio = details.get("portfolio", {})
         risk = details.get("risk", {})
         evaluation = details.get("evaluation", {})
+        microstructure = details.get("microstructure", {})
+        flow = microstructure.get("flow", {}) if isinstance(microstructure, dict) else {}
+        liquidity = microstructure.get("liquidity", {}) if isinstance(microstructure, dict) else {}
+        market_state = microstructure.get("state", {}) if isinstance(microstructure, dict) else {}
         risks = details.get("risks", [])
         limitations = details.get("limitations", [])
         lines.extend(
@@ -135,6 +139,19 @@ def format_watch_event(event: WatchEvent) -> str:
                 f"模型预测：{prediction.get('direction', '-')} · 周期 {prediction.get('horizon', '-')}",
                 f"当前持仓：{portfolio.get('position', '-')} · 敞口 {portfolio.get('exposure_pct', '-')}%",
                 f"风险状态：{risk.get('status', '-')}",
+                f"市场战场：{market_state.get('label', '-')}",
+                "主动流：{direction} · 净额 {signed:.2f}".format(
+                    direction=flow.get("direction", "-"),
+                    signed=float(flow.get("signed_notional", 0.0)),
+                ),
+                "深度：{pressure} · 买卖失衡 {imbalance:.3f}".format(
+                    pressure=liquidity.get("pressure", "-"),
+                    imbalance=float(liquidity.get("depth_imbalance", 0.0)),
+                ),
+                "潜在支撑：{support} · 潜在阻力：{resistance}".format(
+                    support=(liquidity.get("support") or {}).get("price", "-"),
+                    resistance=(liquidity.get("resistance") or {}).get("price", "-"),
+                ),
                 f"PAPER/回测偏差：{evaluation.get('paper_vs_backtest_deviation', '-')}",
                 "独立决策：{current}/{minimum}".format(
                     current=evaluation.get("independent_decisions", "-"),

@@ -32,6 +32,7 @@ def build_strategy_analysis(
     market_payload: Mapping[str, Any], *, generated_at: datetime,
     source_revision: str, independent_decisions: int = 0,
     minimum_decisions_before_change: int = 180,
+    battlefield: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Calculate the frozen Turtle 20/10 candidate from completed bars."""
     bars = _validated_bars(market_payload)
@@ -76,6 +77,7 @@ def build_strategy_analysis(
             "independent_decisions": independent_decisions,
             "minimum_decisions_before_change": minimum_decisions_before_change,
         },
+        "microstructure": dict(battlefield) if battlefield is not None else None,
         "order_permission": False,
     }
     result["record_sha256"] = record_sha256(result)
@@ -150,6 +152,7 @@ def merge_node_results(
         "portfolio": checked_strategy["portfolio"],
         "risk": checked_strategy["risk"],
         "evaluation": checked_strategy["evaluation"],
+        "microstructure": checked_strategy.get("microstructure"),
         "provenance": [
             {"node": "aws-cpu", "role": "strategy_analysis",
              "revision": checked_strategy["source_revision"],

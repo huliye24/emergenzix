@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from emergenzix_api.chronos_signal_export import create_chronos_record
+from emergenzix_api.market_battlefield import build_market_battlefield
 from emergenzix_api.strategy_evidence_pipeline import (
     build_model_prediction,
     build_strategy_analysis,
@@ -64,6 +65,40 @@ def _completed_market(now: datetime) -> dict:
     return {"exchange": "binance", "symbol": "BTCUSDT", "timeframe": "4h", "bars": completed}
 
 
+def _battlefield_snapshot(now: datetime) -> dict:
+    import requests
+
+    proxy = os.getenv("EMERGENZIX_PUBLIC_MARKET_HTTPS_PROXY") or None
+    request_options = {"proxies": {"https": proxy} if proxy else None, "timeout": 30}
+
+    def get(path: str, params: dict) -> object:
+        response = requests.get(f"https://fapi.binance.com{path}", params=params, **request_options)
+        response.raise_for_status()
+        return response.json()
+
+    depth = get("/fapi/v1/depth", {"symbol": "BTCUSDT", "limit": 1000})
+    trades = get("/fapi/v1/aggTrades", {"symbol": "BTCUSDT", "limit": 1000})
+    premium = get("/fapi/v1/premiumIndex", {"symbol": "BTCUSDT"})
+    oi_history = get("/futures/data/openInterestHist",
+                     {"symbol": "BTCUSDT", "period": "5m", "limit": 2})
+    if not isinstance(depth, dict) or not isinstance(trades, list) or not isinstance(premium, dict):
+        raise ValueError("Binance futures snapshot response is malformed")
+    if not isinstance(oi_history, list) or len(oi_history) < 2:
+        raise ValueError("Binance open-interest history is incomplete")
+    return {
+        "observed_at": now.isoformat(), "symbol": "BTCUSDT",
+        "bids": depth.get("bids"), "asks": depth.get("asks"),
+        "trades": [{"price": item.get("p"), "quantity": item.get("q"),
+                    "aggressor_side": "SELL" if item.get("m") is True else "BUY"}
+                   for item in trades if isinstance(item, dict)],
+        "derivatives": {
+            "open_interest": oi_history[-1].get("sumOpenInterest"),
+            "open_interest_previous": oi_history[-2].get("sumOpenInterest"),
+            "funding_rate": premium.get("lastFundingRate"),
+        },
+    }
+
+
 def _load(path: Path) -> dict:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -85,8 +120,11 @@ def main() -> int:
 
     if args.stage == "cpu":
         market = _completed_market(now)
-        strategy = build_strategy_analysis(market, generated_at=now, source_revision=revision)
+        battlefield = build_market_battlefield(_battlefield_snapshot(now))
+        strategy = build_strategy_analysis(market, generated_at=now, source_revision=revision,
+                                           battlefield=battlefield)
         write_json_atomic(args.work_dir / "market-input.json", market)
+        write_json_atomic(args.work_dir / "market-battlefield.json", battlefield)
         write_json_atomic(args.work_dir / "strategy-analysis.json", strategy)
         result = {"stage": "cpu", "completed_at": strategy["market"]["completed_at"],
                   "record_sha256": strategy["record_sha256"], "order_permission": False}

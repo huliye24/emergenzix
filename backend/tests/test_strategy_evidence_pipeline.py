@@ -40,11 +40,15 @@ def _signal(strategy):
 
 
 def test_cpu_and_gpu_results_merge_for_exact_same_snapshot():
-    strategy = build_strategy_analysis(_market(), generated_at=NOW, source_revision="cpu-revision")
+    battlefield = {"schema_version": "emergenzix-market-battlefield/v1",
+                   "snapshot_sha256": "c" * 64, "order_permission": False}
+    strategy = build_strategy_analysis(_market(), generated_at=NOW, source_revision="cpu-revision",
+                                       battlefield=battlefield)
     prediction = _signal(strategy)
     evidence = merge_node_results(strategy, prediction, now=NOW)
     assert evidence["strategy"]["name"] == "turtle_breakout_20_10"
     assert evidence["prediction"]["direction"] == "UP"
+    assert evidence["microstructure"]["snapshot_sha256"] == "c" * 64
     assert [item["role"] for item in evidence["provenance"]] == ["strategy_analysis", "model_prediction"]
     assert evidence["order_permission"] is False
 
