@@ -8,7 +8,7 @@ Type=oneshot
 User=ubuntu
 Group=ubuntu
 WorkingDirectory=/home/ubuntu/emergenzix-evidence-current
-ExecStart=/home/ubuntu/emergenzix-evidence-current/ops/run_strategy_evidence_cycle.sh
+ExecStart=/usr/bin/bash /home/ubuntu/emergenzix-evidence-current/ops/run_strategy_evidence_cycle.sh
 Environment=EMERGENZIX_EVIDENCE_GPU_HOST=43.192.236.139
 Nice=10
 NoNewPrivileges=true
