@@ -30,6 +30,9 @@ EVENT_LABELS = {
     "watcher_startup": "监控服务启动",
     "paper_execution_alert": "PAPER执行风控告警",
     "ai_market_analysis": "AI 市场分析",
+    "shadow_signal": "PAPER 策略信号",
+    "shadow_fill": "PAPER 模拟成交",
+    "shadow_data_failure": "PAPER 数据失败",
 }
 
 SEVERITY_LABELS = {"info": "信息", "warning": "警告", "error": "错误"}
@@ -71,6 +74,50 @@ def format_watch_event(event: WatchEvent) -> str:
         f"Emergenzix · {event_label}",
         f"{event.symbol} · {event.timeframe} · {severity_label}",
     ]
+    if event.event_type == "shadow_signal":
+        lines.extend(
+            [
+                f"动作：{details.get('signal', '-')}",
+                f"决策K线：{details.get('completed_at', '-')}",
+                f"原因：{details.get('reason', '-')}",
+                f"参考收盘价：{details.get('reference_close', '-')}",
+                "执行假设：信号确认后的下一根已完成K线开盘模拟成交",
+                (
+                    "成本假设：手续费 {fee} bps；滑点 {slippage} bps".format(
+                        fee=details.get("fee_bps", "-"),
+                        slippage=details.get("slippage_bps", "-"),
+                    )
+                ),
+                f"策略版本：{details.get('strategy_version_id', '-')}",
+                f"信号ID：{details.get('alert_key', '-')}",
+                "状态：PAPER；尚未完成30天观察；非投资建议。",
+            ]
+        )
+        return "\n".join(lines)
+    if event.event_type == "shadow_fill":
+        lines.extend(
+            [
+                f"方向：{details.get('fill_side', '-')}",
+                f"模拟价格：{details.get('fill_price', '-')}",
+                f"模拟数量：{details.get('fill_quantity', '-')}",
+                f"费用：{details.get('fee', '-')}",
+                f"持仓：{details.get('position_quantity', '-')}",
+                f"PAPER权益：{details.get('equity', '-')}",
+                f"事件ID：{details.get('alert_key', '-')}",
+                "状态：仅模拟成交；不代表用户实际成交；非投资建议。",
+            ]
+        )
+        return "\n".join(lines)
+    if event.event_type == "shadow_data_failure":
+        lines.extend(
+            [
+                f"预期K线：{details.get('expected_completed_at', '-')}",
+                f"错误码：{details.get('error_code', '-')}",
+                f"事件ID：{details.get('alert_key', '-')}",
+                "状态：本周期停止产生新模拟动作；等待数据恢复。",
+            ]
+        )
+        return "\n".join(lines)
     if event.event_type == "ai_market_analysis":
         model = str(details.get("model", "DeepSeek"))
         completed_at = str(details.get("last_completed_at", "-"))
