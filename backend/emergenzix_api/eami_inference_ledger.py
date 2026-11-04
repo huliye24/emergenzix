@@ -72,13 +72,21 @@ def create_inference_session(db: Database, payload: dict[str, Any]) -> dict[str,
             (payload["model_id"],),
         ).fetchone()
         asset = connection.execute(
-            "SELECT layer, feature_version, symbol, timeframe FROM eami_data_assets WHERE id = ?",
+            """SELECT a.layer, a.feature_version, a.symbol, a.timeframe,
+               (SELECT q.to_status FROM eami_data_asset_quality_events q
+                WHERE q.asset_id = a.id ORDER BY q.created_at DESC, q.rowid DESC LIMIT 1)
+                AS quality_status
+               FROM eami_data_assets a WHERE a.id = ?""",
             (payload["input_asset_id"],),
         ).fetchone()
         if model is None or asset is None:
             raise EAMIInferenceError("model and input asset must already be registered")
         if asset["layer"] != "FEATURE":
             raise EAMIInferenceError("inference sessions require a FEATURE input asset")
+        if asset["quality_status"] != "PUBLISHED":
+            raise EAMIInferenceError(
+                "inference sessions require a PUBLISHED feature asset"
+            )
         if asset["feature_version"] != model["feature_version"]:
             raise EAMIInferenceError("model and input asset feature versions differ")
         if asset["symbol"] and asset["symbol"] != payload["symbol"]:

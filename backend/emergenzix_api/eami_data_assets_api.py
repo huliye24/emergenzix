@@ -12,6 +12,7 @@ from .eami_data_assets import (
     EAMIDataAssetError,
     get_data_asset,
     get_data_lineage,
+    record_asset_quality_event,
     register_data_asset,
 )
 
@@ -60,6 +61,15 @@ class DataAssetRegistration(BaseModel):
         return self
 
 
+class QualityEventRegistration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    to_status: Literal["VALIDATED", "PUBLISHED", "QUARANTINED", "QUALITY_FAILED"]
+    checks: dict[str, Any] = Field(default_factory=dict)
+    rationale: str = Field(min_length=1, max_length=2000)
+    recorded_by: str = Field(min_length=1, max_length=100)
+
+
 def _call(operation):
     try:
         return operation()
@@ -84,3 +94,15 @@ def read_data_asset(asset_id: str, request: Request) -> dict[str, Any]:
 @router.get("/{asset_id}/lineage")
 def read_data_lineage(asset_id: str, request: Request) -> dict[str, Any]:
     return _call(lambda: get_data_lineage(request.app.state.database, asset_id))
+
+
+@router.post("/{asset_id}/quality-events", status_code=status.HTTP_201_CREATED)
+def create_quality_event(
+    asset_id: str, payload: QualityEventRegistration, request: Request
+) -> dict[str, Any]:
+    return _call(
+        lambda: record_asset_quality_event(
+            request.app.state.database,
+            {"asset_id": asset_id, **payload.model_dump()},
+        )
+    )

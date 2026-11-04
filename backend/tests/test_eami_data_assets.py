@@ -9,6 +9,7 @@ from emergenzix_api.eami_data_assets import (
     EAMIDataAssetError,
     get_data_asset,
     get_data_lineage,
+    record_asset_quality_event,
     register_data_asset,
 )
 from emergenzix_api.main import create_app
@@ -169,8 +170,47 @@ def test_data_asset_routes_are_read_write_catalog_only(tmp_path):
     assert ("/api/v1/eami/data-assets", "POST") in routes
     assert ("/api/v1/eami/data-assets/{asset_id}", "GET") in routes
     assert ("/api/v1/eami/data-assets/{asset_id}/lineage", "GET") in routes
+    assert ("/api/v1/eami/data-assets/{asset_id}/quality-events", "POST") in routes
     assert not any(
         "order" in path or "train" in path
         for path, _ in routes
         if "/eami/data-assets" in path
     )
+
+
+def test_quality_status_is_append_only_and_requires_checks(tmp_path):
+    db = Database(str(tmp_path / "quality.db"))
+    asset = register_data_asset(db, _asset("RAW", "a-raw"))
+    assert asset["quality_status"] == "DRAFT"
+    with pytest.raises(EAMIDataAssetError, match="require quality checks"):
+        record_asset_quality_event(
+            db,
+            {
+                "asset_id": asset["id"],
+                "to_status": "VALIDATED",
+                "checks": {},
+                "rationale": "missing checks",
+                "recorded_by": "reviewer",
+            },
+        )
+    record_asset_quality_event(
+        db,
+        {
+            "asset_id": asset["id"],
+            "to_status": "VALIDATED",
+            "checks": {"sha256": "PASS"},
+            "rationale": "verified",
+            "recorded_by": "reviewer",
+        },
+    )
+    record_asset_quality_event(
+        db,
+        {
+            "asset_id": asset["id"],
+            "to_status": "PUBLISHED",
+            "checks": {"lineage": "PASS"},
+            "rationale": "published",
+            "recorded_by": "reviewer",
+        },
+    )
+    assert get_data_asset(db, asset["id"])["quality_status"] == "PUBLISHED"

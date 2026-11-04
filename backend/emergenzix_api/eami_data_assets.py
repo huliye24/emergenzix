@@ -16,6 +16,15 @@ class EAMIDataAssetError(ValueError):
     """Raised when a data asset violates provenance or integrity rules."""
 
 
+QUALITY_TRANSITIONS = {
+    "DRAFT": {"VALIDATED", "QUARANTINED", "QUALITY_FAILED"},
+    "VALIDATED": {"PUBLISHED", "QUARANTINED", "QUALITY_FAILED"},
+    "PUBLISHED": {"QUARANTINED"},
+    "QUARANTINED": {"VALIDATED", "QUALITY_FAILED"},
+    "QUALITY_FAILED": {"VALIDATED"},
+}
+
+
 ASSET_FIELDS = (
     "layer",
     "asset_kind",
@@ -143,6 +152,30 @@ def register_data_asset(db: Database, payload: dict[str, Any]) -> dict[str, Any]
             raise EAMIDataAssetError(
                 "the storage URI and content hash are already registered"
             ) from exc
+        quality = {
+            "asset_id": asset_id,
+            "from_status": None,
+            "to_status": "DRAFT",
+            "checks": {},
+            "rationale": "Asset registered; quality review has not completed.",
+            "recorded_by": payload["created_by"],
+            "created_at": created_at,
+        }
+        quality_id = _fingerprint(quality)
+        connection.execute(
+            """INSERT INTO eami_data_asset_quality_events
+               (id, asset_id, from_status, to_status, checks_json, rationale,
+                recorded_by, record_sha256, created_at)
+               VALUES (?, ?, NULL, 'DRAFT', '{}', ?, ?, ?, ?)""",
+            (
+                quality_id,
+                asset_id,
+                quality["rationale"],
+                payload["created_by"],
+                quality_id,
+                created_at,
+            ),
+        )
     return get_data_asset(db, asset_id)
 
 
@@ -158,7 +191,66 @@ def get_data_asset(db: Database, asset_id: str) -> dict[str, Any]:
     payload["metadata"] = json.loads(payload.pop("metadata_json"))
     if _fingerprint(payload) != row["record_sha256"]:
         raise EAMIDataAssetError("stored data asset failed its integrity fingerprint")
-    return {"id": asset_id, **payload, "record_sha256": row["record_sha256"]}
+    return {
+        "id": asset_id,
+        **payload,
+        "record_sha256": row["record_sha256"],
+        "quality_status": get_asset_quality_status(db, asset_id),
+    }
+
+
+def get_asset_quality_status(db: Database, asset_id: str) -> str:
+    with db.connection() as connection:
+        row = connection.execute(
+            """SELECT to_status FROM eami_data_asset_quality_events
+               WHERE asset_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1""",
+            (asset_id,),
+        ).fetchone()
+    if row is None:
+        raise EAMIDataAssetError("data asset has no quality history")
+    return str(row["to_status"])
+
+
+def record_asset_quality_event(db: Database, payload: dict[str, Any]) -> dict[str, Any]:
+    created_at = _now()
+    with db.connection() as connection:
+        current = connection.execute(
+            """SELECT to_status FROM eami_data_asset_quality_events
+               WHERE asset_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1""",
+            (payload["asset_id"],),
+        ).fetchone()
+        if current is None:
+            raise EAMIDataAssetError("data asset is not registered")
+        from_status = str(current["to_status"])
+        to_status = payload["to_status"]
+        if to_status not in QUALITY_TRANSITIONS[from_status]:
+            raise EAMIDataAssetError(
+                f"invalid asset quality transition: {from_status} -> {to_status}"
+            )
+        if to_status in {"VALIDATED", "PUBLISHED"} and not payload["checks"]:
+            raise EAMIDataAssetError(
+                "validated and published states require quality checks"
+            )
+        record = {**payload, "from_status": from_status, "created_at": created_at}
+        event_id = _fingerprint(record)
+        connection.execute(
+            """INSERT INTO eami_data_asset_quality_events
+               (id, asset_id, from_status, to_status, checks_json, rationale,
+                recorded_by, record_sha256, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                event_id,
+                payload["asset_id"],
+                from_status,
+                to_status,
+                _canonical_json(payload["checks"]),
+                payload["rationale"],
+                payload["recorded_by"],
+                event_id,
+                created_at,
+            ),
+        )
+    return {"id": event_id, **record, "record_sha256": event_id}
 
 
 def get_data_lineage(db: Database, asset_id: str) -> dict[str, Any]:

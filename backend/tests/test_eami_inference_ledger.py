@@ -3,7 +3,10 @@ from __future__ import annotations
 import pytest
 
 from emergenzix_api.database import Database
-from emergenzix_api.eami_data_assets import register_data_asset
+from emergenzix_api.eami_data_assets import (
+    record_asset_quality_event,
+    register_data_asset,
+)
 from emergenzix_api.eami_inference_ledger import (
     EAMIInferenceError,
     create_inference_session,
@@ -56,6 +59,17 @@ def _setup(tmp_path):
             "created_by": "test",
         },
     )
+    for quality_status in ("VALIDATED", "PUBLISHED"):
+        record_asset_quality_event(
+            db,
+            {
+                "asset_id": feature["id"],
+                "to_status": quality_status,
+                "checks": {"hash": "PASS", "lineage": "PASS"},
+                "rationale": "test quality gate",
+                "recorded_by": "test",
+            },
+        )
     model = register_model(
         db,
         {

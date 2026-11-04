@@ -535,6 +535,33 @@ class Database:
                     SELECT RAISE(ABORT, 'EAMI data assets are immutable');
                 END;
 
+                CREATE TABLE IF NOT EXISTS eami_data_asset_quality_events (
+                    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                    asset_id TEXT NOT NULL REFERENCES eami_data_assets(id),
+                    from_status TEXT,
+                    to_status TEXT NOT NULL CHECK (
+                        to_status IN ('DRAFT', 'VALIDATED', 'PUBLISHED',
+                                      'QUARANTINED', 'QUALITY_FAILED')
+                    ),
+                    checks_json TEXT NOT NULL,
+                    rationale TEXT NOT NULL,
+                    recorded_by TEXT NOT NULL,
+                    record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_eami_asset_quality_events_asset_time
+                    ON eami_data_asset_quality_events(asset_id, created_at, id);
+
+                CREATE TRIGGER IF NOT EXISTS eami_asset_quality_events_no_update
+                BEFORE UPDATE ON eami_data_asset_quality_events BEGIN
+                    SELECT RAISE(ABORT, 'EAMI asset quality events are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS eami_asset_quality_events_no_delete
+                BEFORE DELETE ON eami_data_asset_quality_events BEGIN
+                    SELECT RAISE(ABORT, 'EAMI asset quality events are immutable');
+                END;
+
                 CREATE TABLE IF NOT EXISTS eami_inference_sessions (
                     id TEXT PRIMARY KEY CHECK (length(id) = 64),
                     model_id TEXT NOT NULL REFERENCES eami_model_versions(id),
