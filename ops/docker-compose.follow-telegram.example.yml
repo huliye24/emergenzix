@@ -1,0 +1,10 @@
+services:
+  shadow:
+    environment:
+      EMERGENZIX_FOLLOW_TELEGRAM_BOT_TOKEN: ""
+      EMERGENZIX_FOLLOW_TELEGRAM_BOT_TOKEN_FILE: /run/secrets/emergenzix-follow-bot-token
+    volumes:
+      - type: bind
+        source: ${EMERGENZIX_FOLLOW_TELEGRAM_BOT_TOKEN_HOST_FILE:?set follow Telegram token host file}
+        target: /run/secrets/emergenzix-follow-bot-token
+        read_only: true
