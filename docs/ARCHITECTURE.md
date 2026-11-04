@@ -8,6 +8,35 @@ The versioned S3 market-data lake and canonical multi-timeframe rules are
 recorded in [ADR-004](adr/ADR-004-market-data-lake.md).
 The product dashboard shell source and adaptation boundary are recorded in
 [ADR-007](adr/ADR-007-dashboard-shell-source.md).
+The single-strategy, 30-day PAPER learning loop and temporary product freeze are
+recorded in [ADR-008](adr/ADR-008-first-strategy-learning-loop.md).
+
+## 0. Active architecture slice
+
+The current architecture target is one evidence-producing loop, not the full
+planned platform:
+
+```text
+immutable BTCUSDT 4h completed candle
+                |
+                v
+immutable Turtle 20/10 strategy version
+                |
+                v
+idempotent PAPER decision and simulated execution
+                |
+                v
+reconciled cash / position / equity / risk / failures
+                |
+                v
+backtest-deviation report and 30-day evaluation gate
+```
+
+The Hong Kong node is the only authoritative runtime for this slice. The
+Ningxia CPU node supplies immutable data and offline evaluation; the GPU node is
+on-demand research capacity and must not run a separate product lineage. This
+deployment assignment does not weaken the GitHub-to-cloud provenance boundary
+in ADR-003.
 
 ## 1. Current implementation
 

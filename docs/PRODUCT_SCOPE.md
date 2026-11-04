@@ -6,6 +6,13 @@ Emergenzix is the user-facing quantitative trading product emerging from the NEM
 
 The product should provide a coherent path from a strategy idea to evaluation, paper trading, and—only after explicit future approval—controlled exchange execution.
 
+The first product value is not profitability. It is the reliable accumulation
+of market observations, strategy decisions, simulated trades, failures, and
+outcomes so that each later strategy version has stronger evidence. The active
+milestone is the single-strategy learning loop defined by
+[ADR-008](adr/ADR-008-first-strategy-learning-loop.md), not expansion of the
+feature catalogue.
+
 ## 2. Repository boundary
 
 | Area | NEMT research repository | Emergenzix product repository |
@@ -74,6 +81,17 @@ The product is progressing when a user can follow an auditable path:
 
 Every transition has a clear status, evidence, owner, and acceptance condition. No transition to LIVE is implied by passing an earlier gate.
 
+Before broader product expansion, one immutable BTCUSDT 4h Turtle 20/10 version
+must complete the ADR-008 30-day PAPER observation gate. Its persisted evidence
+must answer which version ran, why each action or hold occurred, current
+portfolio risk, deviation from pinned backtest assumptions, and whether enough
+independent decisions exist for evaluation.
+
 ## 8. Current status
 
 This document defines intended scope as well as the current implementation boundary. The repository now has a responsive product shell, paper-only API, public OHLCV access through CCXT, and a pinned Freqtrade submodule. Freqtrade is not yet wired into the API's backtest endpoint, and AWS/Codex runtime verification remains outstanding.
+
+The selected 30-day learning loop is **not yet verified**. Existing shadow
+workers and dashboards are partial inputs and must not be described as meeting
+the ADR-008 observation, failure-recording, reconciliation, or backtest-
+deviation acceptance criteria.

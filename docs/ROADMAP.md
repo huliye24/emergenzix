@@ -2,6 +2,29 @@
 
 This roadmap separates product readiness from research progress. Stages are gates, not calendar promises. Do not mark a stage verified without evidence in the repository or CI.
 
+## Active priority — first-strategy learning loop
+
+The active product milestone is [ADR-008](adr/ADR-008-first-strategy-learning-loop.md):
+one BTCUSDT 4h Turtle 20/10 version, one 10,000 USDT PAPER account, and one
+authoritative 24/7 runtime observed for 30 days. This priority supersedes
+feature expansion within the phases below until its exit gate is met.
+
+- [ ] Expose one persisted status contract that answers the five ADR-008 questions.
+- [ ] Record exactly one immutable decision or explicit failure for every expected completed candle.
+- [ ] Reconcile PAPER cash, position, equity, fills, fees, and slippage after every state change and restart.
+- [ ] Compare observed PAPER decisions and fills with the pinned backtest assumptions.
+- [ ] Run the selected version for 30 days and record at least 180 independent 4h decisions.
+- [ ] Complete an evaluation report without automatically modifying or promoting the strategy.
+
+**Freeze:** new strategies, symbols, venues, AI trading recommendations, GPU
+product runtimes, dashboard redesigns, legacy fleet migration, TESTNET, and LIVE
+work are deferred unless required to correct a safety or evidence-integrity
+defect in this loop.
+
+**Exit gate:** the five questions are answerable from reconciled persisted
+evidence, every expected candle is accounted for, and the 30-day/180-decision
+observation gate has been reviewed. Profitability is not an exit condition.
+
 ## Phase 0 — Product boundary and repository bootstrap
 
 **Goal:** establish a clean product source of truth.
