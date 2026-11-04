@@ -484,7 +484,26 @@ def _telegram_batch_enabled() -> bool:
 
 
 def main() -> int:
-    token = os.getenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "").strip()
+    from .telegram_credentials import (
+        TelegramCredentialError,
+        load_telegram_bot_token,
+    )
+
+    try:
+        token = load_telegram_bot_token()
+    except TelegramCredentialError as exc:
+        print(
+            json.dumps(
+                {
+                    "event_type": "telegram_command_bot_not_started",
+                    "error_type": type(exc).__name__,
+                },
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+            flush=True,
+        )
+        return 2
     allowed_chat_id = os.getenv("EMERGENZIX_TELEGRAM_ALLOWED_CHAT_ID", "").strip()
     if not token or not allowed_chat_id:
         print(

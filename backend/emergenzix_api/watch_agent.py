@@ -381,7 +381,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     backlog_threshold = getattr(args, "notification_backlog_threshold", 20)
     if backlog_threshold < 1:
         raise ValueError("notification backlog threshold must be at least one")
-    token = os.getenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "").strip()
+    from .telegram_credentials import (
+        TelegramCredentialError,
+        load_telegram_bot_token,
+    )
+
+    try:
+        token = load_telegram_bot_token()
+    except TelegramCredentialError as exc:
+        _emit(WatchEvent(
+            "risk_alert", "error", _utc_now().isoformat(), args.exchange,
+            args.symbol, args.timeframe,
+            "Telegram credential configuration is invalid; watcher will not start.",
+            {"error_type": type(exc).__name__},
+        ))
+        return 2
     chat_id = os.getenv("EMERGENZIX_TELEGRAM_CHAT_ID", "").strip()
     telegram_required = _env_bool("EMERGENZIX_TELEGRAM_REQUIRED", default=False)
     if bool(token) != bool(chat_id):
