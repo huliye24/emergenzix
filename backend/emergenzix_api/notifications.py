@@ -121,57 +121,40 @@ def format_watch_event(event: WatchEvent) -> str:
         return "\n".join(lines)
     if event.event_type == "ai_research_report":
         prediction = details.get("prediction", {})
-        portfolio = details.get("portfolio", {})
         risk = details.get("risk", {})
         evaluation = details.get("evaluation", {})
         microstructure = details.get("microstructure", {})
         flow = microstructure.get("flow", {}) if isinstance(microstructure, dict) else {}
         liquidity = microstructure.get("liquidity", {}) if isinstance(microstructure, dict) else {}
         market_state = microstructure.get("state", {}) if isinstance(microstructure, dict) else {}
-        risks = details.get("risks", [])
-        limitations = details.get("limitations", [])
+        summary = str(details.get("summary", "-")).strip().replace("\n", " ")
+        if len(summary) > 100:
+            summary = summary[:97] + "..."
+        support = (liquidity.get("support") or {}).get("price", "-")
+        resistance = (liquidity.get("resistance") or {}).get("price", "-")
+        signed_notional = float(flow.get("signed_notional", 0.0))
+        signed_wan = signed_notional / 10_000
+        decisions = evaluation.get("independent_decisions", "-")
+        minimum = evaluation.get("minimum_decisions_before_change", "-")
         lines.extend(
             [
-                f"完成K线：{details.get('completed_at', '-')}",
-                f"策略：{details.get('strategy_name', '-')} · {details.get('strategy_version', '-')}",
-                f"策略动作：{details.get('decision', '-')}",
-                f"策略理由：{details.get('decision_reason', '-')}",
-                f"模型预测：{prediction.get('direction', '-')} · 周期 {prediction.get('horizon', '-')}",
-                f"当前持仓：{portfolio.get('position', '-')} · 敞口 {portfolio.get('exposure_pct', '-')}%",
-                f"风险状态：{risk.get('status', '-')}",
-                f"市场战场：{market_state.get('label', '-')}",
-                "主动流：{direction} · 净额 {signed:.2f}".format(
-                    direction=flow.get("direction", "-"),
-                    signed=float(flow.get("signed_notional", 0.0)),
+                f"时间：{details.get('completed_at', '-')}",
+                "策略：{decision}　模型：{prediction}　状态：{state}".format(
+                    decision=details.get("decision", "-"),
+                    prediction=prediction.get("direction", "-"),
+                    state=market_state.get("flow_depth_agreement", "-"),
                 ),
-                "深度：{pressure} · 买卖失衡 {imbalance:.3f}".format(
+                "订单流：{direction} {signed:+.1f}万 USDT　深度：{pressure}".format(
+                    direction=flow.get("direction", "-"), signed=signed_wan,
                     pressure=liquidity.get("pressure", "-"),
-                    imbalance=float(liquidity.get("depth_imbalance", 0.0)),
                 ),
-                "潜在支撑：{support} · 潜在阻力：{resistance}".format(
-                    support=(liquidity.get("support") or {}).get("price", "-"),
-                    resistance=(liquidity.get("resistance") or {}).get("price", "-"),
-                ),
-                f"PAPER/回测偏差：{evaluation.get('paper_vs_backtest_deviation', '-')}",
-                "独立决策：{current}/{minimum}".format(
-                    current=evaluation.get("independent_decisions", "-"),
-                    minimum=evaluation.get("minimum_decisions_before_change", "-"),
-                ),
-                f"DeepSeek二次判断：{details.get('summary', '-')}",
+                f"区间：支撑 {support}　阻力 {resistance}（快照）",
+                f"结论：{summary}",
+                f"样本：{decisions}/{minimum}　风险：{risk.get('status', '-')}",
+                "操作：继续观察，不自动下单。",
             ]
         )
-        if isinstance(risks, list) and risks:
-            lines.append("复核风险：" + "；".join(str(item) for item in risks))
-        if isinstance(limitations, list) and limitations:
-            lines.append("复核限制：" + "；".join(str(item) for item in limitations))
-        lines.extend(
-            [
-                "DeepSeek角色：二次判断与模板化汇报",
-                f"报告ID：{details.get('report_id', '-')}",
-                "权限：不能生成或修改策略信号，不能创建 PAPER/TESTNET/LIVE 订单。",
-                "状态：上游 AWS 计算结果的自动汇报；不构成投资建议，不保证收益。",
-            ]
-        )
+        lines.append("PAPER 研究记录｜非投资建议")
         return "\n".join(lines)
     if event.event_type == "ai_market_analysis":
         model = str(details.get("model", "DeepSeek"))

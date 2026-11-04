@@ -18,7 +18,7 @@ from .watch_agent import WatchEvent
 
 
 EVIDENCE_SCHEMA_VERSION = "emergenzix-strategy-evidence/v1"
-REPORT_PROTOCOL_VERSION = "emergenzix-strategy-briefing/v1"
+REPORT_PROTOCOL_VERSION = "emergenzix-strategy-briefing/v2"
 Analyzer = Callable[..., dict[str, Any]]
 
 
@@ -42,7 +42,9 @@ def run_ai_research_report(
             title="Emergenzix strategy evidence briefing",
             question=("Review the supplied strategy calculation and prediction. Explain the decision, "
                       "disagreements, risks, data limitations, and PAPER/backtest deviation. "
-                      "Do not independently analyze the market or invent signals."),
+                      "Do not independently analyze the market or invent signals. Write the summary "
+                      "in Simplified Chinese using at most 80 Chinese characters. Keep every list item "
+                      "in Simplified Chinese and under 40 Chinese characters."),
             evidence=evidence,
         )
         analysis = reviewed.get("analysis")

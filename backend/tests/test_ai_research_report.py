@@ -111,7 +111,10 @@ def test_report_notification_uses_strategy_first_template(tmp_path):
     finally:
         connection.close()
     message = format_watch_event(WatchEvent(**json.loads(payload)))
-    assert "策略：turtle_breakout · v1" in message
-    assert "策略动作：HOLD" in message
-    assert "DeepSeek角色：二次判断与模板化汇报" in message
-    assert "不能生成或修改策略信号" in message
+    assert "策略：HOLD" in message
+    assert "模型：NEUTRAL" in message
+    assert "操作：继续观察，不自动下单。" in message
+    assert "PAPER 研究记录｜非投资建议" in message
+    assert "报告ID" not in message
+    assert "复核风险" not in message
+    assert len(message) < 600
