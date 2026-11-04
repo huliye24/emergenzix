@@ -18,7 +18,7 @@ ssh -i "$ssh_key" -o BatchMode=yes "$gpu_host" "install -d -m 0700 '$gpu_work'"
 scp -i "$ssh_key" -q "$work_dir/market-input.json" "$work_dir/strategy-analysis.json" \
   "${gpu_host}:${gpu_work}/"
 ssh -i "$ssh_key" -o BatchMode=yes "$gpu_host" \
-  "PYTHONPATH='$gpu_repo/backend' '$gpu_repo/.venv/bin/python' '$gpu_repo/ops/strategy_evidence_pipeline.py' gpu --repo-root '$gpu_repo' --work-dir '$gpu_work' --chronos-cache '/home/ubuntu/emergenzix-chronos-v2.3.2/hf-cache/hub'"
+  "PYTHONPATH='$gpu_repo/backend' '$gpu_repo/.venv/bin/python' '$gpu_repo/ops/strategy_evidence_pipeline.py' gpu --repo-root '$gpu_repo' --work-dir '$gpu_work' --chronos-cache '/home/ubuntu/emergenzix-chronos-v2.3.2/hf-cache'"
 scp -i "$ssh_key" -q "${gpu_host}:${gpu_work}/model-prediction.json" "$work_dir/model-prediction.json"
 
 "$python" "${repo_root}/ops/strategy_evidence_pipeline.py" merge \
