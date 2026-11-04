@@ -20,5 +20,6 @@ export EMERGENZIX_DEEPSEEK_MODEL="${EMERGENZIX_DEEPSEEK_MODEL:-deepseek-flash}"
 export EMERGENZIX_STRATEGY_EVIDENCE_PATH="${EMERGENZIX_STRATEGY_EVIDENCE_PATH:-/home/ubuntu/.local/share/emergenzix-ai/evidence-cycle/evidence/latest.json}"
 export EMERGENZIX_AI_REPORT_DIR="${EMERGENZIX_AI_REPORT_DIR:-/home/ubuntu/.local/share/emergenzix-ai/reports}"
 export EMERGENZIX_AI_REPORT_OUTBOX_PATH="${EMERGENZIX_AI_REPORT_OUTBOX_PATH:-/home/ubuntu/.local/share/emergenzix-ai/report-outbox.sqlite3}"
+export PYTHONPATH="${repo_root}/backend${PYTHONPATH:+:${PYTHONPATH}}"
 
 exec "${repo_root}/.venv/bin/python" -m emergenzix_api.ai_research_report
