@@ -10,8 +10,6 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
-
 from emergenzix_api.chronos_signal_export import create_chronos_record
 from emergenzix_api.strategy_evidence_pipeline import (
     build_model_prediction,
@@ -35,6 +33,8 @@ def _revision(repo_root: Path) -> str:
 
 
 def _completed_market(now: datetime) -> dict:
+    import requests
+
     proxy = os.getenv("EMERGENZIX_PUBLIC_MARKET_HTTPS_PROXY") or None
     response = requests.get(
         "https://api.binance.com/api/v3/klines",
