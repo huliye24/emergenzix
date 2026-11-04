@@ -50,6 +50,7 @@ def fetch_public_ohlcv(
     symbol: str,
     timeframe: str,
     limit: int,
+    https_proxy: str | None = None,
 ) -> dict[str, Any]:
     """Fetch public spot OHLCV candles without API keys or private exchange methods."""
     if exchange_id not in SUPPORTED_EXCHANGES:
@@ -70,13 +71,14 @@ def fetch_public_ohlcv(
     if exchange_type is None:
         raise ValueError(f"CCXT does not provide the '{exchange_id}' exchange")
 
-    exchange = exchange_type(
-        {
-            "enableRateLimit": True,
-            "timeout": 15_000,
-            "options": {"defaultType": "spot"},
-        }
-    )
+    exchange_options: dict[str, Any] = {
+        "enableRateLimit": True,
+        "timeout": 15_000,
+        "options": {"defaultType": "spot"},
+    }
+    if https_proxy:
+        exchange_options["httpsProxy"] = https_proxy
+    exchange = exchange_type(exchange_options)
 
     try:
         markets = exchange.load_markets()

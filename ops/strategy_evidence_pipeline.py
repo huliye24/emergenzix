@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -34,7 +35,8 @@ def _revision(repo_root: Path) -> str:
 
 def _completed_market(now: datetime) -> dict:
     payload = fetch_public_ohlcv(
-        exchange_id="binance", symbol="BTCUSDT", timeframe="4h", limit=200
+        exchange_id="binance", symbol="BTCUSDT", timeframe="4h", limit=200,
+        https_proxy=os.getenv("EMERGENZIX_PUBLIC_MARKET_HTTPS_PROXY") or None,
     )
     completed = []
     for bar in payload["bars"]:

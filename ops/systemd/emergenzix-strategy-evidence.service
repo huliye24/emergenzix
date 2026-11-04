@@ -10,6 +10,7 @@ Group=ubuntu
 WorkingDirectory=/home/ubuntu/emergenzix-evidence-current
 ExecStart=/usr/bin/bash /home/ubuntu/emergenzix-evidence-current/ops/run_strategy_evidence_cycle.sh
 Environment=EMERGENZIX_EVIDENCE_GPU_HOST=43.192.236.139
+Environment=EMERGENZIX_PUBLIC_MARKET_HTTPS_PROXY=http://127.0.0.1:7890
 Nice=10
 NoNewPrivileges=true
 PrivateTmp=true
