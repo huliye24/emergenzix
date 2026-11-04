@@ -29,6 +29,7 @@ from .deepseek_analysis_api import router as deepseek_analysis_router
 from .historical_replay_api import router as historical_replay_router
 from .historical_data_api import router as historical_data_router
 from .learning_loop_api import router as learning_loop_router
+from .eami_registry_api import router as eami_registry_router
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
 from .market_intelligence import build_market_intelligence
@@ -91,6 +92,7 @@ def create_app(
     app.include_router(dataset_router)
     app.include_router(strategy_router)
     app.include_router(learning_loop_router)
+    app.include_router(eami_registry_router)
     app.include_router(shadow_router)
     app.include_router(short_shadow_router)
     app.include_router(turtle_matrix_router)

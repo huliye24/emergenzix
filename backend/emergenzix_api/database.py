@@ -396,6 +396,99 @@ class Database:
                     SELECT RAISE(ABORT, 'turtle matrix runs are immutable');
                 END;
 
+                CREATE TABLE IF NOT EXISTS eami_model_versions (
+                    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                    model_name TEXT NOT NULL,
+                    model_version TEXT NOT NULL,
+                    model_family TEXT NOT NULL,
+                    feature_version TEXT NOT NULL,
+                    training_parameters_json TEXT NOT NULL,
+                    code_sha256 TEXT NOT NULL CHECK (length(code_sha256) = 64),
+                    artifact_sha256 TEXT CHECK (
+                        artifact_sha256 IS NULL OR length(artifact_sha256) = 64
+                    ),
+                    parent_model_id TEXT REFERENCES eami_model_versions(id),
+                    created_by TEXT NOT NULL,
+                    record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
+                    created_at TEXT NOT NULL,
+                    UNIQUE (model_name, model_version)
+                );
+
+                CREATE TABLE IF NOT EXISTS eami_experiment_records (
+                    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                    model_id TEXT NOT NULL REFERENCES eami_model_versions(id),
+                    dataset_id TEXT NOT NULL REFERENCES market_datasets(id),
+                    dataset_sha256 TEXT NOT NULL CHECK (length(dataset_sha256) = 64),
+                    data_start_at TEXT NOT NULL,
+                    data_end_at TEXT NOT NULL,
+                    protocol_version TEXT NOT NULL,
+                    split_definition_json TEXT NOT NULL,
+                    metrics_json TEXT NOT NULL,
+                    outcome TEXT NOT NULL CHECK (
+                        outcome IN ('PASSED', 'FAILED', 'INCONCLUSIVE')
+                    ),
+                    random_seed INTEGER CHECK (random_seed IS NULL OR random_seed >= 0),
+                    notes TEXT,
+                    record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_eami_experiments_model_time
+                    ON eami_experiment_records(model_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS eami_model_stage_events (
+                    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                    model_id TEXT NOT NULL REFERENCES eami_model_versions(id),
+                    experiment_id TEXT REFERENCES eami_experiment_records(id),
+                    from_stage TEXT,
+                    to_stage TEXT NOT NULL CHECK (
+                        to_stage IN ('REGISTERED', 'CHALLENGER', 'CHAMPION', 'REJECTED', 'RETIRED')
+                    ),
+                    rationale TEXT NOT NULL,
+                    recorded_by TEXT NOT NULL,
+                    record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_eami_stage_events_model_time
+                    ON eami_model_stage_events(model_id, created_at, id);
+
+                CREATE TRIGGER IF NOT EXISTS eami_model_versions_no_update
+                BEFORE UPDATE ON eami_model_versions
+                BEGIN
+                    SELECT RAISE(ABORT, 'EAMI model versions are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS eami_model_versions_no_delete
+                BEFORE DELETE ON eami_model_versions
+                BEGIN
+                    SELECT RAISE(ABORT, 'EAMI model versions are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS eami_experiment_records_no_update
+                BEFORE UPDATE ON eami_experiment_records
+                BEGIN
+                    SELECT RAISE(ABORT, 'EAMI experiment records are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS eami_experiment_records_no_delete
+                BEFORE DELETE ON eami_experiment_records
+                BEGIN
+                    SELECT RAISE(ABORT, 'EAMI experiment records are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS eami_model_stage_events_no_update
+                BEFORE UPDATE ON eami_model_stage_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'EAMI model stage events are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS eami_model_stage_events_no_delete
+                BEFORE DELETE ON eami_model_stage_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'EAMI model stage events are immutable');
+                END;
+
                 CREATE TABLE IF NOT EXISTS paper_account (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     cash REAL NOT NULL,
