@@ -7,11 +7,12 @@ import argparse
 import json
 import os
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
+import requests
+
 from emergenzix_api.chronos_signal_export import create_chronos_record
-from emergenzix_api.market_data import fetch_public_ohlcv
 from emergenzix_api.strategy_evidence_pipeline import (
     build_model_prediction,
     build_strategy_analysis,
@@ -34,14 +35,29 @@ def _revision(repo_root: Path) -> str:
 
 
 def _completed_market(now: datetime) -> dict:
-    payload = fetch_public_ohlcv(
-        exchange_id="binance", symbol="BTCUSDT", timeframe="4h", limit=200,
-        https_proxy=os.getenv("EMERGENZIX_PUBLIC_MARKET_HTTPS_PROXY") or None,
+    proxy = os.getenv("EMERGENZIX_PUBLIC_MARKET_HTTPS_PROXY") or None
+    response = requests.get(
+        "https://api.binance.com/api/v3/klines",
+        params={"symbol": "BTCUSDT", "interval": "4h", "limit": 200},
+        proxies={"https": proxy} if proxy else None,
+        timeout=30,
     )
+    response.raise_for_status()
+    raw_bars = response.json()
+    if not isinstance(raw_bars, list):
+        raise ValueError("Binance kline response must be a list")
+    bars = []
+    for raw in raw_bars:
+        if not isinstance(raw, list) or len(raw) < 7:
+            raise ValueError("Binance kline row is incomplete")
+        bars.append({
+            "timestamp": datetime.fromtimestamp(int(raw[0]) / 1000, tz=timezone.utc).isoformat(),
+            "open": float(raw[1]), "high": float(raw[2]), "low": float(raw[3]),
+            "close": float(raw[4]), "volume": float(raw[5]), "close_at_ms": int(raw[6]),
+        })
     completed = []
-    for bar in payload["bars"]:
-        opened_at = datetime.fromisoformat(str(bar["timestamp"]).replace("Z", "+00:00"))
-        if opened_at + timedelta(hours=4) <= now:
+    for bar in bars:
+        if datetime.fromtimestamp(bar.pop("close_at_ms") / 1000, tz=timezone.utc) <= now:
             completed.append(bar)
     if len(completed) < 56:
         raise ValueError("fewer than 56 completed BTCUSDT 4h bars")
