@@ -48,7 +48,9 @@ class ModelRegistration(_Strict):
 
 class ExperimentRecord(_Strict):
     model_id: str = Field(pattern=SHA256)
-    dataset_id: str = Field(pattern=SHA256)
+    dataset_id: str | None = Field(default=None, pattern=SHA256)
+    input_asset_id: str | None = Field(default=None, pattern=SHA256)
+    output_asset_id: str | None = Field(default=None, pattern=SHA256)
     data_start_at: datetime
     data_end_at: datetime
     protocol_version: str = Field(min_length=1, max_length=100)
@@ -60,6 +62,8 @@ class ExperimentRecord(_Strict):
 
     @model_validator(mode="after")
     def validate_range(self) -> "ExperimentRecord":
+        if (self.dataset_id is None) == (self.input_asset_id is None):
+            raise ValueError("provide exactly one dataset_id or input_asset_id")
         if self.data_start_at.tzinfo is None or self.data_end_at.tzinfo is None:
             raise ValueError("experiment timestamps must include a timezone")
         if self.data_end_at <= self.data_start_at:

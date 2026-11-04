@@ -18,6 +18,10 @@ from emergenzix_api.research_compute_routing import (  # noqa: E402
     job_for_node,
     verify_local_collection,
 )
+from emergenzix_api.database import Database  # noqa: E402
+from emergenzix_api.eami_training_registration import (  # noqa: E402
+    register_qlib_training_report,
+)
 
 
 def _sha256(path: Path) -> str:
@@ -94,6 +98,8 @@ def main() -> int:
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--model-cache", type=Path, default=Path("/dev/null"))
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--registry-db", type=Path)
+    parser.add_argument("--input-asset-id")
     args = parser.parse_args()
 
     plan = json.loads(args.plan.read_text(encoding="utf-8"))
@@ -132,12 +138,26 @@ def main() -> int:
         print(json.dumps(preview, sort_keys=True))
         return 0
 
+    if job["job_id"] == "qlib-locked-models" and (
+        args.registry_db is None or args.input_asset_id is None
+    ):
+        raise ValueError("Qlib execution requires --registry-db and --input-asset-id")
+
     output.parent.mkdir(parents=True, exist_ok=True)
     if args.model_cache != Path("/dev/null"):
         args.model_cache.mkdir(parents=True, exist_ok=True)
     subprocess.run(command, cwd=cwd, check=True)
     if not output.is_file():
         raise ValueError("research runner completed without its declared output")
+    registration = None
+    if job["job_id"] == "qlib-locked-models":
+        trainer = args.repo_root / "backend" / "emergenzix_api" / "qlib_gpu_train.py"
+        registration = register_qlib_training_report(
+            db=Database(str(args.registry_db)),
+            input_asset_id=args.input_asset_id,
+            report_path=output,
+            code_sha256=_sha256(trainer),
+        )
     saved = {
         "mode": "RESEARCH_ONLY",
         "plan_id": plan["plan_id"],
@@ -149,6 +169,20 @@ def main() -> int:
         "output_sha256": _sha256(output),
         "orders_created": False,
         "live_order_permission": False,
+        "eami_registration": (
+            None
+            if registration is None
+            else {
+                "input_asset_id": registration["input_asset_id"],
+                "output_asset_id": registration["output_asset_id"],
+                "model_ids": [item["model"]["id"] for item in registration["models"]],
+                "experiment_ids": [
+                    item["experiment"]["id"] for item in registration["models"]
+                ],
+                "automatic_promotion": False,
+                "order_permission": False,
+            }
+        ),
     }
     receipt.write_text(json.dumps(saved, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"status": "completed", **saved}, sort_keys=True))

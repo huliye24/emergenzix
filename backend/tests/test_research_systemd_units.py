@@ -25,6 +25,9 @@ def test_gpu_schedule_preserves_chronos_before_qlib() -> None:
     assert service.index(chronos) < service.index(qlib)
     assert "HF_HUB_OFFLINE=1" in service
     assert "TRANSFORMERS_OFFLINE=1" in service
+    assert "EnvironmentFile=/etc/emergenzix/research-registry.env" in service
+    assert "--registry-db ${EMERGENZIX_REGISTRY_DB}" in service
+    assert "--input-asset-id ${EMERGENZIX_INPUT_ASSET_ID}" in service
     assert "OnCalendar=Sun *-*-* 03:15:00 UTC" in timer
 
 

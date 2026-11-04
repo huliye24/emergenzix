@@ -417,8 +417,12 @@ class Database:
                 CREATE TABLE IF NOT EXISTS eami_experiment_records (
                     id TEXT PRIMARY KEY CHECK (length(id) = 64),
                     model_id TEXT NOT NULL REFERENCES eami_model_versions(id),
-                    dataset_id TEXT NOT NULL REFERENCES market_datasets(id),
-                    dataset_sha256 TEXT NOT NULL CHECK (length(dataset_sha256) = 64),
+                    dataset_id TEXT REFERENCES market_datasets(id),
+                    dataset_sha256 TEXT CHECK (
+                        dataset_sha256 IS NULL OR length(dataset_sha256) = 64
+                    ),
+                    input_asset_id TEXT REFERENCES eami_data_assets(id),
+                    output_asset_id TEXT REFERENCES eami_data_assets(id),
                     data_start_at TEXT NOT NULL,
                     data_end_at TEXT NOT NULL,
                     protocol_version TEXT NOT NULL,
@@ -430,7 +434,8 @@ class Database:
                     random_seed INTEGER CHECK (random_seed IS NULL OR random_seed >= 0),
                     notes TEXT,
                     record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    CHECK ((dataset_id IS NOT NULL) != (input_asset_id IS NOT NULL))
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_eami_experiments_model_time

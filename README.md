@@ -35,6 +35,7 @@ A research result must carry provenance and pass review before it informs a prod
 - Optional DeepSeek JSON analysis of bounded research evidence through a separately authenticated internal route; all output is advisory and every order/promotion permission is forced false by server code
 - Immutable EAMI model versions, experiment records, and append-only lifecycle events with content fingerprints; registry status never grants automatic promotion or order permission
 - Model-independent EAMI data assets across RAW, CANONICAL, FEATURE, and RESEARCH_MEMORY layers, with immutable lineage and producer-code provenance
+- Fail-closed Qlib training registration that verifies a pinned input asset and model artifacts before appending model, experiment, and output-asset records; training never promotes a model automatically
 - Viewer-only visitor-code access with an HMAC-signed HttpOnly session; visitor requests cannot mutate `/api/v1` resources
 - Optional fail-closed Binance Spot account visibility using server-mounted secrets and signed GET requests only; no exchange order method exists
 - Automated backend tests, frontend type-check/build, Docker image build CI, and tag-triggered GHCR release workflow

@@ -72,6 +72,8 @@ EXPERIMENT_FIELDS = (
     "model_id",
     "dataset_id",
     "dataset_sha256",
+    "input_asset_id",
+    "output_asset_id",
     "data_start_at",
     "data_end_at",
     "protocol_version",
@@ -199,37 +201,72 @@ def record_experiment(db: Database, payload: dict[str, Any]) -> dict[str, Any]:
         ).fetchone()
         if model is None:
             raise EAMIRegistryError("model is not registered")
-        dataset = connection.execute(
-            "SELECT * FROM market_datasets WHERE id = ?", (payload["dataset_id"],)
-        ).fetchone()
-        if dataset is None:
-            raise EAMIRegistryError("dataset is not registered")
-        if (
-            payload["data_start_at"] < dataset["start_at"]
-            or payload["data_end_at"] > dataset["end_at"]
-        ):
-            raise EAMIRegistryError(
-                "experiment range must be contained in the registered dataset"
-            )
+        dataset_id = payload.get("dataset_id")
+        input_asset_id = payload.get("input_asset_id")
+        if (dataset_id is None) == (input_asset_id is None):
+            raise EAMIRegistryError("provide exactly one dataset_id or input_asset_id")
+        dataset_sha256 = None
+        if dataset_id is not None:
+            dataset = connection.execute(
+                "SELECT * FROM market_datasets WHERE id = ?", (dataset_id,)
+            ).fetchone()
+            if dataset is None:
+                raise EAMIRegistryError("dataset is not registered")
+            if (
+                payload["data_start_at"] < dataset["start_at"]
+                or payload["data_end_at"] > dataset["end_at"]
+            ):
+                raise EAMIRegistryError(
+                    "experiment range must be contained in the registered dataset"
+                )
+            dataset_sha256 = dataset["content_sha256"]
+        else:
+            asset = connection.execute(
+                "SELECT * FROM eami_data_assets WHERE id = ?", (input_asset_id,)
+            ).fetchone()
+            if asset is None:
+                raise EAMIRegistryError("input data asset is not registered")
+            if (
+                asset["data_start_at"]
+                and payload["data_start_at"] < asset["data_start_at"]
+            ) or (
+                asset["data_end_at"] and payload["data_end_at"] > asset["data_end_at"]
+            ):
+                raise EAMIRegistryError(
+                    "experiment range must be contained in the input asset"
+                )
+        output_asset_id = payload.get("output_asset_id")
+        if output_asset_id is not None:
+            output = connection.execute(
+                "SELECT id FROM eami_data_assets WHERE id = ?", (output_asset_id,)
+            ).fetchone()
+            if output is None:
+                raise EAMIRegistryError("output data asset is not registered")
         record = {
             **payload,
-            "dataset_sha256": dataset["content_sha256"],
+            "dataset_id": dataset_id,
+            "dataset_sha256": dataset_sha256,
+            "input_asset_id": input_asset_id,
+            "output_asset_id": output_asset_id,
             "created_at": created_at,
         }
         experiment_id = _fingerprint(record)
         connection.execute(
             """
             INSERT OR IGNORE INTO eami_experiment_records
-                (id, model_id, dataset_id, dataset_sha256, data_start_at, data_end_at,
-                 protocol_version, split_definition_json, metrics_json, outcome,
-                 random_seed, notes, record_sha256, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, model_id, dataset_id, dataset_sha256, input_asset_id,
+                 output_asset_id, data_start_at, data_end_at, protocol_version,
+                 split_definition_json, metrics_json, outcome, random_seed,
+                 notes, record_sha256, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 experiment_id,
                 payload["model_id"],
-                payload["dataset_id"],
-                dataset["content_sha256"],
+                dataset_id,
+                dataset_sha256,
+                input_asset_id,
+                output_asset_id,
                 payload["data_start_at"],
                 payload["data_end_at"],
                 payload["protocol_version"],

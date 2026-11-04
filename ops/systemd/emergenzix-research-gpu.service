@@ -11,8 +11,9 @@ WorkingDirectory=/opt/emergenzix-research/current
 Environment=PYTHONUNBUFFERED=1
 Environment=HF_HUB_OFFLINE=1
 Environment=TRANSFORMERS_OFFLINE=1
-ExecStart=/opt/emergenzix-research/venvs/chronos/bin/python ops/research_compute_dispatcher.py --plan /etc/emergenzix/research-compute-plan.json --node-class gpu --job chronos-zero-shot --python /opt/emergenzix-research/venvs/chronos/bin/python --repo-root /opt/emergenzix-research/current --data-root /var/lib/emergenzix/research-data/current --run-root /var/lib/emergenzix/research-runs --model-cache /var/lib/emergenzix/model-cache --execute
-ExecStart=/opt/emergenzix-research/venvs/qlib/bin/python ops/research_compute_dispatcher.py --plan /etc/emergenzix/research-compute-plan.json --node-class gpu --job qlib-locked-models --python /opt/emergenzix-research/venvs/qlib/bin/python --repo-root /opt/emergenzix-research/current --data-root /var/lib/emergenzix/research-data/current --run-root /var/lib/emergenzix/research-runs --model-cache /var/lib/emergenzix/model-cache --execute
+EnvironmentFile=/etc/emergenzix/research-registry.env
+ExecStart=/opt/emergenzix-research/venvs/chronos/bin/python ops/research_compute_dispatcher.py --plan /etc/emergenzix/research-compute-plan.json --node-class gpu --job chronos-zero-shot --python /opt/emergenzix-research/venvs/chronos/bin/python --repo-root /opt/emergenzix-research/current --data-root /var/lib/emergenzix/research-data/current --run-root /var/lib/emergenzix/research-runs --model-cache /var/lib/emergenzix/model-cache --registry-db ${EMERGENZIX_REGISTRY_DB} --input-asset-id ${EMERGENZIX_INPUT_ASSET_ID} --execute
+ExecStart=/opt/emergenzix-research/venvs/qlib/bin/python ops/research_compute_dispatcher.py --plan /etc/emergenzix/research-compute-plan.json --node-class gpu --job qlib-locked-models --python /opt/emergenzix-research/venvs/qlib/bin/python --repo-root /opt/emergenzix-research/current --data-root /var/lib/emergenzix/research-data/current --run-root /var/lib/emergenzix/research-runs --model-cache /var/lib/emergenzix/model-cache --registry-db ${EMERGENZIX_REGISTRY_DB} --input-asset-id ${EMERGENZIX_INPUT_ASSET_ID} --execute
 Nice=10
 NoNewPrivileges=true
 PrivateTmp=true
