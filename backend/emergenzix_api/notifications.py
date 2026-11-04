@@ -33,6 +33,7 @@ EVENT_LABELS = {
     "shadow_signal": "PAPER 策略信号",
     "shadow_fill": "PAPER 模拟成交",
     "shadow_data_failure": "PAPER 数据失败",
+    "ai_research_report": "DeepSeek 六小时研究报告",
 }
 
 SEVERITY_LABELS = {"info": "信息", "warning": "警告", "error": "错误"}
@@ -115,6 +116,31 @@ def format_watch_event(event: WatchEvent) -> str:
                 f"错误码：{details.get('error_code', '-')}",
                 f"事件ID：{details.get('alert_key', '-')}",
                 "状态：本周期停止产生新模拟动作；等待数据恢复。",
+            ]
+        )
+        return "\n".join(lines)
+    if event.event_type == "ai_research_report":
+        observations = details.get("observations", [])
+        risks = details.get("risks", [])
+        limitations = details.get("limitations", [])
+        lines.extend(
+            [
+                f"完成K线：{details.get('latest_completed_at', '-')}",
+                f"模型：{details.get('model', '-')}",
+                f"摘要：{details.get('summary', '-')}",
+            ]
+        )
+        if isinstance(observations, list) and observations:
+            lines.append("观察：" + "；".join(str(item) for item in observations))
+        if isinstance(risks, list) and risks:
+            lines.append("风险：" + "；".join(str(item) for item in risks))
+        if isinstance(limitations, list) and limitations:
+            lines.append("限制：" + "；".join(str(item) for item in limitations))
+        lines.extend(
+            [
+                f"报告ID：{details.get('report_id', '-')}",
+                "权限：仅研究建议；不能修改策略或创建 PAPER/TESTNET/LIVE 订单。",
+                "状态：自动研究报告；不构成投资建议，不保证收益。",
             ]
         )
         return "\n".join(lines)
