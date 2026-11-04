@@ -31,6 +31,7 @@ from .historical_data_api import router as historical_data_router
 from .learning_loop_api import router as learning_loop_router
 from .eami_registry_api import router as eami_registry_router
 from .eami_data_assets_api import router as eami_data_assets_router
+from .eami_inference_api import router as eami_inference_router
 from .market_data import MarketDataUnavailable, fetch_public_ohlcv, normalize_symbol
 from .market_data_cache import TTLCache
 from .market_intelligence import build_market_intelligence
@@ -95,6 +96,7 @@ def create_app(
     app.include_router(learning_loop_router)
     app.include_router(eami_registry_router)
     app.include_router(eami_data_assets_router)
+    app.include_router(eami_inference_router)
     app.include_router(shadow_router)
     app.include_router(short_shadow_router)
     app.include_router(turtle_matrix_router)

@@ -535,6 +535,82 @@ class Database:
                     SELECT RAISE(ABORT, 'EAMI data assets are immutable');
                 END;
 
+                CREATE TABLE IF NOT EXISTS eami_inference_sessions (
+                    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                    model_id TEXT NOT NULL REFERENCES eami_model_versions(id),
+                    input_asset_id TEXT NOT NULL REFERENCES eami_data_assets(id),
+                    symbol TEXT NOT NULL,
+                    timeframe TEXT NOT NULL CHECK (timeframe IN ('15m', '1h', '4h', '1d')),
+                    horizon_bars INTEGER NOT NULL CHECK (horizon_bars BETWEEN 1 AND 24),
+                    first_expected_at TEXT NOT NULL,
+                    record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS eami_inference_observations (
+                    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                    session_id TEXT NOT NULL REFERENCES eami_inference_sessions(id),
+                    completed_at TEXT NOT NULL,
+                    target_at TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('PREDICTION', 'FAILURE')),
+                    input_sha256 TEXT,
+                    direction TEXT CHECK (direction IN ('UP', 'DOWN', 'NEUTRAL')),
+                    score REAL CHECK (score IS NULL OR (score >= 0 AND score <= 1)),
+                    prediction_json TEXT,
+                    error_code TEXT,
+                    record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
+                    created_at TEXT NOT NULL,
+                    UNIQUE (session_id, completed_at),
+                    CHECK (
+                        (status = 'PREDICTION' AND input_sha256 IS NOT NULL
+                         AND direction IS NOT NULL AND score IS NOT NULL
+                         AND prediction_json IS NOT NULL AND error_code IS NULL)
+                        OR
+                        (status = 'FAILURE' AND input_sha256 IS NULL
+                         AND direction IS NULL AND score IS NULL
+                         AND prediction_json IS NULL AND error_code IS NOT NULL)
+                    )
+                );
+
+                CREATE TABLE IF NOT EXISTS eami_inference_outcomes (
+                    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                    observation_id TEXT NOT NULL UNIQUE
+                        REFERENCES eami_inference_observations(id),
+                    label TEXT NOT NULL CHECK (label IN ('UP', 'DOWN', 'NEUTRAL')),
+                    actual_return REAL NOT NULL,
+                    outcome_json TEXT NOT NULL,
+                    record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_eami_inference_observations_session_time
+                    ON eami_inference_observations(session_id, completed_at);
+
+                CREATE TRIGGER IF NOT EXISTS eami_inference_sessions_no_update
+                BEFORE UPDATE ON eami_inference_sessions BEGIN
+                    SELECT RAISE(ABORT, 'EAMI inference sessions are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS eami_inference_sessions_no_delete
+                BEFORE DELETE ON eami_inference_sessions BEGIN
+                    SELECT RAISE(ABORT, 'EAMI inference sessions are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS eami_inference_observations_no_update
+                BEFORE UPDATE ON eami_inference_observations BEGIN
+                    SELECT RAISE(ABORT, 'EAMI inference observations are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS eami_inference_observations_no_delete
+                BEFORE DELETE ON eami_inference_observations BEGIN
+                    SELECT RAISE(ABORT, 'EAMI inference observations are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS eami_inference_outcomes_no_update
+                BEFORE UPDATE ON eami_inference_outcomes BEGIN
+                    SELECT RAISE(ABORT, 'EAMI inference outcomes are immutable');
+                END;
+                CREATE TRIGGER IF NOT EXISTS eami_inference_outcomes_no_delete
+                BEFORE DELETE ON eami_inference_outcomes BEGIN
+                    SELECT RAISE(ABORT, 'EAMI inference outcomes are immutable');
+                END;
+
                 CREATE TABLE IF NOT EXISTS paper_account (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     cash REAL NOT NULL,
