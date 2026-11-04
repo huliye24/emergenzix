@@ -489,6 +489,47 @@ class Database:
                     SELECT RAISE(ABORT, 'EAMI model stage events are immutable');
                 END;
 
+                CREATE TABLE IF NOT EXISTS eami_data_assets (
+                    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+                    layer TEXT NOT NULL CHECK (
+                        layer IN ('RAW', 'CANONICAL', 'FEATURE', 'RESEARCH_MEMORY')
+                    ),
+                    asset_kind TEXT NOT NULL,
+                    storage_uri TEXT NOT NULL,
+                    storage_format TEXT NOT NULL,
+                    schema_version TEXT NOT NULL,
+                    feature_version TEXT,
+                    content_sha256 TEXT NOT NULL CHECK (length(content_sha256) = 64),
+                    producer_code_sha256 TEXT CHECK (
+                        producer_code_sha256 IS NULL OR length(producer_code_sha256) = 64
+                    ),
+                    source_asset_ids_json TEXT NOT NULL,
+                    symbol TEXT,
+                    timeframe TEXT,
+                    data_start_at TEXT,
+                    data_end_at TEXT,
+                    metadata_json TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64),
+                    created_at TEXT NOT NULL,
+                    UNIQUE (storage_uri, content_sha256)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_eami_data_assets_layer_time
+                    ON eami_data_assets(layer, created_at DESC);
+
+                CREATE TRIGGER IF NOT EXISTS eami_data_assets_no_update
+                BEFORE UPDATE ON eami_data_assets
+                BEGIN
+                    SELECT RAISE(ABORT, 'EAMI data assets are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS eami_data_assets_no_delete
+                BEFORE DELETE ON eami_data_assets
+                BEGIN
+                    SELECT RAISE(ABORT, 'EAMI data assets are immutable');
+                END;
+
                 CREATE TABLE IF NOT EXISTS paper_account (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     cash REAL NOT NULL,

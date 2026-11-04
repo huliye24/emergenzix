@@ -34,6 +34,7 @@ A research result must carry provenance and pass review before it informs a prod
 - Deterministic completed-candle scenario analysis for downside continuation, false breakdown, range, and upside reversal
 - Optional DeepSeek JSON analysis of bounded research evidence through a separately authenticated internal route; all output is advisory and every order/promotion permission is forced false by server code
 - Immutable EAMI model versions, experiment records, and append-only lifecycle events with content fingerprints; registry status never grants automatic promotion or order permission
+- Model-independent EAMI data assets across RAW, CANONICAL, FEATURE, and RESEARCH_MEMORY layers, with immutable lineage and producer-code provenance
 - Viewer-only visitor-code access with an HMAC-signed HttpOnly session; visitor requests cannot mutate `/api/v1` resources
 - Optional fail-closed Binance Spot account visibility using server-mounted secrets and signed GET requests only; no exchange order method exists
 - Automated backend tests, frontend type-check/build, Docker image build CI, and tag-triggered GHCR release workflow
@@ -172,6 +173,9 @@ Use the observed output as evidence for the next iteration. The web tier has a v
 | POST | `/api/v1/eami/experiments` | Append fingerprinted model experiment evidence |
 | GET | `/api/v1/eami/experiments/{experiment_id}` | Retrieve and integrity-check one experiment record |
 | POST | `/api/v1/eami/stage-events` | Append a reviewed lifecycle event backed by same-model experiment evidence |
+| POST | `/api/v1/eami/data-assets` | Register an immutable external research asset and its provenance |
+| GET | `/api/v1/eami/data-assets/{asset_id}` | Retrieve and integrity-check a reusable data asset |
+| GET | `/api/v1/eami/data-assets/{asset_id}/lineage` | Resolve the complete cross-generation source lineage |
 | GET | `/api/v1/strategies/{id}` | Inspect a strategy and its current version |
 | GET / POST | `/api/v1/strategies/{id}/versions` | List immutable parameter snapshots or create a new version |
 | POST | `/api/v1/backtests` | Run and persist a backtest from raw bars or a registered dataset ID |
