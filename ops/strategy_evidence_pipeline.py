@@ -20,6 +20,11 @@ from emergenzix_api.strategy_evidence_pipeline import (
 
 
 def _revision(repo_root: Path) -> str:
+    deployed = repo_root / "DEPLOYED_GIT_SHA"
+    if deployed.is_file():
+        revision = deployed.read_text(encoding="utf-8").strip()
+        if revision:
+            return revision
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo_root, check=True,
         capture_output=True, text=True,
