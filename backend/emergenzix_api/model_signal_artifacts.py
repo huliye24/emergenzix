@@ -14,7 +14,19 @@ from .schemas import Bar
 
 SCHEMA_VERSION = "emergenzix-model-signal/v1"
 EXPECTED_FAMILIES = ("Chronos", "Qlib")
-TIMEFRAME_SECONDS = {"15m": 900, "1h": 3_600, "4h": 14_400}
+TIMEFRAME_SECONDS = {"15m": 900, "1h": 3_600, "4h": 14_400,
+                     "1d": 86_400, "1w": 604_800}
+
+
+def next_bar_at(timestamp: datetime, timeframe: str) -> datetime:
+    if timeframe == "1M":
+        year = timestamp.year + (1 if timestamp.month == 12 else 0)
+        month = 1 if timestamp.month == 12 else timestamp.month + 1
+        return timestamp.replace(year=year, month=month, day=1)
+    seconds = TIMEFRAME_SECONDS.get(timeframe)
+    if seconds is None:
+        raise ValueError("unsupported timeframe")
+    return timestamp + timedelta(seconds=seconds)
 
 
 def _canonical_sha256(payload: Any) -> str:
@@ -135,13 +147,14 @@ def verify_signal_record(
     generated_at = _timestamp(record.get("generated_at"), "generated_at")
     target_at = _timestamp(prediction.get("target_at"), "prediction.target_at")
     interval = TIMEFRAME_SECONDS.get(timeframe)
-    if interval is None:
+    if interval is None and timeframe != "1M":
         raise ValueError("unsupported model signal timeframe")
     if generated_at < input_end or generated_at > now + timedelta(minutes=5):
         raise ValueError("model signal generation timestamp is invalid")
-    if now - generated_at > timedelta(seconds=interval * 2):
+    max_age = timedelta(days=62) if timeframe == "1M" else timedelta(seconds=interval * 2)
+    if now - generated_at > max_age:
         raise ValueError("model signal artifact is stale")
-    if target_at != input_end + timedelta(seconds=interval):
+    if target_at != next_bar_at(input_end, timeframe):
         raise ValueError("model signal target timestamp is not the next bar")
     if prediction.get("direction") not in {"UP", "DOWN", "NEUTRAL"}:
         raise ValueError("model signal direction is invalid")

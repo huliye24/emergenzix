@@ -9,12 +9,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
 from .chronos_walk_forward import ForecastJob, _model_predictions, local_model_snapshot
-from .model_signal_artifacts import TIMEFRAME_SECONDS, build_signal_record
+from .model_signal_artifacts import TIMEFRAME_SECONDS, build_signal_record, next_bar_at
 from .schemas import Bar
 
 
@@ -52,7 +52,7 @@ def create_chronos_record(
     bars = _completed_bars(payload, exclude_final_bar=exclude_final_bar)
     symbol = str(payload.get("symbol", ""))
     timeframe = str(payload.get("timeframe", ""))
-    if timeframe not in TIMEFRAME_SECONDS:
+    if timeframe not in TIMEFRAME_SECONDS and timeframe != "1M":
         raise ValueError("unsupported timeframe")
     snapshot = Path(local_model_snapshot(model_id, cache))
     model_artifact = snapshot / "model.safetensors"
@@ -62,7 +62,7 @@ def create_chronos_record(
         [ForecastJob(
             symbol=symbol,
             timeframe=timeframe,
-            timestamp=(bars[-1].timestamp + timedelta(seconds=TIMEFRAME_SECONDS[timeframe])).isoformat(),
+            timestamp=next_bar_at(bars[-1].timestamp, timeframe).isoformat(),
             context=context,
             last_close=context[-1],
             actual_close=context[-1],
@@ -83,7 +83,7 @@ def create_chronos_record(
         generated_at=generated_at,
         direction=direction,
         score=0.5,
-        target_at=bars[-1].timestamp + timedelta(seconds=TIMEFRAME_SECONDS[timeframe]),
+        target_at=next_bar_at(bars[-1].timestamp, timeframe),
         prediction_details={
             "forecast_close": forecast,
             "predicted_return": predicted_return,

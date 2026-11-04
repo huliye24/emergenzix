@@ -8,6 +8,7 @@ from emergenzix_api.model_signal_artifacts import (
     bars_sha256,
     build_signal_record,
     load_verified_model_signals,
+    next_bar_at,
     signal_record_sha256,
     verify_signal_record,
 )
@@ -56,6 +57,15 @@ def test_verified_model_signal_requires_exact_snapshot_and_next_timestamp() -> N
     assert result["status"] == "verified"
     assert result["direction"] == "UP"
     assert result["order_permission"] is False
+
+
+def test_monthly_target_uses_calendar_month_not_thirty_days() -> None:
+    assert next_bar_at(datetime(2026, 1, 1, tzinfo=timezone.utc), "1M") == datetime(
+        2026, 2, 1, tzinfo=timezone.utc
+    )
+    assert next_bar_at(datetime(2026, 12, 1, tzinfo=timezone.utc), "1M") == datetime(
+        2027, 1, 1, tzinfo=timezone.utc
+    )
 
 
 def test_builder_emits_a_self_verifying_advisory_record() -> None:

@@ -33,13 +33,14 @@ def _revision(repo_root: Path) -> str:
     return result.stdout.strip()
 
 
-def _completed_market(now: datetime) -> dict:
+def _completed_market(now: datetime, timeframe: str) -> dict:
     import requests
 
     proxy = os.getenv("EMERGENZIX_PUBLIC_MARKET_HTTPS_PROXY") or None
+    interval = {"4h": "4h", "1d": "1d", "1w": "1w", "1M": "1M"}[timeframe]
     response = requests.get(
         "https://api.binance.com/api/v3/klines",
-        params={"symbol": "BTCUSDT", "interval": "4h", "limit": 200},
+        params={"symbol": "BTCUSDT", "interval": interval, "limit": 200},
         proxies={"https": proxy} if proxy else None,
         timeout=30,
     )
@@ -61,8 +62,9 @@ def _completed_market(now: datetime) -> dict:
         if datetime.fromtimestamp(bar.pop("close_at_ms") / 1000, tz=timezone.utc) <= now:
             completed.append(bar)
     if len(completed) < 56:
-        raise ValueError("fewer than 56 completed BTCUSDT 4h bars")
-    return {"exchange": "binance", "symbol": "BTCUSDT", "timeframe": "4h", "bars": completed}
+        raise ValueError(f"fewer than 56 completed BTCUSDT {timeframe} bars")
+    return {"exchange": "binance", "symbol": "BTCUSDT", "timeframe": timeframe,
+            "bars": completed}
 
 
 def _battlefield_snapshot(now: datetime) -> dict:
@@ -113,13 +115,14 @@ def main() -> int:
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--chronos-cache", type=Path)
     parser.add_argument("--model-id", default="amazon/chronos-bolt-small")
+    parser.add_argument("--timeframe", choices=("4h", "1d", "1w", "1M"), default="4h")
     args = parser.parse_args()
     now = datetime.now(timezone.utc)
     revision = _revision(args.repo_root)
     args.work_dir.mkdir(parents=True, exist_ok=True)
 
     if args.stage == "cpu":
-        market = _completed_market(now)
+        market = _completed_market(now, args.timeframe)
         battlefield = build_market_battlefield(_battlefield_snapshot(now))
         strategy = build_strategy_analysis(market, generated_at=now, source_revision=revision,
                                            battlefield=battlefield)
