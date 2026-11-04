@@ -10,8 +10,13 @@ from typing import Any, Callable
 
 from .config import Settings
 from .database import Database
-from .market_data import fetch_public_ohlcv
-from .shadow_runner import list_shadow_sessions, run_shadow_cycle
+from .market_data import MarketDataUnavailable, fetch_public_ohlcv
+from .shadow_runner import (
+    ShadowRunnerError,
+    list_shadow_sessions,
+    record_shadow_cycle_failure,
+    run_shadow_cycle,
+)
 from .short_shadow_runner import list_short_shadow_sessions, run_short_shadow_cycle
 
 
@@ -26,6 +31,7 @@ def run_active_sessions_once(
     for session in list_shadow_sessions(db):
         if session["status"] != "ACTIVE":
             continue
+        observed_at = now or datetime.now(timezone.utc)
         try:
             payload = fetcher(
                 exchange_id="binance",
@@ -37,7 +43,7 @@ def run_active_sessions_once(
                 db,
                 session_id=session["id"],
                 market_payload=payload,
-                now=now or datetime.now(timezone.utc),
+                now=observed_at,
             )
             outcomes.append(
                 {
@@ -49,11 +55,27 @@ def run_active_sessions_once(
                 }
             )
         except Exception as exc:
+            if isinstance(exc, MarketDataUnavailable):
+                error_code = "MARKET_DATA_UNAVAILABLE"
+            elif isinstance(exc, ShadowRunnerError):
+                error_code = "SHADOW_RUNNER_ERROR"
+            elif isinstance(exc, (KeyError, TypeError, ValueError)):
+                error_code = "INVALID_MARKET_DATA"
+            else:
+                error_code = "UNEXPECTED_WORKER_ERROR"
+            failure = record_shadow_cycle_failure(
+                db,
+                session_id=session["id"],
+                timeframe=session["timeframe"],
+                observed_at=observed_at,
+                error_code=error_code,
+            )
             outcomes.append(
                 {
                     "session_id": session["id"],
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
+                    "expected_completed_at": failure["expected_completed_at"],
+                    "error_code": failure["error_code"],
+                    "failure_record_id": failure["id"],
                 }
             )
     return outcomes

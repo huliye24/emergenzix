@@ -152,6 +152,35 @@ class Database:
                     SELECT RAISE(ABORT, 'shadow decisions are immutable');
                 END;
 
+                CREATE TABLE IF NOT EXISTS shadow_cycle_failures (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL REFERENCES shadow_sessions(id) ON DELETE CASCADE,
+                    expected_completed_at TEXT NOT NULL,
+                    error_code TEXT NOT NULL CHECK (error_code IN (
+                        'MARKET_DATA_UNAVAILABLE',
+                        'INVALID_MARKET_DATA',
+                        'SHADOW_RUNNER_ERROR',
+                        'UNEXPECTED_WORKER_ERROR'
+                    )),
+                    created_at TEXT NOT NULL,
+                    UNIQUE (session_id, expected_completed_at)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_shadow_cycle_failures_session_time
+                    ON shadow_cycle_failures(session_id, expected_completed_at DESC);
+
+                CREATE TRIGGER IF NOT EXISTS shadow_cycle_failures_no_update
+                BEFORE UPDATE ON shadow_cycle_failures
+                BEGIN
+                    SELECT RAISE(ABORT, 'shadow cycle failures are immutable');
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS shadow_cycle_failures_no_delete
+                BEFORE DELETE ON shadow_cycle_failures
+                BEGIN
+                    SELECT RAISE(ABORT, 'shadow cycle failures are immutable');
+                END;
+
                 CREATE TABLE IF NOT EXISTS short_shadow_sessions (
                     id TEXT PRIMARY KEY,
                     fleet_id TEXT NOT NULL,

@@ -21,6 +21,61 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def expected_completed_at(*, timeframe: str, observed_at: datetime) -> str:
+    """Return the open timestamp of the latest candle expected to be complete."""
+    if timeframe not in TIMEFRAME_SECONDS:
+        raise ShadowRunnerError("unsupported shadow timeframe")
+    if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+        raise ShadowRunnerError("shadow observation time must include a timezone")
+    seconds = TIMEFRAME_SECONDS[timeframe]
+    boundary = (int(observed_at.timestamp()) // seconds - 1) * seconds
+    return datetime.fromtimestamp(boundary, tz=timezone.utc).isoformat()
+
+
+def record_shadow_cycle_failure(
+    db: Database,
+    *,
+    session_id: str,
+    timeframe: str,
+    observed_at: datetime,
+    error_code: str,
+) -> dict[str, Any]:
+    """Persist one immutable, sanitized failure per expected completed candle."""
+    allowed = {
+        "MARKET_DATA_UNAVAILABLE",
+        "INVALID_MARKET_DATA",
+        "SHADOW_RUNNER_ERROR",
+        "UNEXPECTED_WORKER_ERROR",
+    }
+    if error_code not in allowed:
+        raise ShadowRunnerError("unsupported shadow failure code")
+    expected_at = expected_completed_at(
+        timeframe=timeframe, observed_at=observed_at
+    )
+    failure_id = str(uuid.uuid4())
+    created_at = _now()
+    with db.connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO shadow_cycle_failures
+                (id, session_id, expected_completed_at, error_code, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, expected_completed_at) DO NOTHING
+            """,
+            (failure_id, session_id, expected_at, error_code, created_at),
+        )
+        result = connection.execute(
+            """
+            SELECT * FROM shadow_cycle_failures
+            WHERE session_id = ? AND expected_completed_at = ?
+            """,
+            (session_id, expected_at),
+        ).fetchone()
+    if result is None:
+        raise ShadowRunnerError("shadow failure record could not be persisted")
+    return _row(result)
+
+
 def _symbol_key(value: str) -> str:
     return value.strip().upper().replace("/", "").replace("-", "").replace("_", "")
 

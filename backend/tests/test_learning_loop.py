@@ -10,7 +10,10 @@ from emergenzix_api.learning_loop import (
     get_learning_loop_status,
 )
 from emergenzix_api.main import create_app
-from emergenzix_api.shadow_runner import create_shadow_session
+from emergenzix_api.shadow_runner import (
+    create_shadow_session,
+    record_shadow_cycle_failure,
+)
 
 
 def _seed_selected_session(app, *, suffix: str = "") -> dict:
@@ -80,7 +83,31 @@ def test_status_answers_five_questions_and_keeps_gate_closed(tmp_path, monkeypat
     assert status["portfolio"]["open_risk_status"] == "NOT_IMPLEMENTED"
     assert status["backtest_deviation"]["cost_assumptions_match"] is True
     assert status["observation_gate"]["independent_decision_count"] == 0
-    assert status["observation_gate"]["failure_recording_status"] == "NOT_IMPLEMENTED"
+    assert status["observation_gate"]["failure_recording_status"] == "IMPLEMENTED"
+    assert status["observation_gate"]["evaluation_permitted"] is False
+
+
+def test_failure_counts_as_candle_evidence_but_not_as_a_decision(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("EMERGENZIX_SEED_BUILTIN_STRATEGIES", "true")
+    app = create_app(db_path=tmp_path / "failure-evidence.db")
+    selected = _seed_selected_session(app)
+    record_shadow_cycle_failure(
+        app.state.database,
+        session_id=selected["id"],
+        timeframe="4h",
+        observed_at=datetime.now(timezone.utc),
+        error_code="MARKET_DATA_UNAVAILABLE",
+    )
+
+    status = get_learning_loop_status(app.state.database)
+
+    assert status["latest_failure"]["error_code"] == "MARKET_DATA_UNAVAILABLE"
+    assert status["observation_gate"]["failure_count"] == 1
+    assert status["observation_gate"]["covered_expected_candle_count"] == 1
+    assert status["observation_gate"]["independent_decision_count"] == 0
+    assert status["observation_gate"]["expected_candle_coverage_verified"] is True
     assert status["observation_gate"]["evaluation_permitted"] is False
 
 

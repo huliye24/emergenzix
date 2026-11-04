@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from .database import Database
+from .shadow_runner import TIMEFRAME_SECONDS, expected_completed_at
 
 
 class LearningLoopStatusError(ValueError):
@@ -73,6 +74,25 @@ def get_learning_loop_status(db: Database) -> dict[str, Any]:
             """,
             (session["id"],),
         ).fetchone()
+        failures = connection.execute(
+            """
+            SELECT * FROM shadow_cycle_failures
+            WHERE session_id = ?
+            ORDER BY expected_completed_at DESC
+            """,
+            (session["id"],),
+        ).fetchall()
+        evidence_rows = connection.execute(
+            """
+            SELECT completed_at AS evidence_at FROM shadow_decisions
+            WHERE session_id = ?
+            UNION
+            SELECT expected_completed_at AS evidence_at FROM shadow_cycle_failures
+            WHERE session_id = ?
+            ORDER BY evidence_at
+            """,
+            (session["id"], session["id"]),
+        ).fetchall()
 
     latest_close = float(latest["close_price"]) if latest else 0.0
     equity = (
@@ -88,14 +108,25 @@ def get_learning_loop_status(db: Database) -> dict[str, Any]:
         else 0.0
     )
 
-    first_at = counts["first_completed_at"]
-    latest_at = counts["latest_completed_at"]
+    evidence_times = [row["evidence_at"] for row in evidence_rows]
+    first_at = evidence_times[0] if evidence_times else None
+    latest_expected_at = expected_completed_at(
+        timeframe=session["timeframe"], observed_at=datetime.now(timezone.utc)
+    )
+    latest_at = evidence_times[-1] if evidence_times else None
     observation_days = (
-        (_iso(latest_at) - _iso(first_at)).total_seconds() / 86_400.0
-        if first_at and latest_at
+        (_iso(latest_expected_at) - _iso(first_at)).total_seconds() / 86_400.0
+        if first_at
         else 0.0
     )
     independent_count = int(counts["independent_decision_count"])
+    expected_count = 0
+    if first_at and _iso(first_at) <= _iso(latest_expected_at):
+        expected_count = int(
+            (_iso(latest_expected_at) - _iso(first_at)).total_seconds()
+            // TIMEFRAME_SECONDS[session["timeframe"]]
+        ) + 1
+    covered_count = len(evidence_times)
 
     backtest_result = json.loads(session["backtest_result_json"])
     assumptions = backtest_result.get("assumptions", {})
@@ -104,7 +135,7 @@ def get_learning_loop_status(db: Database) -> dict[str, Any]:
         and assumptions.get("slippage_bps_per_side")
         == float(session["slippage_bps"])
     )
-    coverage_verified = False
+    coverage_verified = expected_count > 0 and covered_count == expected_count
     reconciliation_verified = False
     gate_open = (
         observation_days >= 30
@@ -121,6 +152,13 @@ def get_learning_loop_status(db: Database) -> dict[str, Any]:
             "reason": latest["reason"],
             "fill_side": latest["fill_side"],
             "input_sha256": latest["input_sha256"],
+        }
+    latest_failure = None
+    if failures:
+        latest_failure = {
+            "expected_completed_at": failures[0]["expected_completed_at"],
+            "error_code": failures[0]["error_code"],
+            "created_at": failures[0]["created_at"],
         }
 
     return {
@@ -139,6 +177,7 @@ def get_learning_loop_status(db: Database) -> dict[str, Any]:
             "source_backtest_id": session["source_backtest_id"],
         },
         "latest_decision": latest_decision,
+        "latest_failure": latest_failure,
         "portfolio": {
             "cash": float(session["cash"]),
             "position_quantity": float(session["quantity"]),
@@ -169,14 +208,18 @@ def get_learning_loop_status(db: Database) -> dict[str, Any]:
         "observation_gate": {
             "target_calendar_days": 30,
             "target_independent_decisions": 180,
-            "observation_days_between_first_and_latest_decision": observation_days,
+            "observation_days_since_first_evidence": observation_days,
             "decision_count": int(counts["decision_count"]),
             "independent_decision_count": independent_count,
+            "failure_count": len(failures),
+            "covered_expected_candle_count": covered_count,
+            "expected_candle_count_since_first_evidence": expected_count,
             "first_completed_at": first_at,
             "latest_completed_at": latest_at,
+            "latest_expected_completed_at": latest_expected_at,
             "expected_candle_coverage_verified": coverage_verified,
             "account_reconciliation_verified": reconciliation_verified,
-            "failure_recording_status": "NOT_IMPLEMENTED",
+            "failure_recording_status": "IMPLEMENTED",
             "evaluation_permitted": gate_open,
         },
     }
