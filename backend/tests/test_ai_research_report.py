@@ -25,6 +25,12 @@ def _evidence(*, generated_at=NOW):
         "prediction": {"direction": "NEUTRAL", "horizon": "4h", "agreement": "mixed"},
         "portfolio": {"position": "FLAT", "exposure_pct": 0.0},
         "risk": {"status": "PASS", "stale_data": False},
+        "microstructure": {
+            "flow": {"direction": "BUY", "signed_notional": 2500000.0},
+            "liquidity": {"pressure": "BALANCED", "depth_imbalance": 0.01,
+                          "support": {"price": 76000.0}, "resistance": {"price": 77000.0}},
+            "state": {"flow_depth_agreement": "MIXED"},
+        },
         "evaluation": {"paper_vs_backtest_deviation": "insufficient sample",
                        "independent_decisions": 4, "minimum_decisions_before_change": 180},
         "provenance": [{"node": "aws-cpu", "role": "strategy_analysis", "revision": "abc123"},
@@ -111,10 +117,13 @@ def test_report_notification_uses_strategy_first_template(tmp_path):
     finally:
         connection.close()
     message = format_watch_event(WatchEvent(**json.loads(payload)))
-    assert "策略：HOLD" in message
-    assert "模型：NEUTRAL" in message
+    assert "Emergenzix · 策略判断报告" in message
+    assert "策略：观望" in message
+    assert "模型：中性" in message
+    assert "状态：信号分歧" in message
+    assert "结论：\n1." in message
     assert "操作：继续观察，不自动下单。" in message
-    assert "PAPER 研究记录｜非投资建议" in message
+    assert "PAPER 研究记录" not in message
     assert "报告ID" not in message
     assert "复核风险" not in message
     assert len(message) < 600

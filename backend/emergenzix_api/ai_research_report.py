@@ -18,7 +18,7 @@ from .watch_agent import WatchEvent
 
 
 EVIDENCE_SCHEMA_VERSION = "emergenzix-strategy-evidence/v1"
-REPORT_PROTOCOL_VERSION = "emergenzix-strategy-briefing/v2"
+REPORT_PROTOCOL_VERSION = "emergenzix-strategy-briefing/v3"
 Analyzer = Callable[..., dict[str, Any]]
 
 

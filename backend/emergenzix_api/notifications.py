@@ -33,7 +33,7 @@ EVENT_LABELS = {
     "shadow_signal": "PAPER 策略信号",
     "shadow_fill": "PAPER 模拟成交",
     "shadow_data_failure": "PAPER 数据失败",
-    "ai_research_report": "六小时策略判断报告",
+    "ai_research_report": "策略判断报告",
 }
 
 SEVERITY_LABELS = {"info": "信息", "warning": "警告", "error": "错误"}
@@ -57,6 +57,33 @@ def _translate_instruction(value: object) -> str:
             translated = re.sub(pattern, replacement, text)
             return translated.replace("support", "支撑位").replace("resistance", "压力位")
     return text
+
+
+def _zh_value(value: object, translations: dict[str, str]) -> str:
+    text = str(value or "-")
+    return translations.get(text, text)
+
+
+def _strategy_conclusion(reason: str) -> str:
+    no_breakout = re.fullmatch(
+        r"Completed close ([0-9.]+) did not exceed prior 20-bar high ([0-9.]+)\.",
+        reason,
+    )
+    if no_breakout:
+        return (
+            f"4h收盘价 {float(no_breakout.group(1)):.2f} 未突破20周期高点 "
+            f"{float(no_breakout.group(2)):.2f}，策略保持观望。"
+        )
+    breakout = re.fullmatch(
+        r"Completed close ([0-9.]+) exceeded prior 20-bar high ([0-9.]+)\.",
+        reason,
+    )
+    if breakout:
+        return (
+            f"4h收盘价 {float(breakout.group(1)):.2f} 突破20周期高点 "
+            f"{float(breakout.group(2)):.2f}，策略产生候选信号。"
+        )
+    return "策略依据已记录，但当前理由无法转换为固定中文模板。"
 
 
 class NotificationError(RuntimeError):
@@ -121,40 +148,46 @@ def format_watch_event(event: WatchEvent) -> str:
         return "\n".join(lines)
     if event.event_type == "ai_research_report":
         prediction = details.get("prediction", {})
-        risk = details.get("risk", {})
-        evaluation = details.get("evaluation", {})
         microstructure = details.get("microstructure", {})
         flow = microstructure.get("flow", {}) if isinstance(microstructure, dict) else {}
         liquidity = microstructure.get("liquidity", {}) if isinstance(microstructure, dict) else {}
         market_state = microstructure.get("state", {}) if isinstance(microstructure, dict) else {}
-        summary = str(details.get("summary", "-")).strip().replace("\n", " ")
-        if len(summary) > 100:
-            summary = summary[:97] + "..."
         support = (liquidity.get("support") or {}).get("price", "-")
         resistance = (liquidity.get("resistance") or {}).get("price", "-")
         signed_notional = float(flow.get("signed_notional", 0.0))
         signed_wan = signed_notional / 10_000
-        decisions = evaluation.get("independent_decisions", "-")
-        minimum = evaluation.get("minimum_decisions_before_change", "-")
-        lines.extend(
-            [
-                f"时间：{details.get('completed_at', '-')}",
-                "策略：{decision}　模型：{prediction}　状态：{state}".format(
-                    decision=details.get("decision", "-"),
-                    prediction=prediction.get("direction", "-"),
-                    state=market_state.get("flow_depth_agreement", "-"),
-                ),
-                "订单流：{direction} {signed:+.1f}万 USDT　深度：{pressure}".format(
-                    direction=flow.get("direction", "-"), signed=signed_wan,
-                    pressure=liquidity.get("pressure", "-"),
-                ),
-                f"区间：支撑 {support}　阻力 {resistance}（快照）",
-                f"结论：{summary}",
-                f"样本：{decisions}/{minimum}　风险：{risk.get('status', '-')}",
-                "操作：继续观察，不自动下单。",
-            ]
+        decision = _zh_value(details.get("decision"), {"HOLD": "观望", "BUY": "买入", "SELL": "卖出"})
+        model_direction = _zh_value(prediction.get("direction"), {"UP": "看涨", "DOWN": "看跌", "NEUTRAL": "中性"})
+        agreement = _zh_value(market_state.get("flow_depth_agreement"), {
+            "CONFIRMED": "方向确认", "CONFLICT": "信号冲突", "MIXED": "信号分歧",
+        })
+        flow_direction = _zh_value(flow.get("direction"), {
+            "BUY": "主动买入", "SELL": "主动卖出", "BALANCED": "买卖平衡",
+        })
+        depth_pressure = _zh_value(liquidity.get("pressure"), {
+            "BID": "买盘占优", "ASK": "卖盘占优", "BALANCED": "买卖深度均衡",
+        })
+        strategy_conclusion = _strategy_conclusion(str(details.get("decision_reason", "-")))
+        model_conclusion = f"GPU模型指向{model_direction}，但置信度未校准，不能单独触发交易。"
+        flow_conclusion = (
+            f"主动订单流为{flow_direction}{abs(signed_wan):.1f}万 USDT，"
+            f"订单簿为{depth_pressure}，当前尚未形成一致确认。"
         )
-        lines.append("PAPER 研究记录｜非投资建议")
+        lines = [
+            "Emergenzix · 策略判断报告",
+            f"{event.symbol} · {event.timeframe} 周期",
+            f"时间：{details.get('completed_at', '-')}",
+            f"策略：{decision}　模型：{model_direction}　状态：{agreement}",
+            f"订单流：{flow_direction} {signed_wan:+.1f}万 USDT",
+            f"市场深度：{depth_pressure}",
+            f"区间：支撑 {support}",
+            f"　　　阻力 {resistance}（快照）",
+            "结论：",
+            f"1. {strategy_conclusion}",
+            f"2. {model_conclusion}",
+            f"3. {flow_conclusion}",
+            "操作：继续观察，不自动下单。",
+        ]
         return "\n".join(lines)
     if event.event_type == "ai_market_analysis":
         model = str(details.get("model", "DeepSeek"))
