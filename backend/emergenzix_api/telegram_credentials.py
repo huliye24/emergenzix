@@ -12,8 +12,23 @@ class TelegramCredentialError(ValueError):
 
 def load_telegram_bot_token() -> str:
     """Load the bot token from one environment value or one mounted file."""
-    direct = os.getenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "").strip()
-    file_value = os.getenv("EMERGENZIX_TELEGRAM_BOT_TOKEN_FILE", "").strip()
+    return _load_token(
+        direct_name="EMERGENZIX_TELEGRAM_BOT_TOKEN",
+        file_name="EMERGENZIX_TELEGRAM_BOT_TOKEN_FILE",
+    )
+
+
+def load_follow_telegram_bot_token() -> str:
+    """Load the independently configured follow-channel bot token."""
+    return _load_token(
+        direct_name="EMERGENZIX_FOLLOW_TELEGRAM_BOT_TOKEN",
+        file_name="EMERGENZIX_FOLLOW_TELEGRAM_BOT_TOKEN_FILE",
+    )
+
+
+def _load_token(*, direct_name: str, file_name: str) -> str:
+    direct = os.getenv(direct_name, "").strip()
+    file_value = os.getenv(file_name, "").strip()
     if direct and file_value:
         raise TelegramCredentialError(
             "configure exactly one Telegram bot token source"

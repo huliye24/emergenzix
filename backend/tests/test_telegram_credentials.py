@@ -4,6 +4,7 @@ import pytest
 
 from emergenzix_api.telegram_credentials import (
     TelegramCredentialError,
+    load_follow_telegram_bot_token,
     load_telegram_bot_token,
 )
 
@@ -46,3 +47,13 @@ def test_missing_or_empty_token_file_fails_closed(tmp_path, monkeypatch):
     monkeypatch.setenv("EMERGENZIX_TELEGRAM_BOT_TOKEN_FILE", str(empty))
     with pytest.raises(TelegramCredentialError, match="invalid"):
         load_telegram_bot_token()
+
+
+def test_follow_token_uses_independent_environment_names(tmp_path, monkeypatch):
+    secret = tmp_path / "follow-token"
+    secret.write_text("follow-secret\n", encoding="utf-8")
+    monkeypatch.setenv("EMERGENZIX_TELEGRAM_BOT_TOKEN", "operations-secret")
+    monkeypatch.delenv("EMERGENZIX_FOLLOW_TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.setenv("EMERGENZIX_FOLLOW_TELEGRAM_BOT_TOKEN_FILE", str(secret))
+
+    assert load_follow_telegram_bot_token() == "follow-secret"

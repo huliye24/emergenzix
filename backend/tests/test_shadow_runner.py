@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from emergenzix_api.database import Database
+from emergenzix_api.notification_outbox import NotificationOutbox
 from emergenzix_api.shadow_runner import (
     ShadowRunnerError,
     create_shadow_session,
@@ -161,6 +162,36 @@ def test_worker_polls_active_sessions_and_records_equity(shadow):
             "equity": 10_000.0,
         }
     ]
+
+
+def test_worker_queues_only_selected_session_and_delivery_failure_is_isolated(
+    shadow, tmp_path
+):
+    db, session = shadow
+    start = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    payload = _payload(start, [100.0] * 20 + [105.0, 106.0])
+    outbox = NotificationOutbox(tmp_path / "follow-outbox.sqlite3")
+
+    unselected = run_active_sessions_once(
+        db,
+        fetcher=lambda **_: payload,
+        now=start + timedelta(hours=21, minutes=30),
+        notification_outbox=outbox,
+        notification_session_id="another-session",
+    )
+    selected = run_active_sessions_once(
+        db,
+        fetcher=lambda **_: payload,
+        now=start + timedelta(hours=21, minutes=30),
+        notification_outbox=outbox,
+        notification_session_id=session["id"],
+    )
+
+    assert "notification_ids" not in unselected[0]
+    assert len(selected[0]["notification_ids"]) == 1
+    assert outbox.pending_count() == 1
+    state = get_shadow_session(db, session["id"])
+    assert len(state["decisions"]) == 1
 
 
 def test_worker_records_one_immutable_sanitized_failure_per_expected_bar(shadow):
