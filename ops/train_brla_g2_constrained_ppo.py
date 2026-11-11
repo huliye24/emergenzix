@@ -23,6 +23,9 @@ sys.path.insert(0, str(ROOT / "backend"))
 from emergenzix_api.brla_g2_ppo_env import (  # noqa: E402
     BRLAG2PPOEnv, INTENTS, OBSERVATION_NAMES, PROTOCOL, prepare_episodes,
 )
+from emergenzix_api.brla_g2_ppo_fine_tuning import (  # noqa: E402
+    PROTOCOL as FINE_TUNING_PROTOCOL, authorize_warm_start,
+)
 from emergenzix_api.brla_g2_training_protocol import DataPurpose  # noqa: E402
 from emergenzix_api.brmg_scenarios import Partition  # noqa: E402
 
@@ -96,8 +99,12 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timesteps", type=int, default=200_000)
     parser.add_argument("--seed", type=int, default=20261111)
+    parser.add_argument("--initial-policy", type=Path)
+    parser.add_argument("--initial-policy-report", type=Path)
     args = parser.parse_args()
     if args.output.exists(): raise FileExistsError("output directory already exists")
+    if bool(args.initial_policy) != bool(args.initial_policy_report):
+        raise ValueError("initial policy and qualification report must be supplied together")
     train = prepare_episodes(args.dataset, args.encoder, partition=Partition.TRAIN,
         purpose=DataPurpose.STAGE2_TRAIN)
     development = prepare_episodes(args.dataset, args.encoder,
@@ -106,21 +113,36 @@ def main() -> int:
     torch.use_deterministic_algorithms(True, warn_only=True)
     if torch.cuda.is_available(): torch.cuda.manual_seed_all(args.seed)
     env = DummyVecEnv([lambda: Monitor(BRLAG2PPOEnv(train))])
-    model = MaskablePPO("MlpPolicy", env, seed=args.seed,
-        device="cuda" if torch.cuda.is_available() else "cpu",
-        learning_rate=3e-4, n_steps=512, batch_size=256, n_epochs=6,
-        gamma=.995, gae_lambda=.95, clip_range=.2, ent_coef=.01,
-        policy_kwargs={"net_arch": [128, 128]}, verbose=0)
-    model.learn(total_timesteps=args.timesteps, progress_bar=False)
+    initial_model_file_sha256 = None
+    initial_policy_parameters_sha256 = None
+    if args.initial_policy:
+        initial_model_file_sha256 = hashlib.sha256(args.initial_policy.read_bytes()).hexdigest()
+        qualification = json.loads(args.initial_policy_report.read_text(encoding="utf-8"))
+        authorize_warm_start(qualification, initial_model_file_sha256)
+        model = MaskablePPO.load(args.initial_policy, env=env,
+            device="cuda" if torch.cuda.is_available() else "cpu")
+        initial_policy_parameters_sha256 = parameter_sha256(model)
+    else:
+        model = MaskablePPO("MlpPolicy", env, seed=args.seed,
+            device="cuda" if torch.cuda.is_available() else "cpu",
+            learning_rate=3e-4, n_steps=512, batch_size=256, n_epochs=6,
+            gamma=.995, gae_lambda=.95, clip_range=.2, ent_coef=.01,
+            policy_kwargs={"net_arch": [128, 128]}, verbose=0)
+    model.learn(total_timesteps=args.timesteps, progress_bar=False,
+                reset_num_timesteps=not bool(args.initial_policy))
     development_report = evaluate(model, development)
     args.output.mkdir(parents=True)
     model.save(args.output / "model")
-    report = {"protocol": PROTOCOL, "algorithm": "sb3-contrib/MaskablePPO",
+    report = {"protocol": PROTOCOL, "training_protocol": FINE_TUNING_PROTOCOL
+              if args.initial_policy else "SCRATCH_PPO",
+        "algorithm": "sb3-contrib/MaskablePPO",
         "sb3_version": __import__("stable_baselines3").__version__,
         "encoder_model_sha256": torch.load(args.encoder, map_location="cpu",
             weights_only=False)["model_sha256"],
         "dataset_sha256": json.loads((args.dataset / "manifest.json").read_text())["dataset_sha256"],
         "seed": args.seed, "timesteps": args.timesteps,
+        "initial_model_file_sha256": initial_model_file_sha256,
+        "initial_policy_parameters_sha256": initial_policy_parameters_sha256,
         "train_episode_count": len(train), "development_episode_count": len(development),
         "observation_names": OBSERVATION_NAMES, "intents": INTENTS,
         "policy_parameters_sha256": parameter_sha256(model),
