@@ -26,9 +26,10 @@ change cost and frozen reflexive-risk reward. Every proposal passes through the
 constitution and BRGC; the model never receives order permission.
 
 Run it inside this isolated image with the repository and immutable path batch
-mounted read-only. Use a new output directory and a sealed holdout that has not
-been inspected or used for tuning. The earlier PPO v2 holdout must not be reused
-to tune this trainer.
+mounted read-only. The trainer accepts only a verified BRMG scenario bundle and
+its frozen partition manifest. It learns from `TRAIN`, reports `DEVELOPMENT`,
+and has no CLI argument capable of unlocking `SEALED_TEST`. Use a new output
+directory for every run. The earlier PPO v2 holdout must not be reused.
 
 ## Concurrency
 
