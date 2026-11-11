@@ -19,4 +19,3 @@ def test_probability_audit_rejects_invalid_values():
         summarize_flat_probabilities([
             {"wait_probability": 1.1, "probe_probability": 0},
         ])
-

@@ -28,4 +28,3 @@ def summarize_flat_probabilities(rows: Sequence[Mapping[str, float]]) -> dict[st
         "decisive_wait_fraction": float((margins >= .10).mean()),
         "near_tie_fraction": float((np.abs(margins) < .05).mean()),
     }
-
