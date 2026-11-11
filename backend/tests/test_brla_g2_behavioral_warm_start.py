@@ -2,6 +2,7 @@ import pytest
 
 from emergenzix_api.brla_g2_behavioral_warm_start import (
     PROTOCOL, calibrated_class_weights, classification_audit,
+    warm_start_qualification_checks,
 )
 from emergenzix_api.brla_g2_ppo_env import INTENTS
 
@@ -36,4 +37,23 @@ def test_calibrated_weights_reject_invalid_counts():
 
 
 def test_warm_start_protocol_tracks_causal_curriculum_generation():
-    assert PROTOCOL == "emergenzix-brla-g2-behavioral-warm-start-v3"
+    assert PROTOCOL == "emergenzix-brla-g2-behavioral-warm-start-v4"
+
+
+def test_warm_start_rejects_overfrequent_nemt_add_predictions():
+    training = {"macro_recall": .9, "illegal_prediction_count": 0}
+    development = {"example_count": 100, "macro_recall": .9,
+        "recall_by_intent": {"PROBE_SHORT": .9, "INCREASE_SHORT": .9},
+        "predicted_action_diversity": 5, "predicted_probe_fraction": .1,
+        "prediction_counts": {"INCREASE_SHORT": 9}, "illegal_prediction_count": 0}
+    checks = warm_start_qualification_checks(training, development)
+    assert checks["development_increase_fraction_bounded"] is False
+
+
+def test_warm_start_accepts_sparse_learned_nemt_add_predictions():
+    training = {"macro_recall": .9, "illegal_prediction_count": 0}
+    development = {"example_count": 100, "macro_recall": .9,
+        "recall_by_intent": {"PROBE_SHORT": .9, "INCREASE_SHORT": .9},
+        "predicted_action_diversity": 5, "predicted_probe_fraction": .1,
+        "prediction_counts": {"INCREASE_SHORT": 3}, "illegal_prediction_count": 0}
+    assert all(warm_start_qualification_checks(training, development).values())

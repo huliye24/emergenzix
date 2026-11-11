@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 from emergenzix_api.brla_g2_behavioral_warm_start import (  # noqa: E402
     PROTOCOL, calibrated_class_weights, classification_audit,
+    warm_start_qualification_checks,
 )
 from emergenzix_api.brla_g2_ppo_env import (  # noqa: E402
     BRLAG2PPOEnv, INTENTS, OBSERVATION_NAMES, prepare_episodes,
@@ -106,18 +107,7 @@ def main() -> int:
             model.policy.optimizer.step(); losses.append(float(loss.detach().cpu()))
     training_audit = evaluate(model, train)
     development_audit = evaluate(model, development)
-    checks = {
-        "training_macro_recall_at_least_0_70": training_audit["macro_recall"] >= .70,
-        "development_macro_recall_at_least_0_50": development_audit["macro_recall"] >= .50,
-        "development_probe_recall_at_least_0_50": development_audit["recall_by_intent"].get(
-            "PROBE_SHORT", 0) >= .50,
-        "development_action_diversity_at_least_3": development_audit[
-            "predicted_action_diversity"] >= 3,
-        "development_probe_fraction_bounded": .03 <= development_audit[
-            "predicted_probe_fraction"] <= .35,
-        "zero_illegal_predictions": training_audit["illegal_prediction_count"] == 0
-            and development_audit["illegal_prediction_count"] == 0,
-    }
+    checks = warm_start_qualification_checks(training_audit, development_audit)
     args.output.mkdir(parents=True)
     model.save(args.output / "model")
     report = {

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from collections import Counter
 import math
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 
 from .brla_g2_ppo_env import INTENTS
 
-PROTOCOL = "emergenzix-brla-g2-behavioral-warm-start-v3"
+PROTOCOL = "emergenzix-brla-g2-behavioral-warm-start-v4"
 
 
 def calibrated_class_weights(counts: Mapping[int, int], *, exit_multiplier: float = 1.5
@@ -51,4 +51,25 @@ def classification_audit(labels: Sequence[int], predictions: Sequence[int],
         "predicted_action_diversity": len(prediction_counts),
         "predicted_probe_fraction": prediction_counts[INTENTS.index("PROBE_SHORT")] / len(labels),
         "illegal_prediction_count": illegal,
+    }
+
+
+def warm_start_qualification_checks(training: Mapping[str, Any],
+                                    development: Mapping[str, Any]) -> dict[str, bool]:
+    increase_fraction = (development["prediction_counts"].get("INCREASE_SHORT", 0)
+                         / development["example_count"])
+    return {
+        "training_macro_recall_at_least_0_70": training["macro_recall"] >= .70,
+        "development_macro_recall_at_least_0_50": development["macro_recall"] >= .50,
+        "development_probe_recall_at_least_0_50": development[
+            "recall_by_intent"].get("PROBE_SHORT", 0) >= .50,
+        "development_increase_recall_at_least_0_50": development[
+            "recall_by_intent"].get("INCREASE_SHORT", 0) >= .50,
+        "development_action_diversity_at_least_5": development[
+            "predicted_action_diversity"] >= 5,
+        "development_probe_fraction_bounded": .03 <= development[
+            "predicted_probe_fraction"] <= .35,
+        "development_increase_fraction_bounded": .005 <= increase_fraction <= .08,
+        "zero_illegal_predictions": training["illegal_prediction_count"] == 0
+            and development["illegal_prediction_count"] == 0,
     }
