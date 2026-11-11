@@ -14,6 +14,11 @@ def fine_tuning_chunks(total_timesteps: int, interval: int) -> tuple[int, ...]:
     return (interval,) * complete + ((remainder,) if remainder else ())
 
 
+def fine_tuning_evaluation_scope(train_only: bool) -> tuple[str, str]:
+    return ("TRAIN", "training_stability") if train_only \
+        else ("DEVELOPMENT", "development")
+
+
 def authorize_warm_start(report: Mapping[str, object], model_file_sha256: str) -> None:
     if report.get("protocol") != "emergenzix-brla-g2-behavioral-warm-start-v3":
         raise PermissionError("PPO fine-tuning requires behavioral warm-start v3")

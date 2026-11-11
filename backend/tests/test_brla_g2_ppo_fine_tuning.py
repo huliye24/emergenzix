@@ -1,7 +1,7 @@
 import pytest
 
 from emergenzix_api.brla_g2_ppo_fine_tuning import (
-    authorize_warm_start, fine_tuning_chunks,
+    authorize_warm_start, fine_tuning_chunks, fine_tuning_evaluation_scope,
 )
 
 
@@ -41,3 +41,8 @@ def test_fine_tuning_chunks_preserve_exact_budget():
 def test_fine_tuning_chunks_reject_non_positive_values():
     with pytest.raises(ValueError, match="positive"):
         fine_tuning_chunks(50_000, 0)
+
+
+def test_stability_matrix_can_remain_train_only():
+    assert fine_tuning_evaluation_scope(True) == ("TRAIN", "training_stability")
+    assert fine_tuning_evaluation_scope(False) == ("DEVELOPMENT", "development")

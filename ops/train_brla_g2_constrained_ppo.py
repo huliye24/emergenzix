@@ -24,7 +24,8 @@ from emergenzix_api.brla_g2_ppo_env import (  # noqa: E402
     BRLAG2PPOEnv, INTENTS, OBSERVATION_NAMES, PROTOCOL, prepare_episodes,
 )
 from emergenzix_api.brla_g2_ppo_fine_tuning import (  # noqa: E402
-    PROTOCOL as FINE_TUNING_PROTOCOL, authorize_warm_start, fine_tuning_chunks,
+    PROTOCOL as FINE_TUNING_PROTOCOL, authorize_warm_start,
+    fine_tuning_chunks, fine_tuning_evaluation_scope,
 )
 from emergenzix_api.brla_g2_behavioral_warm_start import calibrated_class_weights  # noqa: E402
 from emergenzix_api.brla_g2_probe_curriculum import build_curriculum  # noqa: E402
@@ -131,6 +132,7 @@ def main() -> int:
     parser.add_argument("--initial-policy-report", type=Path)
     parser.add_argument("--behavior-anchor-interval", type=int)
     parser.add_argument("--behavior-anchor-epochs", type=int, default=1)
+    parser.add_argument("--train-only-stability-audit", action="store_true")
     args = parser.parse_args()
     if args.output.exists(): raise FileExistsError("output directory already exists")
     if bool(args.initial_policy) != bool(args.initial_policy_report):
@@ -139,8 +141,9 @@ def main() -> int:
         raise ValueError("behavior anchoring requires a qualified initial policy")
     train = prepare_episodes(args.dataset, args.encoder, partition=Partition.TRAIN,
         purpose=DataPurpose.STAGE2_TRAIN)
-    development = prepare_episodes(args.dataset, args.encoder,
-        partition=Partition.DEVELOPMENT, purpose=DataPurpose.DEVELOPMENT_EVAL)
+    development = [] if args.train_only_stability_audit else prepare_episodes(
+        args.dataset, args.encoder, partition=Partition.DEVELOPMENT,
+        purpose=DataPurpose.DEVELOPMENT_EVAL)
     random.seed(args.seed); np.random.seed(args.seed); torch.manual_seed(args.seed)
     torch.use_deterministic_algorithms(True, warn_only=True)
     if torch.cuda.is_available(): torch.cuda.manual_seed_all(args.seed)
@@ -173,7 +176,10 @@ def main() -> int:
     else:
         model.learn(total_timesteps=args.timesteps, progress_bar=False,
                     reset_num_timesteps=not bool(args.initial_policy))
-    development_report = evaluate(model, development)
+    evaluation_partition, evaluation_key = fine_tuning_evaluation_scope(
+        args.train_only_stability_audit)
+    evaluation_report = evaluate(model, train if args.train_only_stability_audit
+                                 else development)
     args.output.mkdir(parents=True)
     model.save(args.output / "model")
     report = {"protocol": PROTOCOL, "training_protocol": FINE_TUNING_PROTOCOL
@@ -192,9 +198,10 @@ def main() -> int:
         "behavior_anchor_updates": anchor_updates,
         "final_behavior_anchor_loss": final_anchor_loss,
         "train_episode_count": len(train), "development_episode_count": len(development),
+        "evaluation_partition": evaluation_partition,
         "observation_names": OBSERVATION_NAMES, "intents": INTENTS,
         "policy_parameters_sha256": parameter_sha256(model),
-        "development": development_report, "sealed_test_accessed": False,
+        evaluation_key: evaluation_report, "sealed_test_accessed": False,
         "mode": "PAPER", "automatic_promotion": False,
         "position_permission": False, "order_permission": False}
     report["report_sha256"] = hashlib.sha256(json.dumps(report, sort_keys=True,
@@ -204,7 +211,7 @@ def main() -> int:
     os.replace(temporary, args.output / "report.json")
     print(json.dumps({key: value for key, value in report.items()
                       if key != "development"}, indent=2))
-    print(json.dumps({key: value for key, value in development_report.items()
+    print(json.dumps({key: value for key, value in evaluation_report.items()
                       if key != "episodes"}, indent=2))
     return 0
 
