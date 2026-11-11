@@ -18,7 +18,7 @@ from .brla_g2_trend_timing import stage2_timing_reward
 from .brmg_scenarios import Partition
 from .brpm_g1 import BRPMRequest, RiskLedgerEntry, allocate_short_risk, verify_risk_ledger
 
-PROTOCOL = "emergenzix-brla-g2-constrained-ppo-env-v1"
+PROTOCOL = "emergenzix-brla-g2-constrained-ppo-env-v2"
 INTENTS = ("WAIT", "PROBE_SHORT", "HOLD", "INCREASE_SHORT", "REDUCE_SHORT", "EXIT")
 OBSERVATION_NAMES = tuple(f"state_probability_{state.value}" for state in OrderState) + (
     "old_order_strength", "new_order_strength", "trend_maturity", "remaining_potential",
@@ -108,9 +108,17 @@ class BRLAG2PPOEnv(gym.Env):
         if intent == "EXIT": return 0.0
         return self.current
 
+    def action_masks(self) -> np.ndarray:
+        """Expose position-valid intents to sb3-contrib MaskablePPO."""
+        if self.current == 0:
+            return np.asarray([True, True, False, False, False, False])
+        return np.asarray([False, False, True, self.current > -.50, True, True])
+
     def step(self, action: int):
         action = int(action)
         if not 0 <= action < len(INTENTS): raise ValueError("invalid PPO intent")
+        if not bool(self.action_masks()[action]):
+            raise PermissionError("position-invalid intent must be masked before execution")
         row = self.rows[self.index]; encoded = row["encoder"]
         probabilities, targets = encoded[:6], encoded[6:]
         maturity, remaining, quality, exhaustion, late_risk = targets[2:]
@@ -150,7 +158,7 @@ class BRLAG2PPOEnv(gym.Env):
         exit_position = self.current < 0 and target == 0
         hold = not any((new_entry, add_risk, reduce, exit_position))
         predicted_state = int(np.argmax(probabilities))
-        reward = stage2_timing_reward(trend_maturity=float(maturity),
+        reward_audit = stage2_timing_reward(trend_maturity=float(maturity),
             remaining_potential=float(remaining), entry_location_quality=float(quality),
             feedback_exhaustion=float(exhaustion), late_entry_risk=float(late_risk),
             new_entry=new_entry, hold_existing=hold, add_risk=add_risk, reduce=reduce,
@@ -166,11 +174,17 @@ class BRLAG2PPOEnv(gym.Env):
             correct_wait=(target == 0 and predicted_state < 4), timely_reduce=reduce,
             timely_exit=exit_position, risk_released_add=add_risk,
             proposed_target=requested, brpm_target=allocation.approved_target_fraction,
-            brgc_target=target, executed_target=target).total
+            brgc_target=target, executed_target=target)
+        confirmed_opportunity = (self.current == 0 and target == 0
+            and predicted_state >= 4 and quality >= .20 and maturity < .70)
+        missed_opportunity = (-min(max(-row["market_return"], 0.0) * .50, .01)
+                              if confirmed_opportunity else 0.0)
+        reward = reward_audit.total + missed_opportunity
         self.trajectory.append({"intent": INTENTS[action], "requested": requested,
             "brpm_decision": allocation.decision, "brpm_target": allocation.approved_target_fraction,
             "brgc_decision": guard.decision, "executed_target": target,
-            "order_permission": guard.order_permission})
+            "missed_opportunity": missed_opportunity,
+            "exposed": target < 0, "order_permission": guard.order_permission})
         self.equity, self.peak, self.previous_step_return, self.current = (
             next_equity, next_peak, step_return, target)
         self.index += 1

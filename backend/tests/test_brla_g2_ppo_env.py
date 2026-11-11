@@ -17,7 +17,7 @@ def episode():
 
 def test_ppo_intent_cannot_bypass_brpm_or_brgc():
     env = BRLAG2PPOEnv([episode()]); env.reset(seed=1)
-    _, _, _, _, info = env.step(INTENTS.index("INCREASE_SHORT"))
+    _, _, _, _, info = env.step(INTENTS.index("PROBE_SHORT"))
     assert info["approved_target"] == -.10
     assert info["brpm_decision"] == "APPROVE_PROBE"
     assert info["brgc_decision"] == "ALLOW_PAPER_TARGET"
@@ -38,3 +38,19 @@ def test_same_seed_and_intents_are_reproducible():
         for action in (1, 2, 3, 4, 5): env.step(action)
         return env.trajectory, env.equity
     assert run() == run()
+
+
+def test_action_masks_remove_flat_and_position_aliases():
+    env = BRLAG2PPOEnv([episode()]); env.reset(seed=3)
+    assert env.action_masks().tolist() == [True, True, False, False, False, False]
+    with pytest.raises(PermissionError, match="masked"):
+        env.step(INTENTS.index("HOLD"))
+    env.step(INTENTS.index("PROBE_SHORT"))
+    assert env.action_masks().tolist() == [False, False, True, True, True, True]
+
+
+def test_confirmed_missed_down_move_penalizes_staying_flat():
+    env = BRLAG2PPOEnv([episode()]); env.reset(seed=4)
+    _, reward, _, _, _ = env.step(INTENTS.index("WAIT"))
+    assert env.trajectory[-1]["missed_opportunity"] < 0
+    assert reward < 0
