@@ -1,0 +1,46 @@
+{
+  "protocol": "emergenzix-brla-g2-order-encoder-v1",
+  "run_id": "20261111-brla-g2-order-encoder-v1",
+  "status": "STAGE1_VIRTUAL_PRETRAINING_COMPLETED",
+  "dataset": {
+    "protocol": "emergenzix-brmg-g2-virtual-dataset-v1",
+    "dataset_sha256": "28e395945ba2012988e87cac87713b1cbe5ba674b5d3edd756aded00852ddc69",
+    "bars_per_path": 20000,
+    "partition_paths": {"TRAIN": 24, "DEVELOPMENT": 6, "SEALED_TEST": 6},
+    "cloud_directory": "/home/ubuntu/emergenzix-training-runs/20261111-brmg-g2-long-v3"
+  },
+  "training": {
+    "seed": 20261111,
+    "epochs": 30,
+    "stride_bars": 96,
+    "train_examples": 696,
+    "development_examples": 174,
+    "sealed_test_examples_read": 0,
+    "first_train_loss": 2.0264475345611572,
+    "final_train_loss": 1.2940566539764404,
+    "best_development_loss": 1.310699701309204,
+    "selected_epoch": 30,
+    "selected_development_state_accuracy": 0.9022988677024841
+  },
+  "model": {
+    "model_sha256": "9029472c94b9122c03157ade8425e679228e81c47d2717366828554c572e0c1e",
+    "checkpoint_artifact_sha256": "21e3604676d513714dcc2a060e87a261cd8ae4e60acf6a43ddf36c14a7bea4d0",
+    "cloud_checkpoint": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-order-encoder-v1/model-final-v2.pt",
+    "semantic_reproduction_passed": true,
+    "state_dict_reproduction_passed": true
+  },
+  "report": {
+    "cloud_path": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-order-encoder-v1/report-final-v2.json",
+    "file_sha256": "e63ef42b8257ab9acbed2b60bc010665876a1742e58f49f35a09be0c238f4c1f"
+  },
+  "limitations": [
+    "Development accuracy measures fit to the current synthetic curriculum, not real-market profitability.",
+    "The selected epoch is the final epoch, so longer-training and overfit behavior remain unmeasured.",
+    "SEALED_TEST remains unopened and no real BTC validation has been authorized.",
+    "Stage-two PPO has not started."
+  ],
+  "mode": "RESEARCH",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}
