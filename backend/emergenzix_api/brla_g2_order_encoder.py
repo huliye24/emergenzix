@@ -15,6 +15,9 @@ from .brla_g2_training_protocol import DataPurpose, OrderState, authorize_data_u
 from .brmg_scenarios import Partition
 
 PROTOCOL = "emergenzix-brla-g2-order-encoder-v1"
+LOSS_PROTOCOL = "CLASS_BALANCED_ORDINAL_CDF_V1"
+ORDINAL_WEIGHT = .75
+CONTINUOUS_WEIGHT = 1.0
 WINDOWS = {"15m": 192, "1h": 168 * 4, "4h": 180 * 16, "1d": 180 * 96}
 TARGETS = ("old_order_strength", "new_order_strength", "trend_maturity",
            "remaining_potential", "entry_location_quality", "feedback_exhaustion",
@@ -34,6 +37,22 @@ def create_encoder(torch: Any):
             encoded = self.body(value)
             return self.state(encoded), self.continuous(encoded), encoded
     return Encoder()
+
+
+def balanced_class_weights(states: np.ndarray) -> np.ndarray:
+    counts = np.bincount(states, minlength=len(OrderState)).astype(np.float64)
+    if (counts == 0).any():
+        raise ValueError("class-balanced training requires all six states")
+    weights = np.sqrt(counts.sum() / (len(counts) * counts))
+    return (weights / weights.mean()).astype(np.float32)
+
+
+def ordinal_cdf_loss(torch: Any, logits: Any, states: Any):
+    probabilities = torch.softmax(logits, dim=1)
+    predicted_cdf = probabilities.cumsum(dim=1)[:, :-1]
+    target = torch.nn.functional.one_hot(states, num_classes=len(OrderState)).float()
+    target_cdf = target.cumsum(dim=1)[:, :-1]
+    return torch.nn.functional.mse_loss(predicted_cdf, target_cdf)
 
 
 def semantic_state_sha256(state_dict: dict[str, Any], metadata: dict[str, Any]) -> str:
@@ -138,24 +157,40 @@ def _fit_encoder(train_data, dev_data, *, dataset_sha256: str, output: Path,
     dx = torch.tensor((dev_x - mean) / std, device=device)
     dy = torch.tensor(dev_y, device=device); ds = torch.tensor(dev_state, device=device)
 
+    class_weights = balanced_class_weights(train_state)
+    class_weight_tensor = torch.tensor(class_weights, device=device)
     model = create_encoder(torch).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
     best, best_epoch, best_state, history = float("inf"), -1, None, []
     for epoch in range(epochs):
         model.train(); logits, continuous, _ = model(tx)
-        train_loss = torch.nn.functional.cross_entropy(logits, ts) + \
-            torch.nn.functional.mse_loss(continuous, ty)
+        train_class = torch.nn.functional.cross_entropy(logits, ts,
+                                                         weight=class_weight_tensor)
+        train_ordinal = ordinal_cdf_loss(torch, logits, ts)
+        train_continuous = torch.nn.functional.mse_loss(continuous, ty)
+        train_loss = train_class + ORDINAL_WEIGHT * train_ordinal \
+            + CONTINUOUS_WEIGHT * train_continuous
         optimizer.zero_grad(); train_loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0); optimizer.step()
         model.eval()
         with torch.no_grad():
             dev_logits, dev_continuous, _ = model(dx)
-            dev_loss = (torch.nn.functional.cross_entropy(dev_logits, ds)
-                        + torch.nn.functional.mse_loss(dev_continuous, dy))
+            dev_class = torch.nn.functional.cross_entropy(dev_logits, ds,
+                                                           weight=class_weight_tensor)
+            dev_ordinal = ordinal_cdf_loss(torch, dev_logits, ds)
+            dev_continuous_loss = torch.nn.functional.mse_loss(dev_continuous, dy)
+            dev_loss = dev_class + ORDINAL_WEIGHT * dev_ordinal \
+                + CONTINUOUS_WEIGHT * dev_continuous_loss
             accuracy = (dev_logits.argmax(1) == ds).float().mean()
         row = {"epoch": epoch + 1, "train_loss": float(train_loss.item()),
                "development_loss": float(dev_loss.item()),
-               "development_state_accuracy": float(accuracy.item())}
+               "development_state_accuracy": float(accuracy.item()),
+               "train_class_loss": float(train_class.item()),
+               "train_ordinal_loss": float(train_ordinal.item()),
+               "train_continuous_loss": float(train_continuous.item()),
+               "development_class_loss": float(dev_class.item()),
+               "development_ordinal_loss": float(dev_ordinal.item()),
+               "development_continuous_loss": float(dev_continuous_loss.item())}
         history.append(row)
         if row["development_loss"] < best:
             best, best_epoch = row["development_loss"], epoch + 1
@@ -168,6 +203,8 @@ def _fit_encoder(train_data, dev_data, *, dataset_sha256: str, output: Path,
         "normalization_mean": mean, "normalization_std": std,
         "windows": WINDOWS, "targets": TARGETS, "states": tuple(state.value for state in OrderState),
         "dataset_sha256": dataset_sha256, "seed": seed,
+        "loss_protocol": LOSS_PROTOCOL, "class_weights": class_weights,
+        "ordinal_weight": ORDINAL_WEIGHT, "continuous_weight": CONTINUOUS_WEIGHT,
         "selected_epoch": best_epoch, "mode": "RESEARCH",
         "automatic_promotion": False, "position_permission": False,
         "order_permission": False}
@@ -184,6 +221,8 @@ def _fit_encoder(train_data, dev_data, *, dataset_sha256: str, output: Path,
         "final_train_loss": history[-1]["train_loss"],
         "best_development_loss": best,
         "selected_development_state_accuracy": history[best_epoch - 1]["development_state_accuracy"],
+        "loss_protocol": LOSS_PROTOCOL,
+        "class_weights": class_weights.tolist(),
         "sealed_test_examples_read": 0, "history": history,
         "mode": "RESEARCH", "automatic_promotion": False,
         "position_permission": False, "order_permission": False}
