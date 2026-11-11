@@ -1,0 +1,66 @@
+{
+  "protocol": "emergenzix-brla-g2-constrained-ppo-env-v3",
+  "run_id": "20261111-brla-g2-ppo-v3",
+  "decision": "NOT_READY",
+  "algorithm": "sb3-contrib/MaskablePPO",
+  "sb3_version": "2.7.1",
+  "sb3_contrib_version": "2.7.1",
+  "seed": 20261111,
+  "timesteps": 200000,
+  "encoder_model_sha256": "bc966ad18f3e26fc815489b8950e4f3ac695867f65487b8143f9024bac381187",
+  "dataset_sha256": "0896ac1a0b7aedfc78c38a783af8b026f26ff85055c5f73ba6ec4d0fa16240ed",
+  "train_episode_count": 24,
+  "development_episode_count": 6,
+  "development": {
+    "mean_return": 0.0,
+    "median_return": 0.0,
+    "minimum_return": 0.0,
+    "maximum_drawdown": 0.0,
+    "probe_episode_coverage": 0.0,
+    "exposure_fraction": 0.0,
+    "exposure_episode_coverage": 0.0,
+    "intent_counts": {
+      "WAIT": 540
+    },
+    "brpm_rejections": 0,
+    "brpm_rejection_rate": 0.0,
+    "all_brgc_guarded": true,
+    "qualification_checks": {
+      "nonzero_probe_coverage": false,
+      "action_diversity_at_least_3": false,
+      "effective_exposure_fraction": false,
+      "effective_exposure_episode_coverage": false,
+      "brpm_rejection_rate_at_most_0_05": true,
+      "positive_mean_return": false,
+      "maximum_drawdown_at_most_0_10": true,
+      "all_brgc_guarded": true
+    }
+  },
+  "changes_from_v2": [
+    "BRPM-infeasible intents are masked before sampling.",
+    "BRPM allocation is checked again at execution as a second fail-closed boundary.",
+    "Qualification requires exposure in at least 80% of development episodes and a BRPM rejection rate at or below 5%."
+  ],
+  "failure_analysis": [
+    "The feasibility mask eliminated BRPM rejections but the policy collapsed to WAIT on every development step.",
+    "All six development paths had zero probes, zero exposure and zero return.",
+    "The existing missed-opportunity feedback was insufficient to overcome the zero-position local optimum after risk-invalid actions were removed."
+  ],
+  "limitations": [
+    "Results use synthetic DEVELOPMENT paths from the same generator family as TRAIN.",
+    "The failed policy was not admitted to the independent unseen-seed exam.",
+    "No SEALED_TEST or real BTC history was opened.",
+    "This result does not authorize LIVE, TESTNET or automatic promotion."
+  ],
+  "policy_parameters_sha256": "dfbf83950ac927973cc97d9ce1218090759c6904fa06dcfa2dbb249055bc6dca",
+  "cloud_model": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-ppo-v3/model.zip",
+  "cloud_report": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-ppo-v3/report.json",
+  "model_file_sha256": "6de9b65463cde0fed9455ee7704eb47d862b3663c7299d713b4573225b56eded",
+  "report_file_sha256": "87d4b7d1e31d12b95d154de23a35a50b15c7be4a6e268986989de9eada9ce50a",
+  "sealed_test_accessed": false,
+  "real_btc_backtest_authorized": false,
+  "mode": "PAPER",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}
