@@ -1,0 +1,48 @@
+{
+  "protocol": "emergenzix-brmg-g2-virtual-audit-v1",
+  "run_id": "20261111-brmg-g2-virtual-pretraining-dataset-v1",
+  "decision": "READY_FOR_STAGE1_VIRTUAL_PRETRAINING",
+  "dataset_sha256": "5ab0e33d9df097b2352783abf57df3f332a52f0749c9f621dbd2e1f31645afe3",
+  "path_count": 36,
+  "bar_count": 51840,
+  "partition_counts": {"TRAIN": 24, "DEVELOPMENT": 6, "SEALED_TEST": 6},
+  "maturity_band_counts": {
+    "FORMATION": 10422,
+    "FRONT_MIDDLE": 15491,
+    "EXPANSION": 10382,
+    "MATURE": 7771,
+    "EXHAUSTION": 7774
+  },
+  "six_order_states_present": true,
+  "return_sigma": 0.010957768073431212,
+  "unique_phase_signatures": 36,
+  "market_fields": [
+    "OHLCV", "open_interest", "funding_rate", "bid_depth", "ask_depth",
+    "spread_bps", "slippage_bps", "fee_bps"
+  ],
+  "teacher_targets": [
+    "order_state", "old_order_strength", "new_order_strength", "trend_maturity",
+    "remaining_potential", "entry_location_quality", "feedback_exhaustion",
+    "late_entry_risk"
+  ],
+  "action_answer_present": false,
+  "checks_passed": [
+    "dataset_identity_valid", "partition_hashes_disjoint", "frozen_seed_sets_match",
+    "all_six_states_present", "all_five_maturity_bands_present",
+    "required_market_fields_present", "no_action_answer_fields",
+    "paper_permissions_closed", "unique_paths", "ohlc_and_numeric_values_valid",
+    "return_volatility_plausible", "funding_and_costs_bounded",
+    "phase_boundaries_not_fixed"
+  ],
+  "artifact_directory": "outputs/brmg-g2-virtual-pretraining-20261111",
+  "limitations": [
+    "This is synthetic curriculum data and is not evidence of trading profitability.",
+    "The first generator uses explicit market dynamics rather than a fitted generative model.",
+    "SEALED_TEST must not be opened during training or development.",
+    "Real BTC sealed validation remains unauthorized until virtual pretraining and development evaluation finish."
+  ],
+  "mode": "RESEARCH",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}
