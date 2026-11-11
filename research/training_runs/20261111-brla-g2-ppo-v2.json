@@ -1,0 +1,62 @@
+{
+  "protocol": "emergenzix-brla-g2-constrained-ppo-env-v2",
+  "run_id": "20261111-brla-g2-ppo-v2",
+  "decision": "READY_FOR_FURTHER_PAPER_VALIDATION",
+  "algorithm": "sb3-contrib/MaskablePPO",
+  "sb3_version": "2.7.1",
+  "sb3_contrib_version": "2.7.1",
+  "seed": 20261111,
+  "timesteps": 200000,
+  "encoder_model_sha256": "bc966ad18f3e26fc815489b8950e4f3ac695867f65487b8143f9024bac381187",
+  "dataset_sha256": "0896ac1a0b7aedfc78c38a783af8b026f26ff85055c5f73ba6ec4d0fa16240ed",
+  "train_episode_count": 24,
+  "development_episode_count": 6,
+  "development": {
+    "mean_return": 0.21838416785907586,
+    "median_return": 0.2249966838376516,
+    "minimum_return": 0.059469926105927495,
+    "maximum_drawdown": 0.06090680455996944,
+    "probe_episode_coverage": 1.0,
+    "exposure_fraction": 0.24074074074074073,
+    "intent_counts": {
+      "WAIT": 309,
+      "PROBE_SHORT": 101,
+      "HOLD": 0,
+      "INCREASE_SHORT": 113,
+      "REDUCE_SHORT": 2,
+      "EXIT": 15
+    },
+    "brpm_rejections": 184,
+    "all_brgc_guarded": true,
+    "qualification_checks": {
+      "nonzero_probe_coverage": true,
+      "action_diversity_at_least_3": true,
+      "effective_exposure_fraction": true,
+      "positive_mean_return": true,
+      "maximum_drawdown_at_most_0_10": true,
+      "all_brgc_guarded": true
+    }
+  },
+  "changes_from_v1": [
+    "Position-invalid intent aliases are masked before sampling.",
+    "Confirmed favorable moves impose an auditable missed-opportunity penalty on staying flat.",
+    "Qualification requires probes, action diversity and non-trivial bounded exposure."
+  ],
+  "limitations": [
+    "Results use synthetic DEVELOPMENT paths from the same generator family as TRAIN.",
+    "BRPM rejected 184 intents, so the policy still proposes many risk-invalid additions.",
+    "No SEALED_TEST or real BTC history has been opened.",
+    "This result does not authorize LIVE or automatic promotion."
+  ],
+  "policy_parameters_sha256": "f61d2b11a96159a6cf19dd2a5ace62de03373a07f769e2238ca6dc97b688c0fc",
+  "cloud_model": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-ppo-v2/model.zip",
+  "cloud_report": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-ppo-v2/report.json",
+  "model_file_sha256": "9acf7766dc6079d9f66fbb70412d91f5fe1e5d487619983698e436f8786d2895",
+  "report_file_sha256": "f9c8ab3055c1d3b406fe6439f313a52409f57ec029f224ee0b145b9882f89ed5",
+  "sealed_test_accessed": false,
+  "real_btc_backtest_authorized": false,
+  "mode": "PAPER",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}
