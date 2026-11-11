@@ -1,0 +1,54 @@
+{
+  "protocol": "emergenzix-brla-g2-order-encoder-audit-v1",
+  "run_id": "20261111-brla-g2-order-encoder-audit-v1",
+  "decision": "NOT_READY_TO_FREEZE",
+  "model_sha256": "9029472c94b9122c03157ade8425e679228e81c47d2717366828554c572e0c1e",
+  "dataset_sha256": "28e395945ba2012988e87cac87713b1cbe5ba674b5d3edd756aded00852ddc69",
+  "development_examples": 174,
+  "state_support": {
+    "OLD_ORDER_DOMINANT": 0,
+    "NEW_ORDER_EMERGING": 0,
+    "ORDER_CONTEST": 0,
+    "OLD_ORDER_FAILURE": 0,
+    "NEW_ORDER_PROVISIONAL": 16,
+    "NEW_ORDER_CONFIRMED": 158
+  },
+  "confusion_matrix_actual_rows": [
+    [0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 9, 7],
+    [0, 0, 0, 0, 10, 148]
+  ],
+  "accuracy": 0.9022988505747126,
+  "majority_baseline_accuracy": 0.9080459770114943,
+  "macro_recall_present_states": 0.7496044303797469,
+  "shuffled_market_feature_accuracy": 0.8160919540229885,
+  "continuous_mae": {
+    "old_order_strength": 0.16455742716789246,
+    "new_order_strength": 0.2838936150074005,
+    "trend_maturity": 0.43516430258750916,
+    "remaining_potential": 0.11605271697044373,
+    "entry_location_quality": 0.34855523705482483,
+    "feedback_exhaustion": 0.2571072280406952,
+    "late_entry_risk": 0.23535402119159698
+  },
+  "failed_checks": [
+    "all_six_states_covered",
+    "each_state_recall_at_least_0_25",
+    "accuracy_beats_majority_by_0_15",
+    "all_continuous_mae_at_most_0_20",
+    "market_feature_shuffle_drop_at_least_0_10"
+  ],
+  "root_cause": "The frozen 180-day lookback leaves anchors only in the final 28 days of each 208-day path, so DEVELOPMENT contains only the last two order states.",
+  "required_correction": "Generate substantially longer paths or compose multiple full cycles after the 180-day warm-up, then rebuild TRAIN and DEVELOPMENT before retraining.",
+  "cloud_report": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-order-encoder-audit-v1/report.json",
+  "report_file_sha256": "3c05b6466390387539347039d86bbc94a46b8ae3875327d63b404254b9d09ce8",
+  "sealed_test_examples_read": 0,
+  "stage2_ppo_authorized": false,
+  "mode": "RESEARCH",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}
