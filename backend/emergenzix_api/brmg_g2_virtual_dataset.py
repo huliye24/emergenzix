@@ -16,6 +16,9 @@ from .brmg_scenarios import Partition
 from .brla_g2_training_protocol import OrderState
 
 PROTOCOL = "emergenzix-brmg-g2-virtual-dataset-v1"
+WARMUP_BARS = 180 * 96
+POST_WARMUP_CYCLES = 3
+CYCLE_BARS = 30 * 96
 STATES = tuple(state.value for state in OrderState)
 FORBIDDEN_ACTION_FIELDS = frozenset({"action", "best_action", "target_position", "side", "signal"})
 PARTITION_SEEDS = {
@@ -43,13 +46,17 @@ def generate_path(*, seed: int, partition: Partition, bars: int = 1440) -> dict[
     oi = float(rng.uniform(8e8, 2e9))
     rows: list[dict[str, Any]] = []
     start = datetime(2045, 1, 1, tzinfo=timezone.utc) + timedelta(days=seed % 3000)
-    phase_weights = rng.dirichlet(np.full(len(STATES), 8.0))
-    phase_ends = np.cumsum(phase_weights) * bars
+    cycle_bars = CYCLE_BARS if bars >= WARMUP_BARS + POST_WARMUP_CYCLES * CYCLE_BARS else bars
+    cycle_count = math.ceil(bars / cycle_bars)
+    phase_ends = [np.cumsum(rng.dirichlet(np.full(len(STATES), 8.0))) * cycle_bars
+                  for _ in range(cycle_count)]
     drifts = (.00035, .00012, 0.0, -.00018, -.00042, -.00065)
     for index in range(bars):
-        state_index = min(int(np.searchsorted(phase_ends, index, side="right")),
+        cycle_id, cycle_offset = divmod(index, cycle_bars)
+        state_index = min(int(np.searchsorted(phase_ends[cycle_id], cycle_offset,
+                                              side="right")),
                           len(STATES) - 1)
-        cycle = index / max(bars - 1, 1)
+        cycle = cycle_offset / max(cycle_bars - 1, 1)
         old_strength = _clip(.88 - .72 * cycle + rng.normal(0, .025))
         new_strength = _clip(.08 + .82 * cycle + rng.normal(0, .025))
         maturity = _clip(cycle + rng.normal(0, .018))
@@ -119,6 +126,9 @@ def write_virtual_dataset_directory(output: Path, *, bars_per_path: int = 20000)
                 "bar_count": len(path["bars"])})
     base = {"protocol": PROTOCOL, "format": "PATH_JSON_GZIP_V1",
         "bars_per_path": bars_per_path, "paths": records,
+        "curriculum": {"warmup_bars": WARMUP_BARS,
+            "post_warmup_cycles": POST_WARMUP_CYCLES, "cycle_bars": CYCLE_BARS,
+            "cycle_id_exposed_to_model": False},
         "synthetic": True, "mode": "RESEARCH", "automatic_promotion": False,
         "position_permission": False, "order_permission": False}
     base["dataset_sha256"] = _hash(base)

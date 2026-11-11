@@ -1,8 +1,10 @@
 from emergenzix_api.brmg_g2_virtual_dataset import (
-    PARTITION_SEEDS, audit_virtual_dataset, build_virtual_dataset, generate_path,
+    CYCLE_BARS, PARTITION_SEEDS, POST_WARMUP_CYCLES, WARMUP_BARS,
+    audit_virtual_dataset, build_virtual_dataset, generate_path,
     write_virtual_dataset_directory,
 )
 from emergenzix_api.brmg_scenarios import Partition
+from emergenzix_api.brla_g2_training_protocol import OrderState
 
 
 def test_virtual_dataset_is_reproducible_complete_and_fail_closed():
@@ -43,3 +45,15 @@ def test_streaming_directory_keeps_paths_separate(tmp_path):
     assert len({row["filename"] for row in manifest["paths"]}) == 36
     assert all((tmp_path / "dataset" / row["filename"]).exists()
                for row in manifest["paths"])
+
+
+def test_post_warmup_curriculum_contains_three_complete_cycles():
+    bars = WARMUP_BARS + POST_WARMUP_CYCLES * CYCLE_BARS
+    path = generate_path(seed=PARTITION_SEEDS[Partition.TRAIN][0],
+                         partition=Partition.TRAIN, bars=bars)
+    post = path["bars"][WARMUP_BARS:]
+    for cycle in range(POST_WARMUP_CYCLES):
+        states = {row["labels"]["order_state"]
+                  for row in post[cycle * CYCLE_BARS:(cycle + 1) * CYCLE_BARS]}
+        assert states == {state.value for state in OrderState}
+    assert all("cycle_id" not in row and "seed" not in row for row in post)
