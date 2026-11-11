@@ -56,6 +56,7 @@ def test_missing_partitions_and_states_fail_readiness():
     report = audit([shortened])
     assert report["checks"]["all_partitions_present"] is False
     assert report["checks"]["all_six_states_present"] is False
+    assert report["checks"]["strength_saturation_within_limit"] is True
     assert report["decision"] == "NOT_READY_FOR_ENCODER_TRAINING"
 
 

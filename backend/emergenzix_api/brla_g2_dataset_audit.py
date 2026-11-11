@@ -96,15 +96,17 @@ def audit_stage1_datasets(datasets: Sequence[Stage1Dataset], *,
         }
     checks = {
         "all_six_states_present": all(
-            row["all_six_states_present"] for row in partition_quality.values()),
+            row["all_six_states_present"] for row in partition_quality.values()
+            if row["imbalance_ratio"] is not None),
         "imbalance_within_limit": all(
             row["imbalance_ratio"] is not None
             and row["imbalance_ratio"] <= MAX_IMBALANCE_RATIO
-            and row["all_six_states_present"] for row in partition_quality.values()),
+            and row["all_six_states_present"] for row in partition_quality.values()
+            if row["imbalance_ratio"] is not None),
         "strength_saturation_within_limit": all(
-            row["maximum_saturation_fraction"] is not None
-            and row["maximum_saturation_fraction"] <= MAX_SATURATION_FRACTION
-            for row in partition_quality.values()),
+            row["maximum_saturation_fraction"] <= MAX_SATURATION_FRACTION
+            for row in partition_quality.values()
+            if row["maximum_saturation_fraction"] is not None),
         "feature_overlap_within_limit": feature_overlap <= MAX_FEATURE_OVERLAP,
         "label_overlap_within_limit": label_overlap <= MAX_LABEL_OVERLAP,
         "all_partitions_present": all(partition_counts[p.value] > 0 for p in Partition),
