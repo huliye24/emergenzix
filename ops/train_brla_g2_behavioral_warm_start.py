@@ -26,7 +26,9 @@ from emergenzix_api.brla_g2_behavioral_warm_start import (  # noqa: E402
 from emergenzix_api.brla_g2_ppo_env import (  # noqa: E402
     BRLAG2PPOEnv, INTENTS, OBSERVATION_NAMES, prepare_episodes,
 )
-from emergenzix_api.brla_g2_probe_curriculum import build_curriculum  # noqa: E402
+from emergenzix_api.brla_g2_probe_curriculum import (  # noqa: E402
+    PROTOCOL as CURRICULUM_PROTOCOL, build_curriculum,
+)
 from emergenzix_api.brla_g2_training_protocol import DataPurpose  # noqa: E402
 from emergenzix_api.brmg_scenarios import Partition  # noqa: E402
 
@@ -120,6 +122,7 @@ def main() -> int:
     model.save(args.output / "model")
     report = {
         "protocol": PROTOCOL,
+        "curriculum_protocol": CURRICULUM_PROTOCOL,
         "algorithm": "MASKED_CLASS_BALANCED_BEHAVIOR_CLONING",
         "seed": args.seed, "epochs": args.epochs, "batch_size": args.batch_size,
         "train_example_count": len(train),

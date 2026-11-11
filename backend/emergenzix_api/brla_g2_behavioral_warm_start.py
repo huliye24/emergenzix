@@ -10,7 +10,7 @@ import numpy as np
 
 from .brla_g2_ppo_env import INTENTS
 
-PROTOCOL = "emergenzix-brla-g2-behavioral-warm-start-v2"
+PROTOCOL = "emergenzix-brla-g2-behavioral-warm-start-v3"
 
 
 def calibrated_class_weights(counts: Mapping[int, int], *, exit_multiplier: float = 1.5

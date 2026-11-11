@@ -1,7 +1,7 @@
 import pytest
 
 from emergenzix_api.brla_g2_behavioral_warm_start import (
-    calibrated_class_weights, classification_audit,
+    PROTOCOL, calibrated_class_weights, classification_audit,
 )
 from emergenzix_api.brla_g2_ppo_env import INTENTS
 
@@ -33,3 +33,7 @@ def test_calibrated_weights_reduce_rare_probe_pressure_and_boost_exit():
 def test_calibrated_weights_reject_invalid_counts():
     with pytest.raises(ValueError, match="valid actions"):
         calibrated_class_weights({0: 0})
+
+
+def test_warm_start_protocol_tracks_causal_curriculum_generation():
+    assert PROTOCOL == "emergenzix-brla-g2-behavioral-warm-start-v3"
