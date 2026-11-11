@@ -21,6 +21,16 @@ TARGETS = ("old_order_strength", "new_order_strength", "trend_maturity",
            "late_entry_risk")
 
 
+def semantic_state_sha256(state_dict: dict[str, Any], metadata: dict[str, Any]) -> str:
+    digest = hashlib.sha256(json.dumps(metadata, sort_keys=True,
+        separators=(",", ":")).encode())
+    for name, value in sorted(state_dict.items()):
+        array = value.detach().cpu().contiguous().numpy()
+        digest.update(name.encode()); digest.update(str(array.dtype).encode())
+        digest.update(json.dumps(array.shape).encode()); digest.update(array.tobytes())
+    return digest.hexdigest()
+
+
 def _window_features(rows: list[dict[str, Any]], size: int) -> list[float]:
     window = rows[-size:]
     close = np.asarray([row["close"] for row in window], dtype=np.float64)
@@ -151,10 +161,14 @@ def _fit_encoder(train_data, dev_data, *, dataset_sha256: str, output: Path,
         "selected_epoch": best_epoch, "mode": "RESEARCH",
         "automatic_promotion": False, "position_permission": False,
         "order_permission": False}
+    semantic_metadata = {key: value for key, value in checkpoint.items()
+                         if key not in {"state_dict"}}
+    checkpoint["model_sha256"] = semantic_state_sha256(best_state, semantic_metadata)
     torch.save(checkpoint, output)
-    model_hash = hashlib.sha256(output.read_bytes()).hexdigest()
+    artifact_hash = hashlib.sha256(output.read_bytes()).hexdigest()
     return {"protocol": PROTOCOL, "dataset_sha256": dataset_sha256,
-        "checkpoint_sha256": model_hash, "train_examples": len(train_x),
+        "model_sha256": checkpoint["model_sha256"],
+        "checkpoint_artifact_sha256": artifact_hash, "train_examples": len(train_x),
         "development_examples": len(dev_x), "selected_epoch": best_epoch,
         "first_train_loss": history[0]["train_loss"],
         "final_train_loss": history[-1]["train_loss"],

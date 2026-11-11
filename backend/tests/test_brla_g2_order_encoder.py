@@ -1,6 +1,6 @@
 import pytest
 
-from emergenzix_api.brla_g2_order_encoder import build_examples
+from emergenzix_api.brla_g2_order_encoder import build_examples, semantic_state_sha256
 from emergenzix_api.brmg_g2_virtual_dataset import build_virtual_dataset
 from emergenzix_api.brla_g2_training_protocol import DataPurpose
 from emergenzix_api.brmg_scenarios import Partition
@@ -25,3 +25,11 @@ def test_partition_purpose_mismatch_fails_closed():
     with pytest.raises(PermissionError, match="not authorized"):
         build_examples(dataset, partition=Partition.DEVELOPMENT,
                        purpose=DataPurpose.STAGE1_TRAIN)
+
+
+def test_semantic_model_hash_ignores_mapping_insertion_order():
+    import torch
+    left = {"b": torch.tensor([2.0]), "a": torch.tensor([1.0])}
+    right = {"a": torch.tensor([1.0]), "b": torch.tensor([2.0])}
+    assert semantic_state_sha256(left, {"protocol": "x"}) == \
+        semantic_state_sha256(right, {"protocol": "x"})
