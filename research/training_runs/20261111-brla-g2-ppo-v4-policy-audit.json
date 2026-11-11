@@ -1,0 +1,35 @@
+{
+  "protocol": "emergenzix-brla-g2-policy-probability-audit-v1",
+  "run_id": "20261111-brla-g2-ppo-v4-policy-audit",
+  "policy": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-ppo-v4/model.zip",
+  "training": {
+    "flat_decision_count": 1278,
+    "mean_wait_probability": 0.9999537457695963,
+    "mean_probe_probability": 0.00004625107152796502,
+    "median_wait_minus_probe_margin": 0.9999119981639524,
+    "probe_argmax_fraction": 0.0,
+    "decisive_wait_fraction": 1.0,
+    "near_tie_fraction": 0.0
+  },
+  "development": {
+    "flat_decision_count": 337,
+    "mean_wait_probability": 0.9999540301388025,
+    "mean_probe_probability": 0.00004596702870178777,
+    "median_wait_minus_probe_margin": 0.9999126987531781,
+    "probe_argmax_fraction": 0.0,
+    "decisive_wait_fraction": 1.0,
+    "near_tie_fraction": 0.0
+  },
+  "diagnosis": "DETERMINISTIC_WAIT_POLICY_COLLAPSE_ON_TRAIN_AND_DEVELOPMENT",
+  "next_permitted_microtask": "BUILD_BRPM_FEASIBLE_PROBE_CURRICULUM_AND_BEHAVIORAL_WARM_START",
+  "prohibited_shortcut": "DO_NOT_INCREASE_MISSED_OPPORTUNITY_PENALTY_WITHOUT_CURRICULUM_EVIDENCE",
+  "policy_updated_during_audit": false,
+  "sealed_test_accessed": false,
+  "mode": "PAPER",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false,
+  "cloud_report": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-ppo-v4-policy-audit.json",
+  "cloud_report_file_sha256": "c0fa5e5132859f265cb112ca0eabb0c99295d5c7e562b2e2670a924953f3b643",
+  "source_report_sha256": "594aab05e4b5ff1e3f7b07057be8993f7da9dd213ce50a5f5daeea4e0629b772"
+}
