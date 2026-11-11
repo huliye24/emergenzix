@@ -1,0 +1,26 @@
+{
+  "strategy_id": "brla-nemt-v4-position-prior",
+  "version": 1,
+  "protocol": "emergenzix-brla-nemt-v4-position-prior-v1",
+  "status": "IMPLEMENTED_NOT_YET_TRAINING_INTEGRATED",
+  "mother_line": "backend/emergenzix_api/nemt_strategy/nemt_pyramiding_v4.py",
+  "adapter": "backend/emergenzix_api/brla_nemt_v4_prior.py",
+  "scope": "EXISTING_POSITION_ONLY",
+  "capabilities": [
+    "decreasing_add_candidate",
+    "monotonic_protective_stop_tightening",
+    "hold_existing_position",
+    "refuse_add_without_same_direction_confirmation"
+  ],
+  "authority": {
+    "can_generate_entry_direction": false,
+    "can_set_final_position": false,
+    "can_place_order": false,
+    "brpm_required": true,
+    "brgc_required": true,
+    "automatic_promotion": false
+  },
+  "next_integration": "BRLA_G2_CAUSAL_CURRICULUM_V3",
+  "mode": "PAPER",
+  "live_enabled": false
+}
