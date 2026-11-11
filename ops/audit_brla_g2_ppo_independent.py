@@ -63,6 +63,9 @@ def main() -> int:
     drawdowns = np.asarray([row["maximum_drawdown"] for row in results])
     total_steps = sum(row["steps"] for row in results)
     exposure = sum(row["exposed_steps"] for row in results) / total_steps
+    exposure_episode_coverage = sum(row["exposed_steps"] > 0
+                                    for row in results) / len(results)
+    rejection_rate = sum(row["brpm_rejections"] for row in results) / total_steps
     probe_coverage = sum(row["probe_count"] > 0 for row in results) / len(results)
     checks = {"dataset_hash_differs_from_training": manifest["dataset_sha256"]
               != training_dataset_sha256,
@@ -74,6 +77,8 @@ def main() -> int:
         "probe_coverage_at_least_0_50": probe_coverage >= .50,
         "action_diversity_at_least_3": sum(value > 0 for value in actions.values()) >= 3,
         "effective_exposure_fraction": .05 <= exposure <= .80,
+        "effective_exposure_episode_coverage": exposure_episode_coverage >= .80,
+        "brpm_rejection_rate_at_most_0_05": rejection_rate <= .05,
         "all_brgc_guarded": all(row["all_brgc_guarded"] for row in results)}
     report = {"protocol": "emergenzix-brla-g2-independent-paper-exam-v1",
         "exam_dataset_sha256": manifest["dataset_sha256"],
@@ -84,6 +89,8 @@ def main() -> int:
         "minimum_return": float(returns.min()), "positive_path_fraction": float((returns > 0).mean()),
         "maximum_drawdown": float(drawdowns.max()), "probe_coverage": probe_coverage,
         "exposure_fraction": exposure, "intent_counts": dict(actions),
+        "exposure_episode_coverage": exposure_episode_coverage,
+        "brpm_rejection_rate": rejection_rate,
         "brpm_rejections": sum(row["brpm_rejections"] for row in results),
         "checks": checks, "decision": "PASS_INDEPENDENT_SYNTHETIC_EXAM"
             if all(checks.values()) else "FAIL_INDEPENDENT_SYNTHETIC_EXAM",

@@ -27,9 +27,9 @@ def test_ppo_intent_cannot_bypass_brpm_or_brgc():
 def test_late_entry_is_rejected_and_position_stays_flat():
     row = episode(); row["rows"][0]["encoder"][8] = .85
     env = BRLAG2PPOEnv([row]); env.reset(seed=1)
-    _, _, _, _, info = env.step(INTENTS.index("PROBE_SHORT"))
-    assert info["brpm_decision"] == "REJECT"
-    assert info["approved_target"] == 0
+    assert env.action_masks()[INTENTS.index("PROBE_SHORT")] == 0
+    with pytest.raises(PermissionError, match="masked"):
+        env.step(INTENTS.index("PROBE_SHORT"))
 
 
 def test_same_seed_and_intents_are_reproducible():
@@ -46,7 +46,7 @@ def test_action_masks_remove_flat_and_position_aliases():
     with pytest.raises(PermissionError, match="masked"):
         env.step(INTENTS.index("HOLD"))
     env.step(INTENTS.index("PROBE_SHORT"))
-    assert env.action_masks().tolist() == [False, False, True, True, True, True]
+    assert env.action_masks().tolist() == [False, False, True, True, False, True]
 
 
 def test_confirmed_missed_down_move_penalizes_staying_flat():
@@ -54,3 +54,9 @@ def test_confirmed_missed_down_move_penalizes_staying_flat():
     _, reward, _, _, _ = env.step(INTENTS.index("WAIT"))
     assert env.trajectory[-1]["missed_opportunity"] < 0
     assert reward < 0
+
+
+def test_brpm_infeasible_probe_is_masked_before_policy_sampling():
+    row = episode(); row["rows"][0]["encoder"][8] = .85
+    env = BRLAG2PPOEnv([row]); env.reset(seed=5)
+    assert env.action_masks().tolist() == [True, False, False, False, False, False]

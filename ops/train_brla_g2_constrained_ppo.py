@@ -66,9 +66,13 @@ def evaluate(model: MaskablePPO, episodes) -> dict[str, object]:
     total_steps = sum(row["steps"] for row in rows)
     probe_coverage = sum(row["probe_count"] > 0 for row in rows) / len(rows)
     exposure_fraction = sum(row["exposed_steps"] for row in rows) / total_steps
+    exposure_episode_coverage = sum(row["exposed_steps"] > 0 for row in rows) / len(rows)
+    rejection_rate = sum(row["brpm_rejections"] for row in rows) / total_steps
     checks = {"nonzero_probe_coverage": probe_coverage >= .50,
         "action_diversity_at_least_3": sum(count > 0 for count in actions.values()) >= 3,
         "effective_exposure_fraction": .05 <= exposure_fraction <= .80,
+        "effective_exposure_episode_coverage": exposure_episode_coverage >= .80,
+        "brpm_rejection_rate_at_most_0_05": rejection_rate <= .05,
         "positive_mean_return": float(returns.mean()) > 0,
         "maximum_drawdown_at_most_0_10": float(drawdowns.max()) <= .10,
         "all_brgc_guarded": all(row["all_brgc_guarded"] for row in rows)}
@@ -76,7 +80,9 @@ def evaluate(model: MaskablePPO, episodes) -> dict[str, object]:
         "median_return": float(np.median(returns)), "minimum_return": float(returns.min()),
         "maximum_drawdown": float(drawdowns.max()),
         "intent_counts": dict(actions), "probe_episode_coverage": probe_coverage,
-        "exposure_fraction": exposure_fraction, "qualification_checks": checks,
+        "exposure_fraction": exposure_fraction,
+        "exposure_episode_coverage": exposure_episode_coverage,
+        "brpm_rejection_rate": rejection_rate, "qualification_checks": checks,
         "decision": "READY_FOR_FURTHER_PAPER_VALIDATION" if all(checks.values())
                     else "NOT_READY",
         "all_brgc_guarded": all(row["all_brgc_guarded"] for row in rows),

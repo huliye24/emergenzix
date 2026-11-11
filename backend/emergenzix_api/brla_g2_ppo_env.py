@@ -18,7 +18,7 @@ from .brla_g2_trend_timing import stage2_timing_reward
 from .brmg_scenarios import Partition
 from .brpm_g1 import BRPMRequest, RiskLedgerEntry, allocate_short_risk, verify_risk_ledger
 
-PROTOCOL = "emergenzix-brla-g2-constrained-ppo-env-v2"
+PROTOCOL = "emergenzix-brla-g2-constrained-ppo-env-v3"
 INTENTS = ("WAIT", "PROBE_SHORT", "HOLD", "INCREASE_SHORT", "REDUCE_SHORT", "EXIT")
 OBSERVATION_NAMES = tuple(f"state_probability_{state.value}" for state in OrderState) + (
     "old_order_strength", "new_order_strength", "trend_maturity", "remaining_potential",
@@ -113,11 +113,40 @@ class BRLAG2PPOEnv(gym.Env):
         if intent == "EXIT": return 0.0
         return self.current
 
+    def _allocation_for(self, action: int) -> tuple[RiskLedgerEntry, float | None]:
+        row = self.rows[self.index]; encoded = row["encoder"]
+        maturity, quality = float(encoded[8]), float(encoded[10])
+        requested = self._requested(action)
+        if (self.peak - self.equity) / self.peak >= .20: requested = 0.0
+        mark = row["mark_price"]
+        if requested < self.current:
+            candidate = mark * (1.05 if self.current == 0 else 1.02)
+            if self.stop is not None:
+                candidate = max(mark * 1.005, min(candidate, self.stop * .98))
+            stop = candidate
+        else:
+            stop = self.stop
+        allocation = allocate_short_risk(BRPMRequest(
+            campaign_id=f"ppo-{self.path_sha256[:16]}", equity=self.equity,
+            mark_price=mark, current_target_fraction=self.current,
+            requested_target_fraction=requested, protective_stop_price=stop,
+            cost_rate=row["cost_rate"], trend_maturity=maturity,
+            entry_location_quality=quality), self.ledger)
+        return allocation, stop
+
     def action_masks(self) -> np.ndarray:
-        """Expose position-valid intents to sb3-contrib MaskablePPO."""
+        """Expose only position-valid and BRPM-feasible intents."""
         if self.current == 0:
-            return np.asarray([True, True, False, False, False, False])
-        return np.asarray([False, False, True, self.current > -.50, True, True])
+            probe, _ = self._allocation_for(INTENTS.index("PROBE_SHORT"))
+            return np.asarray([True, probe.decision == "APPROVE_PROBE",
+                               False, False, False, False])
+        decisions = {}
+        for intent in ("HOLD", "INCREASE_SHORT", "REDUCE_SHORT", "EXIT"):
+            allocation, _ = self._allocation_for(INTENTS.index(intent))
+            decisions[intent] = allocation.decision != "REJECT"
+        return np.asarray([False, False, decisions["HOLD"],
+            self.current > -.50 and decisions["INCREASE_SHORT"],
+            self.current < -.10 and decisions["REDUCE_SHORT"], decisions["EXIT"]])
 
     def step(self, action: int):
         action = int(action)
@@ -127,22 +156,10 @@ class BRLAG2PPOEnv(gym.Env):
         row = self.rows[self.index]; encoded = row["encoder"]
         probabilities, targets = encoded[:6], encoded[6:]
         maturity, remaining, quality, exhaustion, late_risk = targets[2:]
-        requested = self._requested(action)
         drawdown_before = (self.peak - self.equity) / self.peak
-        if drawdown_before >= .20: requested = 0.0
-        mark = row["mark_price"]
-        if requested < self.current:
-            candidate = mark * (1.05 if self.current == 0 else 1.02)
-            if self.stop is not None: candidate = max(mark * 1.005, min(candidate, self.stop * .98))
-            stop = candidate
-        else:
-            stop = self.stop
-        allocation = allocate_short_risk(BRPMRequest(
-            campaign_id=f"ppo-{self.path_sha256[:16]}", equity=self.equity,
-            mark_price=mark, current_target_fraction=self.current,
-            requested_target_fraction=requested, protective_stop_price=stop,
-            cost_rate=row["cost_rate"], trend_maturity=float(maturity),
-            entry_location_quality=float(quality)), self.ledger)
+        requested = self._requested(action)
+        allocation, stop = self._allocation_for(action)
+        requested = allocation.requested_target_fraction
         self.ledger.append(allocation)
         risk_valid = verify_risk_ledger(self.ledger)
         guard = gate_paper_target(allocation.approved_target_fraction,
