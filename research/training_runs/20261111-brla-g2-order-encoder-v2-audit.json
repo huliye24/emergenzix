@@ -1,0 +1,66 @@
+{
+  "protocol": "emergenzix-brla-g2-order-encoder-audit-v1",
+  "run_id": "20261111-brla-g2-order-encoder-v2-audit",
+  "decision": "NOT_READY_TO_FREEZE",
+  "dataset": {
+    "dataset_sha256": "0896ac1a0b7aedfc78c38a783af8b026f26ff85055c5f73ba6ec4d0fa16240ed",
+    "bars_per_path": 25920,
+    "warmup_bars": 17280,
+    "post_warmup_cycles": 3,
+    "train_examples": 2160,
+    "development_examples": 540,
+    "all_six_states_present_in_train_and_development": true,
+    "cloud_directory": "/home/ubuntu/emergenzix-training-runs/20261111-brmg-g2-cycles-v4",
+    "manifest_file_sha256": "7817089e538fc060a21e3dbaefdbb6d888332e74fe5e8e6ba9ae8f5875d3e4f0"
+  },
+  "model": {
+    "model_sha256": "ee7bbade802662ba0fca3bbf3cc44e284fedfeeb48546b1402ca8cefb232c4dd",
+    "first_train_loss": 1.8740062713623047,
+    "final_train_loss": 1.4897174835205078,
+    "best_development_loss": 1.4753690958023071,
+    "selected_epoch": 30,
+    "cloud_checkpoint": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-order-encoder-v2/model.pt",
+    "training_report_file_sha256": "f99438d4cabb6f6b0b97c1ba61ec3189952ac33f891af5fe0f0bf7ba1205708c"
+  },
+  "audit": {
+    "accuracy": 0.42407407407407405,
+    "majority_baseline_accuracy": 0.19444444444444445,
+    "macro_recall": 0.3970443430944807,
+    "shuffled_feature_accuracy": 0.18888888888888888,
+    "state_recall": {
+      "OLD_ORDER_DOMINANT": 0.10843373493975904,
+      "NEW_ORDER_EMERGING": 1.0,
+      "ORDER_CONTEST": 0.03529411764705882,
+      "OLD_ORDER_FAILURE": 0.08139534883720931,
+      "NEW_ORDER_PROVISIONAL": 0.16666666666666666,
+      "NEW_ORDER_CONFIRMED": 0.9904761904761905
+    },
+    "continuous_mae": {
+      "old_order_strength": 0.1323554962873459,
+      "new_order_strength": 0.15359175205230713,
+      "trend_maturity": 0.21902969479560852,
+      "remaining_potential": 0.13054871559143066,
+      "entry_location_quality": 0.21364174783229828,
+      "feedback_exhaustion": 0.1346920281648636,
+      "late_entry_risk": 0.2347065657377243
+    },
+    "passed_checks": [
+      "all_six_states_covered", "accuracy_beats_majority_by_0_15",
+      "market_feature_shuffle_drop_at_least_0_10", "shortcut_fields_excluded",
+      "sealed_test_unread"
+    ],
+    "failed_checks": [
+      "each_state_recall_at_least_0_25", "macro_recall_at_least_0_50",
+      "all_continuous_mae_at_most_0_20"
+    ],
+    "cloud_report": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-order-encoder-audit-v2/report.json",
+    "report_file_sha256": "2651df7bd2a6af39bc7694fcba81782870720b62d33fa66b729bec2a22ae64f7"
+  },
+  "required_next_change": "Keep the corrected curriculum; replace the flat objective with class-balanced and ordinal-transition-aware supervision, then retrain from random initialization.",
+  "sealed_test_examples_read": 0,
+  "stage2_ppo_authorized": false,
+  "mode": "RESEARCH",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}
