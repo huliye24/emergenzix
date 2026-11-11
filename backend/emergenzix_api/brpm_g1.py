@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, replace
 from typing import Literal, Sequence
 
 
-Decision = Literal["APPROVE_PROBE", "APPROVE_ADD", "APPROVE_HOLD",
+Decision = Literal["APPROVE_PROBE", "APPROVE_ADD", "APPROVE_HOLD", "APPROVE_REDUCE",
                    "APPROVE_EXIT", "REJECT"]
 
 
@@ -26,6 +26,8 @@ class BRPMRequest:
     maximum_portfolio_risk_fraction: float = .06
     maximum_short_fraction: float = .50
     cost_rate: float = .0015
+    trend_maturity: float = 0.0
+    entry_location_quality: float = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,7 +126,8 @@ def allocate_short_risk(request: BRPMRequest,
                request.requested_target_fraction, request.maximum_campaign_risk_fraction,
                request.existing_other_positions_risk_fraction,
                request.maximum_portfolio_risk_fraction,
-               request.maximum_short_fraction, request.cost_rate)
+               request.maximum_short_fraction, request.cost_rate,
+               request.trend_maturity, request.entry_location_quality)
     if (not request.campaign_id.strip()
             or any(isinstance(value, bool) or not math.isfinite(value) for value in numeric)
             or request.equity <= 0 or request.mark_price <= 0
@@ -135,6 +138,8 @@ def allocate_short_risk(request: BRPMRequest,
                 > request.maximum_portfolio_risk_fraction
             or not 0 < request.maximum_short_fraction <= .50
             or not 0 <= request.cost_rate <= .05
+            or not 0 <= request.trend_maturity <= 1
+            or not 0 <= request.entry_location_quality <= 1
             or not -request.maximum_short_fraction <= request.current_target_fraction <= 0
             or not -request.maximum_short_fraction <= request.requested_target_fraction <= 0):
         return _reject(request, previous, "INVALID_OR_UNBOUNDED_INPUT")
@@ -150,11 +155,27 @@ def allocate_short_risk(request: BRPMRequest,
                       approved=0.0, prior_risk=0.0 if previous is None else previous.final_worst_loss_fraction,
                       pre_add_risk=0.0, final_risk=0.0)
     if requested > current:
-        return _reject(request, previous, "PARTIAL_REDUCTION_REQUIRES_FRESH_RISK_PLAN")
+        stop = request.protective_stop_price
+        if (previous is None or stop is None or not math.isfinite(stop)
+                or stop <= request.mark_price):
+            return _reject(request, previous, "PARTIAL_REDUCTION_REQUIRES_VALID_STOP_AND_LEDGER")
+        prior = previous.final_worst_loss_fraction
+        final = _worst_loss(requested, request.mark_price, stop, request.cost_rate)
+        if final > prior:
+            return _reject(request, previous, "PARTIAL_REDUCTION_MUST_NOT_INCREASE_RISK")
+        return _entry(request, previous, decision="APPROVE_REDUCE", reason="RISK_REDUCED",
+                      approved=requested, prior_risk=prior, pre_add_risk=prior,
+                      final_risk=final)
     if requested == current:
         prior = 0.0 if previous is None else previous.final_worst_loss_fraction
         return _entry(request, previous, decision="APPROVE_HOLD", reason="NO_RISK_ADDED",
                       approved=current, prior_risk=prior, pre_add_risk=prior, final_risk=prior)
+
+    if request.trend_maturity >= .70:
+        return _reject(request, previous, "LATE_ENTRY_FORBIDDEN" if current == 0
+                       else "MATURE_TREND_ADD_FORBIDDEN")
+    if current == 0 and request.entry_location_quality < .20:
+        return _reject(request, previous, "POOR_ENTRY_LOCATION")
 
     stop = request.protective_stop_price
     if stop is None or not math.isfinite(stop) or stop <= request.mark_price:
