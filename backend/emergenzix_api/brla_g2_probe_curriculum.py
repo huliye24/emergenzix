@@ -9,8 +9,9 @@ from typing import Any, Sequence
 import numpy as np
 
 from .brla_g2_ppo_env import BRLAG2PPOEnv, INTENTS
+from .brla_nemt_v4_prior import NEMTV4PriorRequest, evaluate_nemt_v4_prior
 
-PROTOCOL = "emergenzix-brla-g2-probe-curriculum-v2"
+PROTOCOL = "emergenzix-brla-g2-probe-curriculum-v3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +21,7 @@ class CurriculumExample:
     action: int
     path_sha256: str
     step_index: int
+    nemt_prior_action: str | None = None
     future_fields_in_observation: bool = False
     position_permission: bool = False
     order_permission: bool = False
@@ -45,6 +47,24 @@ def teacher_action(env: BRLAG2PPOEnv) -> int:
     if masks[exit_action] and (exhaustion >= .70 or late_risk >= .80
                                or structure_restored):
         return exit_action
+    first = next((entry for entry in env.ledger
+                  if entry.decision == "APPROVE_PROBE"), None)
+    if first is not None and first.protective_stop_price is not None:
+        add_count = sum(entry.decision == "APPROVE_ADD" for entry in env.ledger)
+        mark = float(row["mark_price"])
+        quantity = abs(env.current) * env.equity / mark
+        advice = evaluate_nemt_v4_prior(NEMTV4PriorRequest(side=-1,
+            initial_entry=first.mark_price, initial_stop=first.protective_stop_price,
+            initial_notional=abs(first.approved_target_fraction) * env.equity,
+            current_quantity=quantity, total_cost=quantity * first.mark_price,
+            protective_stop=float(env.stop), current_price=mark,
+            atr=float(row["atr"]), equity=env.equity, add_count=add_count,
+            same_direction_confirmed=old_strength >= new_strength + .10,
+            best_price=min(entry.mark_price for entry in env.ledger)))
+        env.pending_nemt_prior = advice
+        increase = INTENTS.index("INCREASE_SHORT")
+        if advice.action == "DECREASING_ADD_CANDIDATE" and masks[increase]:
+            return increase
     return INTENTS.index("HOLD")
 
 
@@ -57,8 +77,10 @@ def build_curriculum(episodes: Sequence[dict[str, Any]]) -> tuple[CurriculumExam
             masks = env.action_masks(); action = teacher_action(env)
             if not bool(masks[action]):
                 raise PermissionError("curriculum teacher selected a masked action")
+            prior_action = None if env.pending_nemt_prior is None \
+                else env.pending_nemt_prior.action
             examples.append(CurriculumExample(observation.copy(), masks.copy(), action,
-                episode["path_sha256"], env.index))
+                episode["path_sha256"], env.index, prior_action))
             observation, _, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
     if not examples:
@@ -74,6 +96,8 @@ def audit_curriculum(examples: Sequence[CurriculumExample]) -> dict[str, object]
     probe_paths = {example.path_sha256 for example in examples
                    if INTENTS[example.action] == "PROBE_SHORT"}
     all_legal = all(bool(example.action_mask[example.action]) for example in examples)
+    prior_actions = Counter(example.nemt_prior_action for example in examples
+                            if example.nemt_prior_action is not None)
     return {
         "example_count": len(examples),
         "path_count": len(paths),
@@ -81,6 +105,8 @@ def audit_curriculum(examples: Sequence[CurriculumExample]) -> dict[str, object]
         "probe_fraction": actions["PROBE_SHORT"] / len(examples),
         "probe_episode_coverage": len(probe_paths) / len(paths),
         "action_diversity": sum(count > 0 for count in actions.values()),
+        "nemt_prior_counts": dict(prior_actions),
+        "nemt_prior_coverage": sum(prior_actions.values()) / len(examples),
         "all_labels_mask_valid": all_legal,
         "future_fields_in_observation": any(
             example.future_fields_in_observation for example in examples),

@@ -13,7 +13,7 @@ def episode():
         encoder = np.asarray([*probabilities,
             .2, .8, .35, .7, .7, .2, .1], dtype=np.float32)
         rows.append({"encoder": encoder, "mark_price": 100 - index,
-                     "market_return": market_return, "cost_rate": .001})
+                     "atr": 2.0, "market_return": market_return, "cost_rate": .001})
     return {"path_sha256": "b" * 64, "rows": rows}
 
 
@@ -38,3 +38,14 @@ def test_future_up_move_does_not_directly_force_exit():
     path["rows"][1]["market_return"] = .05
     examples = build_curriculum([path])
     assert INTENTS[examples[1].action] == "HOLD"
+
+
+def test_nemt_mother_prior_can_label_a_brpm_feasible_decreasing_add():
+    path = episode()
+    path["rows"][0]["encoder"][6:8] = [.8, .2]
+    path["rows"][1]["encoder"][6:8] = [.8, .2]
+    path["rows"][1]["mark_price"] = 94
+    examples = build_curriculum([path])
+    assert INTENTS[examples[0].action] == "PROBE_SHORT"
+    assert INTENTS[examples[1].action] == "INCREASE_SHORT"
+    assert examples[1].nemt_prior_action == "DECREASING_ADD_CANDIDATE"

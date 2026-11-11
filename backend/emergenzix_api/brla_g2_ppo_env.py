@@ -18,7 +18,7 @@ from .brla_g2_trend_timing import stage2_timing_reward
 from .brmg_scenarios import Partition
 from .brpm_g1 import BRPMRequest, RiskLedgerEntry, allocate_short_risk, verify_risk_ledger
 
-PROTOCOL = "emergenzix-brla-g2-constrained-ppo-env-v4"
+PROTOCOL = "emergenzix-brla-g2-constrained-ppo-env-v5"
 INTENTS = ("WAIT", "PROBE_SHORT", "HOLD", "INCREASE_SHORT", "REDUCE_SHORT", "EXIT")
 OBSERVATION_NAMES = tuple(f"state_probability_{state.value}" for state in OrderState) + (
     "old_order_strength", "new_order_strength", "trend_maturity", "remaining_potential",
@@ -64,9 +64,16 @@ def prepare_episodes(directory: Path, checkpoint_path: Path, *, partition: Parti
             next_end = min(end + stride_bars, len(bars))
             if next_end <= end: continue
             decision, future = bars[end - 1], bars[next_end - 1]
+            ranges = []
+            for bar_index in range(max(1, end - 14), end):
+                bar, previous = bars[bar_index], bars[bar_index - 1]
+                ranges.append(max(float(bar["high"]) - float(bar["low"]),
+                    abs(float(bar["high"]) - float(previous["close"])),
+                    abs(float(bar["low"]) - float(previous["close"]))))
             rows.append({"encoder": np.concatenate((probabilities[offset],
                 continuous[offset])).astype(np.float32),
                 "mark_price": float(decision["close"]),
+                "atr": float(np.mean(ranges)),
                 "market_return": float(future["close"]) / float(decision["close"]) - 1,
                 "cost_rate": (float(decision["fee_bps"])
                               + float(decision["slippage_bps"])) / 10000.0})
@@ -102,6 +109,7 @@ class BRLAG2PPOEnv(gym.Env):
         self.index = 0; self.equity = self.peak = 1.0; self.current = 0.0
         self.previous_step_return = 0.0; self.stop = None
         self.ledger: list[RiskLedgerEntry] = []; self.trajectory = []
+        self.pending_nemt_prior = None
         return self._observation(), {"path_sha256": self.path_sha256,
                                     "mode": "PAPER", "order_permission": False}
 
@@ -213,7 +221,14 @@ class BRLAG2PPOEnv(gym.Env):
             "missed_opportunity": missed_opportunity,
             "opportunity_quality": opportunity_quality,
             "counterfactual_probe_return": counterfactual_probe_return,
+            "nemt_prior_action": None if self.pending_nemt_prior is None
+                else self.pending_nemt_prior.action,
+            "nemt_candidate_add_notional": 0.0 if self.pending_nemt_prior is None
+                else self.pending_nemt_prior.candidate_add_notional,
+            "nemt_candidate_protective_stop": None if self.pending_nemt_prior is None
+                else self.pending_nemt_prior.candidate_protective_stop,
             "exposed": target < 0, "order_permission": guard.order_permission})
+        self.pending_nemt_prior = None
         self.equity, self.peak, self.previous_step_return, self.current = (
             next_equity, next_peak, step_return, target)
         self.index += 1

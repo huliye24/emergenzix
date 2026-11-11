@@ -11,7 +11,7 @@ def episode():
         encoder = np.asarray([0, 0, 0, 0, .8, .2,
             .2, .8, .35, .7, .7, .2, .1], dtype=np.float32)
         rows.append({"encoder": encoder, "mark_price": 100 - index,
-                     "market_return": -.01, "cost_rate": .001})
+                     "atr": 2.0, "market_return": -.01, "cost_rate": .001})
     return {"path_sha256": "a" * 64, "rows": rows}
 
 
@@ -22,6 +22,7 @@ def test_ppo_intent_cannot_bypass_brpm_or_brgc():
     assert info["brpm_decision"] == "APPROVE_PROBE"
     assert info["brgc_decision"] == "ALLOW_PAPER_TARGET"
     assert info["order_permission"] is False
+    assert env.trajectory[-1]["nemt_prior_action"] is None
 
 
 def test_late_entry_is_rejected_and_position_stays_flat():
