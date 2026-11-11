@@ -18,7 +18,7 @@ from .brla_g2_trend_timing import stage2_timing_reward
 from .brmg_scenarios import Partition
 from .brpm_g1 import BRPMRequest, RiskLedgerEntry, allocate_short_risk, verify_risk_ledger
 
-PROTOCOL = "emergenzix-brla-g2-constrained-ppo-env-v3"
+PROTOCOL = "emergenzix-brla-g2-constrained-ppo-env-v4"
 INTENTS = ("WAIT", "PROBE_SHORT", "HOLD", "INCREASE_SHORT", "REDUCE_SHORT", "EXIT")
 OBSERVATION_NAMES = tuple(f"state_probability_{state.value}" for state in OrderState) + (
     "old_order_strength", "new_order_strength", "trend_maturity", "remaining_potential",
@@ -197,15 +197,22 @@ class BRLAG2PPOEnv(gym.Env):
             timely_exit=exit_position, risk_released_add=add_risk,
             proposed_target=requested, brpm_target=allocation.approved_target_fraction,
             brgc_target=target, executed_target=target)
-        confirmed_opportunity = (self.current == 0 and target == 0
-            and predicted_state >= 4 and quality >= .20 and maturity < .70)
-        missed_opportunity = (-min(max(-row["market_return"], 0.0) * .50, .01)
+        probe_allocation, _ = self._allocation_for(INTENTS.index("PROBE_SHORT"))
+        probe_feasible = probe_allocation.decision == "APPROVE_PROBE"
+        opportunity_quality = float(quality * remaining * (1 - late_risk))
+        counterfactual_probe_return = max(
+            .10 * max(-row["market_return"], 0.0) - .10 * row["cost_rate"], 0.0)
+        confirmed_opportunity = (self.current == 0 and target == 0 and probe_feasible
+            and quality >= .20 and maturity < .70 and counterfactual_probe_return > 0)
+        missed_opportunity = (-min(5 * opportunity_quality * counterfactual_probe_return, .02)
                               if confirmed_opportunity else 0.0)
         reward = reward_audit.total + missed_opportunity
         self.trajectory.append({"intent": INTENTS[action], "requested": requested,
             "brpm_decision": allocation.decision, "brpm_target": allocation.approved_target_fraction,
             "brgc_decision": guard.decision, "executed_target": target,
             "missed_opportunity": missed_opportunity,
+            "opportunity_quality": opportunity_quality,
+            "counterfactual_probe_return": counterfactual_probe_return,
             "exposed": target < 0, "order_permission": guard.order_permission})
         self.equity, self.peak, self.previous_step_return, self.current = (
             next_equity, next_peak, step_return, target)

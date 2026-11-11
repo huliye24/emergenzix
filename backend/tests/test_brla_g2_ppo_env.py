@@ -56,6 +56,24 @@ def test_confirmed_missed_down_move_penalizes_staying_flat():
     assert reward < 0
 
 
+def test_early_order_stage_can_still_be_a_confirmed_short_opportunity():
+    row = episode(); row["rows"][0]["encoder"][:6] = [1, 0, 0, 0, 0, 0]
+    env = BRLAG2PPOEnv([row]); env.reset(seed=6)
+    env.step(INTENTS.index("WAIT"))
+    audit = env.trajectory[-1]
+    assert audit["counterfactual_probe_return"] > 0
+    assert audit["opportunity_quality"] > 0
+    assert audit["missed_opportunity"] < 0
+
+
+def test_wait_is_not_penalized_when_counterfactual_probe_would_lose():
+    row = episode(); row["rows"][0]["market_return"] = .01
+    env = BRLAG2PPOEnv([row]); env.reset(seed=7)
+    env.step(INTENTS.index("WAIT"))
+    assert env.trajectory[-1]["counterfactual_probe_return"] == 0
+    assert env.trajectory[-1]["missed_opportunity"] == 0
+
+
 def test_brpm_infeasible_probe_is_masked_before_policy_sampling():
     row = episode(); row["rows"][0]["encoder"][8] = .85
     env = BRLAG2PPOEnv([row]); env.reset(seed=5)
