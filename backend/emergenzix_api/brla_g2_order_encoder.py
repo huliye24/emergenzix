@@ -22,8 +22,15 @@ TARGETS = ("old_order_strength", "new_order_strength", "trend_maturity",
 
 
 def semantic_state_sha256(state_dict: dict[str, Any], metadata: dict[str, Any]) -> str:
-    digest = hashlib.sha256(json.dumps(metadata, sort_keys=True,
+    arrays = {name: value for name, value in metadata.items()
+              if isinstance(value, np.ndarray)}
+    plain = {name: value for name, value in metadata.items() if name not in arrays}
+    digest = hashlib.sha256(json.dumps(plain, sort_keys=True,
         separators=(",", ":")).encode())
+    for name, array in sorted(arrays.items()):
+        canonical = np.ascontiguousarray(array)
+        digest.update(name.encode()); digest.update(str(canonical.dtype).encode())
+        digest.update(json.dumps(canonical.shape).encode()); digest.update(canonical.tobytes())
     for name, value in sorted(state_dict.items()):
         array = value.detach().cpu().contiguous().numpy()
         digest.update(name.encode()); digest.update(str(array.dtype).encode())

@@ -28,8 +28,9 @@ def test_partition_purpose_mismatch_fails_closed():
 
 
 def test_semantic_model_hash_ignores_mapping_insertion_order():
+    import numpy as np
     import torch
     left = {"b": torch.tensor([2.0]), "a": torch.tensor([1.0])}
     right = {"a": torch.tensor([1.0]), "b": torch.tensor([2.0])}
-    assert semantic_state_sha256(left, {"protocol": "x"}) == \
-        semantic_state_sha256(right, {"protocol": "x"})
+    metadata = {"protocol": "x", "mean": np.asarray([1.0], dtype=np.float32)}
+    assert semantic_state_sha256(left, metadata) == semantic_state_sha256(right, metadata)
