@@ -21,6 +21,21 @@ TARGETS = ("old_order_strength", "new_order_strength", "trend_maturity",
            "late_entry_risk")
 
 
+def create_encoder(torch: Any):
+    class Encoder(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.body = torch.nn.Sequential(torch.nn.Linear(32, 64), torch.nn.GELU(),
+                torch.nn.Linear(64, 32), torch.nn.GELU())
+            self.state = torch.nn.Linear(32, len(OrderState))
+            self.continuous = torch.nn.Sequential(torch.nn.Linear(32, len(TARGETS)),
+                                                  torch.nn.Sigmoid())
+        def forward(self, value):
+            encoded = self.body(value)
+            return self.state(encoded), self.continuous(encoded), encoded
+    return Encoder()
+
+
 def semantic_state_sha256(state_dict: dict[str, Any], metadata: dict[str, Any]) -> str:
     arrays = {name: value for name, value in metadata.items()
               if isinstance(value, np.ndarray)}
@@ -123,19 +138,7 @@ def _fit_encoder(train_data, dev_data, *, dataset_sha256: str, output: Path,
     dx = torch.tensor((dev_x - mean) / std, device=device)
     dy = torch.tensor(dev_y, device=device); ds = torch.tensor(dev_state, device=device)
 
-    class Encoder(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.body = torch.nn.Sequential(torch.nn.Linear(32, 64), torch.nn.GELU(),
-                torch.nn.Linear(64, 32), torch.nn.GELU())
-            self.state = torch.nn.Linear(32, len(OrderState))
-            self.continuous = torch.nn.Sequential(torch.nn.Linear(32, len(TARGETS)),
-                                                  torch.nn.Sigmoid())
-        def forward(self, value):
-            encoded = self.body(value)
-            return self.state(encoded), self.continuous(encoded), encoded
-
-    model = Encoder().to(device)
+    model = create_encoder(torch).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
     best, best_epoch, best_state, history = float("inf"), -1, None, []
     for epoch in range(epochs):
