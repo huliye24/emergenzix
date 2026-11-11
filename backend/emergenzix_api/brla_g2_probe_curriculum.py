@@ -10,7 +10,7 @@ import numpy as np
 
 from .brla_g2_ppo_env import BRLAG2PPOEnv, INTENTS
 
-PROTOCOL = "emergenzix-brla-g2-probe-curriculum-v1"
+PROTOCOL = "emergenzix-brla-g2-probe-curriculum-v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +29,8 @@ def teacher_action(env: BRLAG2PPOEnv) -> int:
     """Choose a conservative legal label; future return is label-only evidence."""
     masks = env.action_masks()
     row = env.rows[env.index]
+    probabilities = row["encoder"][:6]
+    old_strength, new_strength = map(float, row["encoder"][6:8])
     maturity, remaining, quality, exhaustion, late_risk = map(
         float, row["encoder"][8:13])
     if env.current == 0:
@@ -38,8 +40,10 @@ def teacher_action(env: BRLAG2PPOEnv) -> int:
                     and quality >= .25 and late_risk < .70 and net_probe_return > 0)
         return probe if eligible else INTENTS.index("WAIT")
     exit_action = INTENTS.index("EXIT")
-    if masks[exit_action] and (row["market_return"] >= 0
-                               or exhaustion >= .70 or late_risk >= .80):
+    structure_restored = (float(probabilities[4] + probabilities[5]) >= .65
+                          and new_strength >= old_strength + .10)
+    if masks[exit_action] and (exhaustion >= .70 or late_risk >= .80
+                               or structure_restored):
         return exit_action
     return INTENTS.index("HOLD")
 

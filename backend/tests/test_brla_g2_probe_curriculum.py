@@ -8,7 +8,9 @@ def episode():
     returns = (-.02, -.01, .01, .01)
     rows = []
     for index, market_return in enumerate(returns):
-        encoder = np.asarray([0, 0, 0, 0, .8, .2,
+        probabilities = ([0, 0, .8, .2, 0, 0] if index < 2
+                         else [0, 0, 0, 0, .8, .2])
+        encoder = np.asarray([*probabilities,
             .2, .8, .35, .7, .7, .2, .1], dtype=np.float32)
         rows.append({"encoder": encoder, "mark_price": 100 - index,
                      "market_return": market_return, "cost_rate": .001})
@@ -29,3 +31,10 @@ def test_curriculum_audit_reports_probe_coverage_and_diversity():
     assert audit["action_diversity"] == 4
     assert audit["all_labels_mask_valid"] is True
     assert audit["position_permission"] is False
+
+
+def test_future_up_move_does_not_directly_force_exit():
+    path = episode()
+    path["rows"][1]["market_return"] = .05
+    examples = build_curriculum([path])
+    assert INTENTS[examples[1].action] == "HOLD"
