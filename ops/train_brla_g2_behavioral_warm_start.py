@@ -21,7 +21,7 @@ from sb3_contrib import MaskablePPO
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 from emergenzix_api.brla_g2_behavioral_warm_start import (  # noqa: E402
-    PROTOCOL, classification_audit,
+    PROTOCOL, calibrated_class_weights, classification_audit,
 )
 from emergenzix_api.brla_g2_ppo_env import (  # noqa: E402
     BRLAG2PPOEnv, INTENTS, OBSERVATION_NAMES, prepare_episodes,
@@ -85,8 +85,9 @@ def main() -> int:
     observations, masks, actions = tensors(train, model.device)
     counts = Counter(actions.cpu().numpy().tolist())
     class_weights = torch.ones(len(INTENTS), dtype=torch.float32, device=model.device)
-    for action, count in counts.items():
-        class_weights[action] = len(train) / (len(counts) * count)
+    frozen_weights = calibrated_class_weights(counts)
+    for action, weight in frozen_weights.items():
+        class_weights[action] = weight
     generator = torch.Generator(device="cpu"); generator.manual_seed(args.seed)
     losses = []
     for _ in range(args.epochs):
@@ -124,6 +125,9 @@ def main() -> int:
         "train_example_count": len(train),
         "development_example_count": len(development),
         "development_used_for_fitting": False,
+        "class_weight_protocol": "SQRT_INVERSE_FREQUENCY_WITH_EXIT_1_5X",
+        "class_weights": {INTENTS[action]: weight
+                          for action, weight in frozen_weights.items()},
         "final_training_loss": losses[-1],
         "training": training_audit, "development": development_audit,
         "checks": checks,

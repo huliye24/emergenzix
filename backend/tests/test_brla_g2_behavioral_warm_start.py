@@ -1,6 +1,9 @@
 import pytest
 
-from emergenzix_api.brla_g2_behavioral_warm_start import classification_audit
+from emergenzix_api.brla_g2_behavioral_warm_start import (
+    calibrated_class_weights, classification_audit,
+)
+from emergenzix_api.brla_g2_ppo_env import INTENTS
 
 
 def test_classification_audit_reports_recall_diversity_and_legality():
@@ -18,3 +21,15 @@ def test_classification_audit_reports_recall_diversity_and_legality():
 def test_classification_audit_rejects_mismatched_inputs():
     with pytest.raises(ValueError, match="same non-zero length"):
         classification_audit([0], [], [[True]])
+
+
+def test_calibrated_weights_reduce_rare_probe_pressure_and_boost_exit():
+    weights = calibrated_class_weights({0: 1243, 1: 281, 2: 355, 5: 281})
+    assert weights[1] / weights[0] < 3
+    assert weights[INTENTS.index("EXIT")] > weights[INTENTS.index("PROBE_SHORT")]
+    assert sum(weights.values()) / len(weights) == pytest.approx(1)
+
+
+def test_calibrated_weights_reject_invalid_counts():
+    with pytest.raises(ValueError, match="valid actions"):
+        calibrated_class_weights({0: 0})

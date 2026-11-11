@@ -3,13 +3,29 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Sequence
+import math
+from typing import Mapping, Sequence
 
 import numpy as np
 
 from .brla_g2_ppo_env import INTENTS
 
-PROTOCOL = "emergenzix-brla-g2-behavioral-warm-start-v1"
+PROTOCOL = "emergenzix-brla-g2-behavioral-warm-start-v2"
+
+
+def calibrated_class_weights(counts: Mapping[int, int], *, exit_multiplier: float = 1.5
+                             ) -> dict[int, float]:
+    if not counts or any(action not in range(len(INTENTS)) or count <= 0
+                         for action, count in counts.items()):
+        raise ValueError("class counts must contain valid actions with positive counts")
+    total, classes = sum(counts.values()), len(counts)
+    weights = {action: math.sqrt(total / (classes * count))
+               for action, count in counts.items()}
+    exit_action = INTENTS.index("EXIT")
+    if exit_action in weights:
+        weights[exit_action] *= exit_multiplier
+    mean = sum(weights.values()) / len(weights)
+    return {action: weight / mean for action, weight in weights.items()}
 
 
 def classification_audit(labels: Sequence[int], predictions: Sequence[int],
