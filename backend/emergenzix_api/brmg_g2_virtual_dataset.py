@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 import json
 import math
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from pathlib import Path
 
 import numpy as np
 
@@ -100,6 +102,28 @@ def build_virtual_dataset(*, bars_per_path: int = 1440) -> dict[str, Any]:
         "position_permission": False, "order_permission": False}
     manifest["dataset_sha256"] = _hash(manifest)
     return manifest
+
+
+def write_virtual_dataset_directory(output: Path, *, bars_per_path: int = 20000) -> dict[str, Any]:
+    """Write paths independently so long-horizon curricula stay memory bounded."""
+    output.mkdir(parents=True, exist_ok=False)
+    records = []
+    for partition, seeds in PARTITION_SEEDS.items():
+        for seed in seeds:
+            path = generate_path(seed=seed, partition=partition, bars=bars_per_path)
+            filename = f"{partition.value.lower()}-{seed}.json.gz"
+            with gzip.open(output / filename, "wt", encoding="utf-8") as handle:
+                json.dump(path, handle, separators=(",", ":"))
+            records.append({"partition": partition.value, "seed": seed,
+                "filename": filename, "path_sha256": path["path_sha256"],
+                "bar_count": len(path["bars"])})
+    base = {"protocol": PROTOCOL, "format": "PATH_JSON_GZIP_V1",
+        "bars_per_path": bars_per_path, "paths": records,
+        "synthetic": True, "mode": "RESEARCH", "automatic_promotion": False,
+        "position_permission": False, "order_permission": False}
+    base["dataset_sha256"] = _hash(base)
+    (output / "manifest.json").write_text(json.dumps(base, indent=2), encoding="utf-8")
+    return base
 
 
 def audit_virtual_dataset(dataset: dict[str, Any]) -> dict[str, Any]:

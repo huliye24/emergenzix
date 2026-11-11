@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
-from emergenzix_api.brla_g2_order_encoder import train_encoder
+from emergenzix_api.brla_g2_order_encoder import train_encoder, train_encoder_directory
 
 
 def main() -> int:
@@ -21,9 +21,13 @@ def main() -> int:
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--stride-bars", type=int, default=96)
     args = parser.parse_args()
-    dataset = json.loads(args.dataset.read_text(encoding="utf-8"))
-    report = train_encoder(dataset, output=args.checkpoint, epochs=args.epochs,
-                           stride_bars=args.stride_bars)
+    if args.dataset.is_dir():
+        report = train_encoder_directory(args.dataset, output=args.checkpoint,
+            epochs=args.epochs, stride_bars=args.stride_bars)
+    else:
+        dataset = json.loads(args.dataset.read_text(encoding="utf-8"))
+        report = train_encoder(dataset, output=args.checkpoint, epochs=args.epochs,
+                               stride_bars=args.stride_bars)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(json.dumps({key: value for key, value in report.items() if key != "history"}, indent=2))

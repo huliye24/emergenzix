@@ -1,5 +1,6 @@
 from emergenzix_api.brmg_g2_virtual_dataset import (
     PARTITION_SEEDS, audit_virtual_dataset, build_virtual_dataset, generate_path,
+    write_virtual_dataset_directory,
 )
 from emergenzix_api.brmg_scenarios import Partition
 
@@ -34,3 +35,11 @@ def test_training_rows_have_market_and_teacher_labels_but_no_action_answer():
             "spread_bps", "slippage_bps", "fee_bps", "labels"} <= row.keys()
     assert not ({"action", "best_action", "target_position", "side", "signal"} & row.keys())
     assert path["order_permission"] is False and path["position_permission"] is False
+
+
+def test_streaming_directory_keeps_paths_separate(tmp_path):
+    manifest = write_virtual_dataset_directory(tmp_path / "dataset", bars_per_path=720)
+    assert len(manifest["paths"]) == 36
+    assert len({row["filename"] for row in manifest["paths"]}) == 36
+    assert all((tmp_path / "dataset" / row["filename"]).exists()
+               for row in manifest["paths"])

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 import json
 import math
 from pathlib import Path
@@ -67,17 +68,37 @@ def build_examples(dataset: dict[str, Any], *, partition: Partition,
             np.asarray(rows_state, dtype=np.int64))
 
 
-def train_encoder(dataset: dict[str, Any], *, output: Path, seed: int = 20261111,
-                  epochs: int = 30, stride_bars: int = 96) -> dict[str, Any]:
+def build_examples_from_directory(directory: Path, *, partition: Partition,
+                                  purpose: DataPurpose, stride_bars: int = 96
+                                  ) -> tuple[np.ndarray, np.ndarray, np.ndarray, str]:
+    authorize_data_use(partition, purpose)
+    if purpose not in {DataPurpose.STAGE1_TRAIN, DataPurpose.DEVELOPMENT_EVAL}:
+        raise PermissionError("encoder fitting may only use TRAIN and DEVELOPMENT")
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    batches = []
+    for record in manifest["paths"]:
+        if record["partition"] != partition.value:
+            continue
+        with gzip.open(directory / record["filename"], "rt", encoding="utf-8") as handle:
+            path = json.load(handle)
+        batches.append(build_examples({"paths": [path]}, partition=partition,
+            purpose=purpose, stride_bars=stride_bars))
+    if not batches:
+        raise ValueError("authorized directory partition is empty")
+    return (np.concatenate([row[0] for row in batches]),
+            np.concatenate([row[1] for row in batches]),
+            np.concatenate([row[2] for row in batches]), manifest["dataset_sha256"])
+
+
+def _fit_encoder(train_data, dev_data, *, dataset_sha256: str, output: Path,
+                 seed: int, epochs: int) -> dict[str, Any]:
     import torch
 
     torch.manual_seed(seed); np.random.seed(seed)
     torch.use_deterministic_algorithms(True, warn_only=True)
     if torch.cuda.is_available(): torch.cuda.manual_seed_all(seed)
-    train_x, train_y, train_state = build_examples(dataset, partition=Partition.TRAIN,
-        purpose=DataPurpose.STAGE1_TRAIN, stride_bars=stride_bars)
-    dev_x, dev_y, dev_state = build_examples(dataset, partition=Partition.DEVELOPMENT,
-        purpose=DataPurpose.DEVELOPMENT_EVAL, stride_bars=stride_bars)
+    train_x, train_y, train_state = train_data
+    dev_x, dev_y, dev_state = dev_data
     mean, std = train_x.mean(0), np.maximum(train_x.std(0), 1e-6)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tx = torch.tensor((train_x - mean) / std, device=device)
@@ -126,13 +147,13 @@ def train_encoder(dataset: dict[str, Any], *, output: Path, seed: int = 20261111
     checkpoint = {"protocol": PROTOCOL, "state_dict": best_state,
         "normalization_mean": mean, "normalization_std": std,
         "windows": WINDOWS, "targets": TARGETS, "states": tuple(state.value for state in OrderState),
-        "dataset_sha256": dataset["dataset_sha256"], "seed": seed,
+        "dataset_sha256": dataset_sha256, "seed": seed,
         "selected_epoch": best_epoch, "mode": "RESEARCH",
         "automatic_promotion": False, "position_permission": False,
         "order_permission": False}
     torch.save(checkpoint, output)
     model_hash = hashlib.sha256(output.read_bytes()).hexdigest()
-    return {"protocol": PROTOCOL, "dataset_sha256": dataset["dataset_sha256"],
+    return {"protocol": PROTOCOL, "dataset_sha256": dataset_sha256,
         "checkpoint_sha256": model_hash, "train_examples": len(train_x),
         "development_examples": len(dev_x), "selected_epoch": best_epoch,
         "first_train_loss": history[0]["train_loss"],
@@ -142,3 +163,25 @@ def train_encoder(dataset: dict[str, Any], *, output: Path, seed: int = 20261111
         "sealed_test_examples_read": 0, "history": history,
         "mode": "RESEARCH", "automatic_promotion": False,
         "position_permission": False, "order_permission": False}
+
+
+def train_encoder(dataset: dict[str, Any], *, output: Path, seed: int = 20261111,
+                  epochs: int = 30, stride_bars: int = 96) -> dict[str, Any]:
+    train = build_examples(dataset, partition=Partition.TRAIN,
+        purpose=DataPurpose.STAGE1_TRAIN, stride_bars=stride_bars)
+    development = build_examples(dataset, partition=Partition.DEVELOPMENT,
+        purpose=DataPurpose.DEVELOPMENT_EVAL, stride_bars=stride_bars)
+    return _fit_encoder(train, development, dataset_sha256=dataset["dataset_sha256"],
+                        output=output, seed=seed, epochs=epochs)
+
+
+def train_encoder_directory(directory: Path, *, output: Path, seed: int = 20261111,
+                            epochs: int = 30, stride_bars: int = 96) -> dict[str, Any]:
+    train = build_examples_from_directory(directory, partition=Partition.TRAIN,
+        purpose=DataPurpose.STAGE1_TRAIN, stride_bars=stride_bars)
+    development = build_examples_from_directory(directory, partition=Partition.DEVELOPMENT,
+        purpose=DataPurpose.DEVELOPMENT_EVAL, stride_bars=stride_bars)
+    if train[3] != development[3]:
+        raise ValueError("partition manifests disagree")
+    return _fit_encoder(train[:3], development[:3], dataset_sha256=train[3],
+                        output=output, seed=seed, epochs=epochs)
