@@ -1,0 +1,54 @@
+{
+  "protocol": "emergenzix-brla-g2-probe-curriculum-v1",
+  "run_id": "20261111-brla-g2-probe-curriculum-v1",
+  "training": {
+    "example_count": 2160,
+    "path_count": 24,
+    "intent_counts": {
+      "WAIT": 1243,
+      "PROBE_SHORT": 281,
+      "HOLD": 355,
+      "EXIT": 281
+    },
+    "probe_fraction": 0.1300925925925926,
+    "probe_episode_coverage": 1.0,
+    "action_diversity": 4,
+    "all_labels_mask_valid": true,
+    "future_fields_in_observation": false
+  },
+  "development_audit_only": {
+    "example_count": 540,
+    "path_count": 6,
+    "intent_counts": {
+      "WAIT": 312,
+      "PROBE_SHORT": 77,
+      "EXIT": 77,
+      "HOLD": 74
+    },
+    "probe_fraction": 0.1425925925925926,
+    "probe_episode_coverage": 1.0,
+    "action_diversity": 4,
+    "all_labels_mask_valid": true,
+    "future_fields_in_observation": false
+  },
+  "future_outcome_use": "LABEL_ONLY_NOT_OBSERVATION",
+  "development_used_for_fitting": false,
+  "checks": {
+    "wait_and_probe_present": true,
+    "probe_coverage_at_least_0_50": true,
+    "probe_fraction_bounded": true,
+    "action_diversity_at_least_3": true,
+    "all_labels_mask_valid": true,
+    "future_fields_excluded_from_observation": true
+  },
+  "decision": "READY_FOR_BEHAVIORAL_WARM_START",
+  "next_permitted_microtask": "TRAIN_MASKED_BEHAVIORAL_WARM_START_ON_TRAIN_ONLY",
+  "sealed_test_accessed": false,
+  "mode": "PAPER",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false,
+  "cloud_report": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-probe-curriculum-v1.json",
+  "cloud_report_file_sha256": "65106106092cd9e79c709170e9ad448f318ceb2d730291bae03c8f16de399bdb",
+  "source_report_sha256": "506605311bea5b90bba3bbec4ac4a1f689d916618e4b15b846f74f553be3df54"
+}
