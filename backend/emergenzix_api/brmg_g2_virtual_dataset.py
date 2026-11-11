@@ -26,6 +26,7 @@ PARTITION_SEEDS = {
     Partition.DEVELOPMENT: tuple(range(2026121100, 2026121106)),
     Partition.SEALED_TEST: tuple(range(2026131100, 2026131106)),
 }
+INDEPENDENT_EXAM_SEEDS = tuple(range(2027011100, 2027011112))
 
 
 def _hash(value: Any) -> str:
@@ -39,7 +40,9 @@ def _clip(value: float) -> float:
 
 def generate_path(*, seed: int, partition: Partition, bars: int = 1440) -> dict[str, Any]:
     """Generate one causal market path; state labels are not trading actions."""
-    if seed not in PARTITION_SEEDS[partition] or bars < 720:
+    allowed = seed in PARTITION_SEEDS[partition] or (
+        partition is Partition.DEVELOPMENT and seed in INDEPENDENT_EXAM_SEEDS)
+    if not allowed or bars < 720:
         raise ValueError("seed must belong to its frozen partition and bars must be >= 720")
     rng = np.random.default_rng(seed)
     price = float(rng.uniform(40_000, 100_000))
@@ -130,6 +133,30 @@ def write_virtual_dataset_directory(output: Path, *, bars_per_path: int = 20000)
             "post_warmup_cycles": POST_WARMUP_CYCLES, "cycle_bars": CYCLE_BARS,
             "cycle_id_exposed_to_model": False},
         "synthetic": True, "mode": "RESEARCH", "automatic_promotion": False,
+        "position_permission": False, "order_permission": False}
+    base["dataset_sha256"] = _hash(base)
+    (output / "manifest.json").write_text(json.dumps(base, indent=2), encoding="utf-8")
+    return base
+
+
+def write_independent_exam_directory(output: Path, *, bars_per_path: int = 25920) -> dict[str, Any]:
+    """Write unseen-seed PAPER exam paths that can never join training partitions."""
+    output.mkdir(parents=True, exist_ok=False)
+    records = []
+    for seed in INDEPENDENT_EXAM_SEEDS:
+        path = generate_path(seed=seed, partition=Partition.DEVELOPMENT,
+                             bars=bars_per_path)
+        filename = f"independent-{seed}.json.gz"
+        with gzip.open(output / filename, "wt", encoding="utf-8") as handle:
+            json.dump(path, handle, separators=(",", ":"))
+        records.append({"partition": Partition.DEVELOPMENT.value, "seed": seed,
+            "filename": filename, "path_sha256": path["path_sha256"],
+            "bar_count": len(path["bars"])})
+    base = {"protocol": "emergenzix-brmg-g2-independent-exam-v1",
+        "source_generator_protocol": PROTOCOL, "format": "PATH_JSON_GZIP_V1",
+        "bars_per_path": bars_per_path, "paths": records,
+        "seed_overlap_with_training": False, "training_allowed": False,
+        "synthetic": True, "mode": "PAPER", "automatic_promotion": False,
         "position_permission": False, "order_permission": False}
     base["dataset_sha256"] = _hash(base)
     (output / "manifest.json").write_text(json.dumps(base, indent=2), encoding="utf-8")

@@ -1,7 +1,7 @@
 from emergenzix_api.brmg_g2_virtual_dataset import (
-    CYCLE_BARS, PARTITION_SEEDS, POST_WARMUP_CYCLES, WARMUP_BARS,
+    CYCLE_BARS, INDEPENDENT_EXAM_SEEDS, PARTITION_SEEDS, POST_WARMUP_CYCLES, WARMUP_BARS,
     audit_virtual_dataset, build_virtual_dataset, generate_path,
-    write_virtual_dataset_directory,
+    write_independent_exam_directory, write_virtual_dataset_directory,
 )
 from emergenzix_api.brmg_scenarios import Partition
 from emergenzix_api.brla_g2_training_protocol import OrderState
@@ -57,3 +57,11 @@ def test_post_warmup_curriculum_contains_three_complete_cycles():
                   for row in post[cycle * CYCLE_BARS:(cycle + 1) * CYCLE_BARS]}
         assert states == {state.value for state in OrderState}
     assert all("cycle_id" not in row and "seed" not in row for row in post)
+
+
+def test_independent_exam_seeds_never_overlap_frozen_partitions(tmp_path):
+    manifest = write_independent_exam_directory(tmp_path / "exam", bars_per_path=720)
+    frozen = {seed for seeds in PARTITION_SEEDS.values() for seed in seeds}
+    assert frozen.isdisjoint(INDEPENDENT_EXAM_SEEDS)
+    assert manifest["training_allowed"] is False
+    assert manifest["seed_overlap_with_training"] is False

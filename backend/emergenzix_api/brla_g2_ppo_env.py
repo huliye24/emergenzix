@@ -28,7 +28,8 @@ OBSERVATION_NAMES = tuple(f"state_probability_{state.value}" for state in OrderS
 
 
 def prepare_episodes(directory: Path, checkpoint_path: Path, *, partition: Partition,
-                     purpose: DataPurpose, stride_bars: int = 96) -> list[dict[str, Any]]:
+                     purpose: DataPurpose, stride_bars: int = 96,
+                     independent_exam: bool = False) -> list[dict[str, Any]]:
     import torch
 
     authorize_data_use(partition, purpose)
@@ -36,7 +37,11 @@ def prepare_episodes(directory: Path, checkpoint_path: Path, *, partition: Parti
         raise PermissionError("PPO preparation may only use TRAIN and DEVELOPMENT")
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
-    if manifest["dataset_sha256"] != checkpoint["dataset_sha256"]:
+    is_exam = manifest.get("protocol") == "emergenzix-brmg-g2-independent-exam-v1"
+    if independent_exam and not (is_exam and purpose is DataPurpose.DEVELOPMENT_EVAL
+                                 and manifest.get("training_allowed") is False):
+        raise PermissionError("independent exam requires its frozen PAPER manifest")
+    if not independent_exam and manifest["dataset_sha256"] != checkpoint["dataset_sha256"]:
         raise ValueError("frozen encoder and scenario dataset identities disagree")
     model = create_encoder(torch); model.load_state_dict(checkpoint["state_dict"]); model.eval()
     episodes = []
