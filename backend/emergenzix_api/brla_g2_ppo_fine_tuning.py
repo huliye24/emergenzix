@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Mapping
 
-PROTOCOL = "emergenzix-brla-g2-ppo-fine-tuning-v1"
+PROTOCOL = "emergenzix-brla-g2-ppo-fine-tuning-v2"
+
+
+def fine_tuning_chunks(total_timesteps: int, interval: int) -> tuple[int, ...]:
+    if total_timesteps <= 0 or interval <= 0:
+        raise ValueError("timesteps and behavior-anchor interval must be positive")
+    complete, remainder = divmod(total_timesteps, interval)
+    return (interval,) * complete + ((remainder,) if remainder else ())
 
 
 def authorize_warm_start(report: Mapping[str, object], model_file_sha256: str) -> None:

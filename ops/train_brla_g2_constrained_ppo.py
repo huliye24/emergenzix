@@ -24,8 +24,10 @@ from emergenzix_api.brla_g2_ppo_env import (  # noqa: E402
     BRLAG2PPOEnv, INTENTS, OBSERVATION_NAMES, PROTOCOL, prepare_episodes,
 )
 from emergenzix_api.brla_g2_ppo_fine_tuning import (  # noqa: E402
-    PROTOCOL as FINE_TUNING_PROTOCOL, authorize_warm_start,
+    PROTOCOL as FINE_TUNING_PROTOCOL, authorize_warm_start, fine_tuning_chunks,
 )
+from emergenzix_api.brla_g2_behavioral_warm_start import calibrated_class_weights  # noqa: E402
+from emergenzix_api.brla_g2_probe_curriculum import build_curriculum  # noqa: E402
 from emergenzix_api.brla_g2_training_protocol import DataPurpose  # noqa: E402
 from emergenzix_api.brmg_scenarios import Partition  # noqa: E402
 
@@ -92,6 +94,32 @@ def evaluate(model: MaskablePPO, episodes) -> dict[str, object]:
         "sealed_test_accessed": False, "episodes": rows}
 
 
+def behavior_anchor(model: MaskablePPO, examples, *, epochs: int, seed: int) -> float:
+    observations = torch.as_tensor(np.stack([row.observation for row in examples]),
+        dtype=torch.float32, device=model.device)
+    masks = np.stack([row.action_mask for row in examples]).astype(bool)
+    actions = torch.as_tensor([row.action for row in examples], dtype=torch.long,
+                              device=model.device)
+    counts = Counter(actions.cpu().numpy().tolist())
+    weights = calibrated_class_weights(counts)
+    class_weights = torch.ones(len(INTENTS), dtype=torch.float32, device=model.device)
+    for action, weight in weights.items(): class_weights[action] = weight
+    generator = torch.Generator(device="cpu"); generator.manual_seed(seed)
+    final_loss = 0.0
+    for _ in range(epochs):
+        permutation = torch.randperm(len(examples), generator=generator)
+        for start in range(0, len(examples), 256):
+            indices = permutation[start:start + 256].to(model.device)
+            distribution = model.policy.get_distribution(observations[indices],
+                action_masks=masks[indices.cpu().numpy()])
+            loss = -(class_weights[actions[indices]]
+                     * distribution.log_prob(actions[indices])).mean()
+            model.policy.optimizer.zero_grad(); loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.policy.parameters(), .5)
+            model.policy.optimizer.step(); final_loss = float(loss.detach().cpu())
+    return final_loss
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=Path, required=True)
@@ -101,10 +129,14 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=20261111)
     parser.add_argument("--initial-policy", type=Path)
     parser.add_argument("--initial-policy-report", type=Path)
+    parser.add_argument("--behavior-anchor-interval", type=int)
+    parser.add_argument("--behavior-anchor-epochs", type=int, default=1)
     args = parser.parse_args()
     if args.output.exists(): raise FileExistsError("output directory already exists")
     if bool(args.initial_policy) != bool(args.initial_policy_report):
         raise ValueError("initial policy and qualification report must be supplied together")
+    if args.behavior_anchor_interval and not args.initial_policy:
+        raise ValueError("behavior anchoring requires a qualified initial policy")
     train = prepare_episodes(args.dataset, args.encoder, partition=Partition.TRAIN,
         purpose=DataPurpose.STAGE2_TRAIN)
     development = prepare_episodes(args.dataset, args.encoder,
@@ -128,8 +160,19 @@ def main() -> int:
             learning_rate=3e-4, n_steps=512, batch_size=256, n_epochs=6,
             gamma=.995, gae_lambda=.95, clip_range=.2, ent_coef=.01,
             policy_kwargs={"net_arch": [128, 128]}, verbose=0)
-    model.learn(total_timesteps=args.timesteps, progress_bar=False,
-                reset_num_timesteps=not bool(args.initial_policy))
+    anchor_updates = 0; final_anchor_loss = None
+    if args.behavior_anchor_interval:
+        curriculum = build_curriculum(train)
+        for index, chunk in enumerate(fine_tuning_chunks(
+                args.timesteps, args.behavior_anchor_interval)):
+            model.learn(total_timesteps=chunk, progress_bar=False,
+                        reset_num_timesteps=False)
+            final_anchor_loss = behavior_anchor(model, curriculum,
+                epochs=args.behavior_anchor_epochs, seed=args.seed + index)
+            anchor_updates += 1
+    else:
+        model.learn(total_timesteps=args.timesteps, progress_bar=False,
+                    reset_num_timesteps=not bool(args.initial_policy))
     development_report = evaluate(model, development)
     args.output.mkdir(parents=True)
     model.save(args.output / "model")
@@ -143,6 +186,11 @@ def main() -> int:
         "seed": args.seed, "timesteps": args.timesteps,
         "initial_model_file_sha256": initial_model_file_sha256,
         "initial_policy_parameters_sha256": initial_policy_parameters_sha256,
+        "behavior_anchor_interval": args.behavior_anchor_interval,
+        "behavior_anchor_epochs": args.behavior_anchor_epochs
+            if args.behavior_anchor_interval else 0,
+        "behavior_anchor_updates": anchor_updates,
+        "final_behavior_anchor_loss": final_anchor_loss,
         "train_episode_count": len(train), "development_episode_count": len(development),
         "observation_names": OBSERVATION_NAMES, "intents": INTENTS,
         "policy_parameters_sha256": parameter_sha256(model),

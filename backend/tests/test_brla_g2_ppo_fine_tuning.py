@@ -1,6 +1,8 @@
 import pytest
 
-from emergenzix_api.brla_g2_ppo_fine_tuning import authorize_warm_start
+from emergenzix_api.brla_g2_ppo_fine_tuning import (
+    authorize_warm_start, fine_tuning_chunks,
+)
 
 
 def qualified_report():
@@ -29,3 +31,13 @@ def test_unqualified_or_unsafe_warm_start_fails_closed(field, value):
     report = qualified_report(); report[field] = value
     with pytest.raises(PermissionError):
         authorize_warm_start(report, "a" * 64)
+
+
+def test_fine_tuning_chunks_preserve_exact_budget():
+    assert fine_tuning_chunks(12_500, 5_000) == (5_000, 5_000, 2_500)
+    assert sum(fine_tuning_chunks(50_000, 5_000)) == 50_000
+
+
+def test_fine_tuning_chunks_reject_non_positive_values():
+    with pytest.raises(ValueError, match="positive"):
+        fine_tuning_chunks(50_000, 0)
