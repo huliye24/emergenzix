@@ -1,0 +1,67 @@
+{
+  "protocol": "emergenzix-brla-g2-behavioral-warm-start-v2",
+  "run_id": "20261111-brla-g2-behavioral-warm-start-v2",
+  "decision": "WARM_START_NOT_READY",
+  "algorithm": "MASKED_CLASS_BALANCED_BEHAVIOR_CLONING",
+  "seed": 20261111,
+  "epochs": 60,
+  "batch_size": 256,
+  "development_used_for_fitting": false,
+  "class_weight_protocol": "SQRT_INVERSE_FREQUENCY_WITH_EXIT_1_5X",
+  "class_weights": {
+    "WAIT": 0.492051689106646,
+    "PROBE_SHORT": 1.0348874762832956,
+    "HOLD": 0.9207296201851151,
+    "EXIT": 1.552331214424943
+  },
+  "training": {
+    "accuracy": 0.7013888888888888,
+    "macro_recall": 0.6637821088859983,
+    "recall_by_intent": {
+      "WAIT": 0.7851971037811746,
+      "PROBE_SHORT": 0.7935943060498221,
+      "HOLD": 0.18309859154929578,
+      "EXIT": 0.8932384341637011
+    },
+    "predicted_probe_fraction": 0.22685185185185186,
+    "illegal_prediction_count": 0
+  },
+  "development": {
+    "accuracy": 0.7185185185185186,
+    "macro_recall": 0.6701738576738577,
+    "recall_by_intent": {
+      "WAIT": 0.7756410256410257,
+      "PROBE_SHORT": 0.7922077922077922,
+      "HOLD": 0.22972972972972974,
+      "EXIT": 0.8831168831168831
+    },
+    "prediction_counts": {
+      "WAIT": 258,
+      "PROBE_SHORT": 131,
+      "EXIT": 125,
+      "HOLD": 26
+    },
+    "predicted_probe_fraction": 0.24259259259259258,
+    "illegal_prediction_count": 0
+  },
+  "failed_checks": [
+    "training_macro_recall_at_least_0_70"
+  ],
+  "failure_analysis": [
+    "Calibrated weights corrected the excessive PROBE_SHORT prediction fraction.",
+    "The EXIT multiplier raised EXIT recall above 0.88 but HOLD recall fell below 0.23.",
+    "Reweighting moved errors between HOLD and EXIT instead of making the labels jointly learnable."
+  ],
+  "next_permitted_microtask": "AUDIT_HOLD_EXIT_LABEL_LEARNABILITY_AND_REMOVE_FUTURE_ONLY_EXIT_RULES",
+  "policy_parameters_sha256": "2ee98391cffe4942c0402abfa71afb45eb8d585191d1de952480a5beaf76cbcd",
+  "cloud_model": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-behavioral-warm-start-v2/model.zip",
+  "cloud_report": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-behavioral-warm-start-v2/report.json",
+  "model_file_sha256": "19afa99c0bac0fe66bf2d5b60abee34c868afa4f7bc960d6871befdff32990fe",
+  "report_file_sha256": "ff732785130c3ff24fe4bb4d29489af27d024b8938399af2754916d2ad0051c1",
+  "source_report_sha256": "7cd6a1d71dcb4109650a88f2a1730ebf87286d6dbf01811544f5ed052b511297",
+  "sealed_test_accessed": false,
+  "mode": "PAPER",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}
