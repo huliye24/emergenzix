@@ -20,6 +20,11 @@ def test_first_snapshot_emits_once_and_discards_forming_bar() -> None:
     first_state, first_events = evaluate_market_payload(payload, WatchState(), lookback=20, now=now)
     assert [event.event_type for event in first_events] == ["initial_snapshot"]
     assert first_state.last_completed_at == payload["bars"][-2]["timestamp"]
+    live = first_events[0].details["live_monitoring"]
+    assert live["timestamp"] == payload["bars"][-1]["timestamp"]
+    assert live["price"] == payload["bars"][-1]["close"]
+    assert live["forming"] is True
+    assert live["signal_input"] is False
     second_state, second_events = evaluate_market_payload(payload, first_state, lookback=20, now=now)
     assert second_state == first_state
     assert second_events == []
