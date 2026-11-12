@@ -245,6 +245,10 @@ The backtest runs **without network access, exchange credentials, API ports or l
 - The initial SQLite setup is for local/single-process development. Reassess storage, authentication, monitoring, and operational controls before multi-user or production deployment.
 - Backtests and simulated results do not guarantee future performance.
 
+## Core engine direction
+
+Emergenzix follows **One Engine. Infinite Evolution.** The first proving ground is BTC Market Intelligence: reusable market representations, calibrated state/outcome assessment, chronological validation, and independent risk governance. See the [Core Engine Charter](docs/CORE_ENGINE_CHARTER.md) and the [core research epic](https://github.com/huliye24/emergenzix/issues/82).
+
 ## Repository guide
 
 - [Product scope](docs/PRODUCT_SCOPE.md)
