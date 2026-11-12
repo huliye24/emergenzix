@@ -1,0 +1,43 @@
+{
+  "protocol": "emergenzix-brla-g2-sb3-runtime-v1",
+  "run_id": "20261111-brla-g2-sb3-runtime",
+  "host_alias": "moodify-gpu",
+  "runtime_directory": "/home/ubuntu/emergenzix-training-runs/sb3-2.7.1",
+  "python": "/home/ubuntu/emergenzix-chronos-v2.3.2/.venv/bin/python",
+  "proxy": {
+    "implementation": "mihomo",
+    "process": "/usr/local/bin/mihomo -d /etc/mihomo",
+    "http_proxy": "http://127.0.0.1:7890",
+    "controller": "127.0.0.1:9090",
+    "pypi_connectivity_verified": true
+  },
+  "packages": {
+    "stable_baselines3": "2.7.1",
+    "gymnasium": "1.2.3",
+    "cloudpickle": "3.1.1",
+    "matplotlib": "3.9.2",
+    "torch": "2.15.0+cu132",
+    "numpy": "2.5.4"
+  },
+  "cuda": {
+    "available": true,
+    "device": "NVIDIA A10G"
+  },
+  "verification": {
+    "cartpole_ppo_steps": 64,
+    "cartpole_ppo_passed": true,
+    "brla_brpm_brgc_chain_passed": true,
+    "order_permission_remained_false": true
+  },
+  "isolation": {
+    "chronos_environment_modified": false,
+    "system_python_modified": false,
+    "docker_required": false
+  },
+  "stage2_ppo_training_started": false,
+  "sealed_test_accessed": false,
+  "mode": "RESEARCH",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}

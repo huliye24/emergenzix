@@ -1,0 +1,89 @@
+{
+  "protocol": "emergenzix-brla-g2-ppo-anchor-ablation-v1",
+  "decision": "NO_TRAIN_QUALIFIED_CONFIGURATION",
+  "selection_partition": "TRAIN",
+  "development_episode_count_per_run": 0,
+  "ppo_timesteps_per_run": 10000,
+  "initial_model_file_sha256": "3c1767f16bdc794f9e2b93fd270ebe810a86fe9847ff5b5c1bc3295bce33d1f3",
+  "configurations": [
+    {
+      "name": "i1000-e3",
+      "anchor_interval": 1000,
+      "anchor_epochs": 3,
+      "anchor_updates": 10,
+      "mean_return": -0.011811411553066956,
+      "minimum_return": -0.17278994281470006,
+      "maximum_drawdown": 0.18045262876225787,
+      "exposure_fraction": 0.6333333333333333,
+      "probe_coverage": 1.0,
+      "brpm_rejection_rate": 0.0,
+      "intent_counts": {"WAIT": 720, "PROBE_SHORT": 72, "HOLD": 1296, "EXIT": 72},
+      "model_file_sha256": "a2ccbe34819d20ac8799fdb71d9cfdb3da7c1abbb00f45dde93fbc70a8ef7195",
+      "report_file_sha256": "24dc0cf85b1b2149edb762fbff5b8ec5553c8e5acb49127d177fa193d8bdcb1f"
+    },
+    {
+      "name": "i1000-e5",
+      "anchor_interval": 1000,
+      "anchor_epochs": 5,
+      "anchor_updates": 10,
+      "mean_return": -0.012068653475159044,
+      "minimum_return": -0.17278994281470006,
+      "maximum_drawdown": 0.18045262876225787,
+      "exposure_fraction": 0.6337962962962963,
+      "probe_coverage": 1.0,
+      "brpm_rejection_rate": 0.0,
+      "intent_counts": {"WAIT": 719, "PROBE_SHORT": 72, "HOLD": 1297, "EXIT": 72},
+      "model_file_sha256": "8ab26ab09c9e240150109416c4e1143f10a09c14ccbe5df41ba2cc69d6b88225",
+      "report_file_sha256": "d1d9c7803fac8190cf465ff80e53e286fdd356a162799aaddd1f505e45ea9f07"
+    },
+    {
+      "name": "i2500-e3",
+      "anchor_interval": 2500,
+      "anchor_epochs": 3,
+      "anchor_updates": 4,
+      "mean_return": -0.010878053478987177,
+      "minimum_return": -0.17278994281470006,
+      "maximum_drawdown": 0.18045262876225787,
+      "exposure_fraction": 0.6342592592592593,
+      "probe_coverage": 1.0,
+      "brpm_rejection_rate": 0.0,
+      "intent_counts": {"WAIT": 718, "PROBE_SHORT": 72, "HOLD": 1298, "EXIT": 72},
+      "model_file_sha256": "ce57229ecbc5645773d4669b44a32fd9ffc725c6f64d61401fdf6589ed40591e",
+      "report_file_sha256": "81e13aeff9a01e5a0fee40636f8314851fb10d977370307576960e80fe31b221"
+    },
+    {
+      "name": "i2500-e5",
+      "anchor_interval": 2500,
+      "anchor_epochs": 5,
+      "anchor_updates": 4,
+      "mean_return": -0.012446036952259732,
+      "minimum_return": -0.17278994281470006,
+      "maximum_drawdown": 0.18045262876225787,
+      "exposure_fraction": 0.6328703703703704,
+      "probe_coverage": 1.0,
+      "brpm_rejection_rate": 0.0,
+      "intent_counts": {"WAIT": 721, "PROBE_SHORT": 72, "HOLD": 1295, "EXIT": 72},
+      "model_file_sha256": "bc31214eb90652a35845251f05ce15c9ebd1dab7272174a8efe2cff0d75de068",
+      "report_file_sha256": "1a280ef5cb311317b159020564034eaccf8327872d80e678678df909628ed152"
+    }
+  ],
+  "common_passes": [
+    "nonzero_probe_coverage",
+    "action_diversity_at_least_3",
+    "effective_exposure_episode_coverage",
+    "brpm_rejection_rate_at_most_0_05",
+    "all_brgc_guarded"
+  ],
+  "common_failures": [
+    "positive_mean_return",
+    "maximum_drawdown_at_most_0_10"
+  ],
+  "diagnosis": "BEHAVIOR_RETENTION_SUCCEEDED_BUT_CAUSAL_CURRICULUM_HOLDS_TOO_LONG",
+  "next_permitted_microtask": "ADD_CAUSAL_RISK_RELEASE_AND_MAXIMUM_HOLDING_RULES_TO_CURRICULUM",
+  "development_accessed": false,
+  "sealed_test_accessed": false,
+  "mode": "PAPER",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}

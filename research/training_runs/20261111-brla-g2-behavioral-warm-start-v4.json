@@ -1,0 +1,70 @@
+{
+  "protocol": "emergenzix-brla-g2-behavioral-warm-start-v4",
+  "curriculum_protocol": "emergenzix-brla-g2-probe-curriculum-v3",
+  "run_id": "20261111-brla-g2-behavioral-warm-start-v4",
+  "decision": "READY_FOR_PPO_FINE_TUNING",
+  "algorithm": "MASKED_CLASS_BALANCED_BEHAVIOR_CLONING",
+  "seed": 20261111,
+  "epochs": 60,
+  "batch_size": 256,
+  "train_example_count": 2160,
+  "development_example_count": 540,
+  "development_used_for_fitting": false,
+  "training": {
+    "accuracy": 0.8476851851851852,
+    "macro_recall": 0.8730917783960525,
+    "recall_by_intent": {
+      "WAIT": 0.8220720720720721,
+      "PROBE_SHORT": 0.9,
+      "HOLD": 0.8588450962419798,
+      "INCREASE_SHORT": 0.813953488372093,
+      "EXIT": 0.9705882352941176
+    },
+    "predicted_probe_fraction": 0.10231481481481482,
+    "predicted_increase_fraction": 0.06851851851851852,
+    "illegal_prediction_count": 0
+  },
+  "development": {
+    "accuracy": 0.812962962962963,
+    "macro_recall": 0.8530915595309156,
+    "recall_by_intent": {
+      "WAIT": 0.7397260273972602,
+      "PROBE_SHORT": 0.9444444444444444,
+      "HOLD": 0.8540145985401459,
+      "INCREASE_SHORT": 0.7272727272727273,
+      "EXIT": 1.0
+    },
+    "prediction_counts": {
+      "WAIT": 163,
+      "PROBE_SHORT": 74,
+      "INCREASE_SHORT": 29,
+      "HOLD": 237,
+      "EXIT": 37
+    },
+    "predicted_probe_fraction": 0.13703703703703704,
+    "predicted_increase_fraction": 0.053703703703703705,
+    "illegal_prediction_count": 0
+  },
+  "checks": {
+    "training_macro_recall_at_least_0_70": true,
+    "development_macro_recall_at_least_0_50": true,
+    "development_probe_recall_at_least_0_50": true,
+    "development_increase_recall_at_least_0_50": true,
+    "development_action_diversity_at_least_5": true,
+    "development_probe_fraction_bounded": true,
+    "development_increase_fraction_bounded": true,
+    "zero_illegal_predictions": true
+  },
+  "next_permitted_microtask": "AUTHORIZE_WARM_START_V4_FOR_TRAIN_ONLY_ANCHORED_PPO",
+  "policy_parameters_sha256": "69aabfa5a5d6feec6e6cc26910e041e05ff8aa71a372eb368af3a6cb1c68eed4",
+  "cloud_model": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-behavioral-warm-start-v4/model.zip",
+  "cloud_report": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-behavioral-warm-start-v4/report.json",
+  "model_file_sha256": "d8e3756a07a60d37294fe3cd2efc7909b6482039c30f99ca82d0b7b484b6268b",
+  "report_file_sha256": "9c1a076b64927074afc7c481ee55d0ab21752680b92df41b60967eaf70a66529",
+  "source_report_sha256": "00553b011421fc91ecbe759773929b59b8b1647f8c5d49f2a9d64a795c657158",
+  "sealed_test_accessed": false,
+  "mode": "PAPER",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}

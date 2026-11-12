@@ -1,0 +1,64 @@
+{
+  "protocol": "emergenzix-brla-g2-probe-curriculum-v3",
+  "run_id": "20261111-brla-g2-probe-curriculum-v3",
+  "nemt_prior_protocol": "emergenzix-brla-nemt-v4-position-prior-v1",
+  "training": {
+    "example_count": 2160,
+    "path_count": 24,
+    "intent_counts": {
+      "WAIT": 888,
+      "PROBE_SHORT": 70,
+      "HOLD": 1091,
+      "INCREASE_SHORT": 43,
+      "EXIT": 68
+    },
+    "probe_fraction": 0.032407407407407406,
+    "probe_episode_coverage": 1.0,
+    "action_diversity": 5,
+    "nemt_prior_counts": {
+      "TIGHTEN_STOP": 924,
+      "DECREASING_ADD_CANDIDATE": 113,
+      "HOLD": 97
+    },
+    "nemt_prior_coverage": 0.525,
+    "approved_increase_fraction": 0.01990740740740741,
+    "all_labels_mask_valid": true,
+    "future_fields_in_observation": false
+  },
+  "development_audit_only": {
+    "example_count": 540,
+    "path_count": 6,
+    "intent_counts": {
+      "WAIT": 219,
+      "PROBE_SHORT": 18,
+      "HOLD": 274,
+      "INCREASE_SHORT": 11,
+      "EXIT": 18
+    },
+    "action_diversity": 5,
+    "nemt_prior_counts": {
+      "TIGHTEN_STOP": 242,
+      "DECREASING_ADD_CANDIDATE": 19,
+      "HOLD": 24
+    },
+    "nemt_prior_coverage": 0.5277777777777778,
+    "all_labels_mask_valid": true,
+    "future_fields_in_observation": false
+  },
+  "decision": "READY_FOR_BEHAVIORAL_WARM_START",
+  "interpretation": [
+    "NEMT v4 advice is active only after a position exists.",
+    "Only 43 of 113 TRAIN decreasing-add candidates survived the BRPM-feasible action mask.",
+    "NEMT advice has no position or order authority and does not replace causal exit rules."
+  ],
+  "next_permitted_microtask": "TRAIN_WARM_START_V4_WITH_NEMT_CURRICULUM_V3",
+  "development_used_for_fitting": false,
+  "sealed_test_accessed": false,
+  "mode": "PAPER",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false,
+  "cloud_report": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-probe-curriculum-v3.json",
+  "cloud_report_file_sha256": "905fba297e5cd58f468ecf3728257d99e65d169f3485c2604d20b5ff4ffcee42",
+  "source_report_sha256": "17a9dc7a9dc238f89fb54f0d6aa20163155f0274a61eb7eccad8423a38c18024"
+}

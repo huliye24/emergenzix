@@ -1,0 +1,74 @@
+{
+  "protocol": "emergenzix-brla-g2-stage1-dataset-audit-v1",
+  "run_id": "20261111-brla-g2-real-btc-dataset-audit-v2",
+  "status": "NOT_READY_FOR_ENCODER_TRAINING",
+  "source": {
+    "venue": "Binance public archive",
+    "symbol": "BTCUSDT",
+    "timeframe": "15m",
+    "start": "2025-11-01T00:00:00+00:00",
+    "end": "2026-11-03T01:45:00+00:00",
+    "sha256": "528a269fd7f465ee0a8f3606dcb0d3cd1792dab53a8cc76aacf9e5686d12b24f"
+  },
+  "sampling": {
+    "lookback_days": 180,
+    "label_days": 7,
+    "stride_days": 7,
+    "example_count": 26,
+    "maximum_adjacent_feature_overlap": 0.9611111111111111,
+    "maximum_adjacent_label_overlap": 0.0
+  },
+  "state_counts": {
+    "OLD_ORDER_DOMINANT": 5,
+    "NEW_ORDER_EMERGING": 6,
+    "ORDER_CONTEST": 6,
+    "OLD_ORDER_FAILURE": 0,
+    "NEW_ORDER_PROVISIONAL": 6,
+    "NEW_ORDER_CONFIRMED": 3
+  },
+  "imbalance_ratio_among_present_states": 2.0,
+  "old_strength": {
+    "minimum": 0.24206461644506674,
+    "mean": 0.40728298445063876,
+    "maximum": 0.6024194652503579
+  },
+  "new_strength": {
+    "minimum": 0.1566070926991021,
+    "mean": 0.4217012395529369,
+    "maximum": 0.8524462691635253
+  },
+  "saturation": {
+    "old_at_or_above_0_98": 0.0,
+    "old_at_or_below_0_02": 0.0,
+    "new_at_or_above_0_98": 0.0,
+    "new_at_challenger_floor": 0.0
+  },
+  "partition_counts": {
+    "TRAIN": 26,
+    "DEVELOPMENT": 0,
+    "SEALED_TEST": 0
+  },
+  "checks": {
+    "all_six_states_present": false,
+    "imbalance_within_limit": false,
+    "strength_saturation_within_limit": true,
+    "feature_overlap_within_limit": true,
+    "label_overlap_within_limit": true,
+    "all_partitions_present": false,
+    "minimum_examples_per_partition": false,
+    "partition_scenarios_disjoint": true,
+    "partition_purpose_matches": true
+  },
+  "blocking_findings": [
+    "OLD_ORDER_FAILURE has zero examples.",
+    "The available history cannot supply independent TRAIN, DEVELOPMENT, and SEALED_TEST partitions with 180-day lookback plus 7-day labels.",
+    "Each partition requires at least 30 examples; only 26 TRAIN examples are available."
+  ],
+  "cloud_report": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-real-btc-dataset-audit-v2/report.json",
+  "report_sha256": "63a0bc08bb4b0115c35dc32e7d663a7aa2e202ed29cbb5425495317a583a8711",
+  "hash_verified": true,
+  "mode": "RESEARCH",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}

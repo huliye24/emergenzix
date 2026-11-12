@@ -1,0 +1,58 @@
+{
+  "protocol": "emergenzix-brla-g2-independent-paper-exam-v1",
+  "run_id": "20261111-brla-g2-ppo-v2-independent-exam",
+  "decision": "PASS_INDEPENDENT_SYNTHETIC_EXAM",
+  "policy_parameters_sha256": "f61d2b11a96159a6cf19dd2a5ace62de03373a07f769e2238ca6dc97b688c0fc",
+  "exam_dataset_sha256": "29634b862e20e089d978aa97ed99019aa01b49ef11cd610dbe7b8c765587e931",
+  "training_dataset_sha256": "0896ac1a0b7aedfc78c38a783af8b026f26ff85055c5f73ba6ec4d0fa16240ed",
+  "exam_episode_count": 12,
+  "policy_training_steps": 0,
+  "policy_updated_during_exam": false,
+  "results": {
+    "mean_return": 0.17468400106914084,
+    "median_return": 0.15856661761010293,
+    "minimum_return": 0.0,
+    "positive_path_fraction": 0.9166666666666666,
+    "maximum_drawdown": 0.05105238237101589,
+    "probe_coverage": 1.0,
+    "exposure_fraction": 0.18796296296296297,
+    "intent_counts": {
+      "WAIT": 610,
+      "PROBE_SHORT": 267,
+      "HOLD": 0,
+      "INCREASE_SHORT": 178,
+      "REDUCE_SHORT": 2,
+      "EXIT": 23
+    },
+    "brpm_rejections": 398,
+    "all_brgc_guarded": true
+  },
+  "checks": {
+    "dataset_hash_differs_from_training": true,
+    "seeds_do_not_overlap_training": true,
+    "positive_median_return": true,
+    "positive_path_fraction_at_least_0_60": true,
+    "minimum_return_at_least_minus_0_10": true,
+    "maximum_drawdown_at_most_0_10": true,
+    "probe_coverage_at_least_0_50": true,
+    "action_diversity_at_least_3": true,
+    "effective_exposure_fraction": true,
+    "all_brgc_guarded": true
+  },
+  "limitations": [
+    "The exam uses unseen seeds but the same generator family as training.",
+    "One path returned zero because all attempted probes remained risk-rejected.",
+    "BRPM rejected 398 intents, so risk-intent quality remains a material weakness.",
+    "This is not real BTC evidence and does not authorize LIVE trading."
+  ],
+  "exam_manifest_file_sha256": "18185381f9eb676195203d1fbcee9818883b3f324c44ed7947c700698272e283",
+  "cloud_report": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-independent-exam-result-v1/report.json",
+  "report_sha256": "20751249898d15b243ace7f8bfe46520c2e464e25a6d190350f61f7f0e2c0572",
+  "report_file_sha256": "f2b54540c93905710246a54ed2d51c3426e3c759d8f09eef6ca9dec0681f55ab",
+  "sealed_test_accessed": false,
+  "real_btc_backtest_authorized": false,
+  "mode": "PAPER",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}

@@ -1,0 +1,53 @@
+{
+  "protocol": "emergenzix-brla-g2-trend-timing-audit-v1",
+  "run_id": "20261111-brla-g2-real-btc-timing-audit-v1",
+  "status": "NOT_READY_FOR_TIMING_ENCODER_TRAINING",
+  "source_sha256": "528a269fd7f465ee0a8f3606dcb0d3cd1792dab53a8cc76aacf9e5686d12b24f",
+  "example_count": 26,
+  "maturity_bands": {
+    "FORMATION": {"count": 1, "fraction": 0.038461538461538464},
+    "FRONT_MIDDLE": {"count": 9, "fraction": 0.34615384615384615},
+    "EXPANSION": {"count": 10, "fraction": 0.38461538461538464},
+    "MATURE": {"count": 6, "fraction": 0.23076923076923078},
+    "EXHAUSTION": {"count": 0, "fraction": 0.0}
+  },
+  "timing_summaries": {
+    "trend_maturity": {"minimum": 0.18376667009870282, "mean": 0.5533495540926758, "maximum": 0.836179221207404},
+    "remaining_potential": {"minimum": 0.309281471799534, "mean": 0.5120513876554983, "maximum": 0.8762633915417117},
+    "entry_location_quality": {"minimum": 0.0030407367506106657, "mean": 0.20325714955835186, "maximum": 0.5851028633626371},
+    "feedback_exhaustion": {"minimum": 0.17821739804434011, "mean": 0.5154130217376303, "maximum": 0.809176410129308},
+    "late_entry_risk": {"minimum": 0.06237608931551904, "mean": 0.3034414325016891, "maximum": 0.69658172973373}
+  },
+  "boundary_saturation": {
+    "trend_maturity": {"at_or_below_0_02": 0.0, "at_or_above_0_98": 0.0},
+    "remaining_potential": {"at_or_below_0_02": 0.0, "at_or_above_0_98": 0.0},
+    "entry_location_quality": {"at_or_below_0_02": 0.15384615384615385, "at_or_above_0_98": 0.0},
+    "feedback_exhaustion": {"at_or_below_0_02": 0.0, "at_or_above_0_98": 0.0},
+    "late_entry_risk": {"at_or_below_0_02": 0.0, "at_or_above_0_98": 0.0}
+  },
+  "high_quality_entry": {"minimum_quality": 0.5, "count": 2, "fraction": 0.07692307692307693},
+  "mature_entry_block": {"maturity_threshold": 0.7, "count": 6, "fraction": 0.23076923076923078},
+  "eligible_entry": {"maximum_maturity_exclusive": 0.7, "minimum_quality": 0.2, "count": 11, "fraction": 0.4230769230769231},
+  "checks": {
+    "all_maturity_bands_present": false,
+    "minimum_examples_per_maturity_band": false,
+    "timing_saturation_within_limit": true,
+    "high_quality_entries_sufficient": false,
+    "mature_entry_block_not_dominant": true,
+    "eligible_entry_coverage_sufficient": true,
+    "base_dataset_ready": false
+  },
+  "blocking_findings": [
+    "FORMATION has only one example and EXHAUSTION has zero examples.",
+    "Only 2 of 26 examples meet the high-quality-entry threshold of 0.5.",
+    "The prerequisite six-stage dataset audit is not ready and DEVELOPMENT/SEALED_TEST remain absent."
+  ],
+  "cloud_report": "/home/ubuntu/emergenzix-training-runs/20261111-brla-g2-real-btc-timing-audit-v1/report.json",
+  "report_file_sha256": "5c20b401361755ec916a506ea668bbaf8aea39dec20619fbe0136b7a8761f706",
+  "canonical_report_sha256": "5d7caf10c684914dc7dfb625b80a07df6b5e94e4a9d27b7a0dcf9565b028f904",
+  "hash_verified": true,
+  "mode": "RESEARCH",
+  "automatic_promotion": false,
+  "position_permission": false,
+  "order_permission": false
+}
